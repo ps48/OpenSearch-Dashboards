@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CoreStart } from 'opensearch-dashboards/public';
-import { BehaviorSubject, Observable, Subscription, combineLatest } from 'rxjs';
-import { debounceTime } from 'rxjs/operators';
 import { EuiLinkAnchorProps } from '@elastic/eui';
+import { CoreStart } from 'opensearch-dashboards/public';
+import { BehaviorSubject, combineLatest, Observable, Subscription } from 'rxjs';
+import { debounceTime } from 'rxjs/operators';
 import { DataPublicPluginStart } from '../../../../data/public';
 import { SavedObjectLoader } from '../../../../saved_objects/public';
 import { createSavedHomepageLoader, SavedHomepage } from '../../saved_homepage';
@@ -23,6 +23,7 @@ export interface HeroSection {
 export interface Section {
   id: string;
   title: string;
+  titleAppend?: React.JSX.Element;
   description?: string;
   links?: Array<{ label: string; url: string; props?: Omit<EuiLinkAnchorProps, 'href'> }>;
   render: RenderFn;

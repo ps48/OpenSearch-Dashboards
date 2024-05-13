@@ -3,29 +3,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { useMount } from 'react-use';
-import { Subscription } from 'rxjs';
-import { i18n } from '@osd/i18n';
-import { FormattedMessage } from '@osd/i18n/react';
 import {
-  EuiPageTemplate,
   EuiButtonEmpty,
-  EuiHorizontalRule,
   EuiFlexGroup,
   EuiFlexItem,
-  EuiLoadingSpinner,
+  EuiHorizontalRule,
   EuiIcon,
+  EuiLoadingSpinner,
+  EuiPageTemplate,
 } from '@elastic/eui';
+import { i18n } from '@osd/i18n';
+import { FormattedMessage } from '@osd/i18n/react';
+import React, { useEffect, useState } from 'react';
+import { useMount } from 'react-use';
+import { Subscription } from 'rxjs';
 import {
   HeroSection as HeroSectionType,
   Section as SectionType,
 } from '../../../services/section_type/section_type';
 import { getServices } from '../../opensearch_dashboards_services';
+import { Welcome } from '../welcome';
+import { Footer } from './footer';
 import { HeroSection } from './hero_section';
 import { Section } from './section';
-import { Footer } from './footer';
-import { Welcome } from '../welcome';
 
 const KEY_ENABLE_WELCOME = 'home:welcome:show';
 
@@ -196,8 +196,15 @@ const Content = () => {
   return (
     <>
       {hero && <HeroSection render={hero.render} />}
-      {sections?.map(({ render, title, description, links }, i) => (
-        <Section key={i} title={title} description={description} links={links} render={render} />
+      {sections?.map(({ render, title, titleAppend, description, links }, i) => (
+        <Section
+          key={i}
+          title={title}
+          titleAppend={titleAppend}
+          description={description}
+          links={links}
+          render={render}
+        />
       ))}
       <EuiHorizontalRule />
       <Footer />

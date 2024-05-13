@@ -28,6 +28,7 @@
  * under the License.
  */
 
+import { i18n } from '@osd/i18n';
 import {
   AppMountParameters,
   CoreSetup,
@@ -35,32 +36,32 @@ import {
   Plugin,
   PluginInitializerContext,
 } from 'opensearch-dashboards/public';
-import { i18n } from '@osd/i18n';
 import { first } from 'rxjs/operators';
 
 import { Branding } from 'src/core/types';
+import { AppNavLinkStatus, WorkspaceAvailability } from '../../../core/public';
+import { DataPublicPluginStart } from '../../data/public';
+import { DataSourcePluginStart } from '../../data_source/public';
+import { TelemetryPluginStart } from '../../telemetry/public';
+import { UrlForwardingSetup, UrlForwardingStart } from '../../url_forwarding/public';
+import { UsageCollectionSetup } from '../../usage_collection/public';
+import { HOME_APP_BASE_PATH, PLUGIN_ID } from '../common/constants';
+import { ConfigSchema } from '../config';
+import { learnBasicsSection } from './application/components/homepage/sections/learn_basics';
+import { TutorialsSection } from './application/components/homepage/sections/tutorials_section';
+import { workWithDataSection } from './application/components/homepage/sections/work_with_data';
+import { setServices } from './application/opensearch_dashboards_services';
 import {
   EnvironmentService,
   EnvironmentServiceSetup,
   FeatureCatalogueCategory,
   FeatureCatalogueRegistry,
   FeatureCatalogueRegistrySetup,
-  TutorialService,
-  TutorialServiceSetup,
   SectionTypeService,
   SectionTypeServiceSetup,
+  TutorialService,
+  TutorialServiceSetup,
 } from './services';
-import { ConfigSchema } from '../config';
-import { setServices } from './application/opensearch_dashboards_services';
-import { DataPublicPluginStart } from '../../data/public';
-import { TelemetryPluginStart } from '../../telemetry/public';
-import { UsageCollectionSetup } from '../../usage_collection/public';
-import { UrlForwardingSetup, UrlForwardingStart } from '../../url_forwarding/public';
-import { AppNavLinkStatus, WorkspaceAvailability } from '../../../core/public';
-import { PLUGIN_ID, HOME_APP_BASE_PATH } from '../common/constants';
-import { DataSourcePluginStart } from '../../data_source/public';
-import { workWithDataSection } from './application/components/homepage/sections/work_with_data';
-import { learnBasicsSection } from './application/components/homepage/sections/learn_basics';
 
 export interface HomePluginStartDependencies {
   data: DataPublicPluginStart;
@@ -158,6 +159,7 @@ export class HomePublicPlugin
 
     const sectionTypes = { ...this.sectionTypeService.setup() };
 
+    sectionTypes.registerSection(TutorialsSection);
     sectionTypes.registerSection(workWithDataSection);
     sectionTypes.registerSection(learnBasicsSection);
 

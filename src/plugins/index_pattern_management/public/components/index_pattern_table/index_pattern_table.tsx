@@ -30,34 +30,34 @@
 
 import {
   EuiBadge,
+  EuiBadgeGroup,
   EuiButtonEmpty,
   EuiFlexGroup,
   EuiFlexItem,
   EuiInMemoryTable,
+  EuiPageContent,
   EuiSpacer,
   EuiText,
-  EuiBadgeGroup,
-  EuiPageContent,
   EuiTitle,
 } from '@elastic/eui';
-import { FormattedMessage } from '@osd/i18n/react';
-import { withRouter, RouteComponentProps } from 'react-router-dom';
-import React, { useState, useEffect } from 'react';
 import { i18n } from '@osd/i18n';
+import { FormattedMessage } from '@osd/i18n/react';
+import React, { useEffect, useState } from 'react';
+import { RouteComponentProps, withRouter } from 'react-router-dom';
 import { useEffectOnce, useMount } from 'react-use';
 import {
   reactRouterNavigate,
   useOpenSearchDashboards,
 } from '../../../../opensearch_dashboards_react/public';
 import { IndexPatternManagmentContext } from '../../types';
-import { CreateButton } from '../create_button';
-import { IndexPatternTableItem, IndexPatternCreationOption } from '../types';
-import { getIndexPatterns } from '../utils';
 import { getListBreadcrumbs } from '../breadcrumbs';
-import { EmptyState } from './empty_state';
-import { MatchedItem, ResolveIndexResponseItemAlias } from '../create_index_pattern_wizard/types';
-import { EmptyIndexPatternPrompt } from './empty_index_pattern_prompt';
+import { CreateButton } from '../create_button';
 import { getIndices } from '../create_index_pattern_wizard/lib';
+import { MatchedItem, ResolveIndexResponseItemAlias } from '../create_index_pattern_wizard/types';
+import { IndexPatternCreationOption, IndexPatternTableItem } from '../types';
+import { getIndexPatterns } from '../utils';
+import { EmptyIndexPatternPrompt } from './empty_index_pattern_prompt';
+import { EmptyState } from './empty_state';
 
 const pagination = {
   initialPageSize: 10,
@@ -236,18 +236,16 @@ export const IndexPatternTable = ({ canSave, history }: Props) => {
   const hasDataIndices = sources.some(({ name }: MatchedItem) => !name.startsWith('.'));
 
   if (!indexPatterns.length) {
-    if (!dataSourceEnabled) {
-      if (!hasDataIndices && !remoteClustersExist) {
-        return (
-          <EmptyState
-            onRefresh={loadSources}
-            docLinks={docLinks}
-            navigateToApp={application.navigateToApp}
-            getMlCardState={getMlCardState}
-            canSave={canSave}
-          />
-        );
-      }
+    if (true) {
+      return (
+        <EmptyState
+          onRefresh={loadSources}
+          docLinks={docLinks}
+          navigateToApp={application.navigateToApp}
+          getMlCardState={getMlCardState}
+          canSave={canSave}
+        />
+      );
     } else {
       return (
         <EmptyIndexPatternPrompt

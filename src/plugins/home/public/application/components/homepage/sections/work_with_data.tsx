@@ -3,19 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { FC } from 'react';
 import {
-  EuiFlexGroup,
-  EuiFlexItem,
-  EuiCard,
-  EuiImage,
   EuiButton,
   EuiButtonProps,
+  EuiCard,
+  EuiFlexGroup,
+  EuiFlexItem,
+  EuiImage,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
+import React, { FC } from 'react';
 import { Section } from '../../../../services/section_type/section_type';
-import { renderFn } from './utils';
 import { getServices } from '../../../opensearch_dashboards_services';
+import { renderFn } from './utils';
 
 const Card: FC<{
   imgSrc: string;

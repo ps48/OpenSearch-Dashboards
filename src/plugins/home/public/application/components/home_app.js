@@ -42,6 +42,7 @@ import { replaceTemplateStrings } from './tutorial/replace_template_strings';
 import { getServices } from '../opensearch_dashboards_services';
 import { useMount } from 'react-use';
 import { USE_NEW_HOME_PAGE } from '../../../common/constants';
+import { TutorialHome } from './tutorial_home';
 
 const RedirectToDefaultApp = () => {
   useMount(() => {
@@ -104,6 +105,12 @@ export function HomeApp({ directories, solutions }) {
     <I18nProvider>
       <Router>
         <Switch>
+          <Route
+            path="/tutorial/home/:id"
+            render={(props) => {
+              return <TutorialHome homeId={props.match.params.id} />;
+            }}
+          />
           <Route path="/tutorial/:id" render={renderTutorial} />
           <Route path="/tutorial_directory/:tab?" render={renderTutorialDirectory} />
           <Route exact path="/feature_directory">

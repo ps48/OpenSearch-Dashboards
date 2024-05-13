@@ -28,29 +28,29 @@
  * under the License.
  */
 
-import './empty_state.scss';
-import React from 'react';
-import { i18n } from '@osd/i18n';
-import { FormattedMessage } from '@osd/i18n/react';
-import { DocLinksStart, ApplicationStart } from 'opensearch-dashboards/public';
 import {
-  EuiPageContentHeader,
-  EuiPageContentHeaderSection,
-  EuiTitle,
-  EuiPageContentBody,
-  EuiPageContent,
-  EuiIcon,
-  EuiSpacer,
-  EuiFlexItem,
+  EuiCard,
   EuiDescriptionList,
   EuiFlexGrid,
-  EuiCard,
+  EuiFlexItem,
+  EuiIcon,
   EuiLink,
+  EuiPageContent,
+  EuiPageContentBody,
+  EuiPageContentHeader,
+  EuiPageContentHeaderSection,
+  EuiSpacer,
   EuiText,
+  EuiTitle,
 } from '@elastic/eui';
+import { i18n } from '@osd/i18n';
+import { FormattedMessage } from '@osd/i18n/react';
+import { ApplicationStart, DocLinksStart } from 'opensearch-dashboards/public';
+import React from 'react';
 import { useHistory } from 'react-router-dom';
 import { reactRouterNavigate } from '../../../../../opensearch_dashboards_react/public';
 import { MlCardState } from '../../../types';
+import './empty_state.scss';
 
 export const EmptyState = ({
   onRefresh,
@@ -66,47 +66,48 @@ export const EmptyState = ({
   canSave: boolean;
 }) => {
   const mlCard = (
-    <></>
-    // TODO: [RENAMEME] if have a replacement for this view we can re-enable this without
-    // upsell. Users can should be able to do everything within the application this card does
-    // but without the ML file visualizer.
-    // https://github.com/opensearch-project/OpenSearch-Dashboards/issues/384
-    // <EuiFlexItem>
-    //   <EuiCard
-    //     onClick={() => navigateToApp('ml', { path: '#/filedatavisualizer' })}
-    //     className="inpEmptyState__card"
-    //     betaBadgeLabel={
-    //       getMlCardState() === MlCardState.ENABLED
-    //         ? undefined
-    //         : i18n.translate(
-    //             'indexPatternManagement.createIndexPattern.emptyState.basicLicenseLabel',
-    //             {
-    //               defaultMessage: 'Basic',
-    //             }
-    //           )
-    //     }
-    //     betaBadgeTooltipContent={i18n.translate(
-    //       'indexPatternManagement.createIndexPattern.emptyState.basicLicenseDescription',
-    //       {
-    //         defaultMessage: 'This feature requires a Basic license.',
-    //       }
-    //     )}
-    //     isDisabled={getMlCardState() === MlCardState.DISABLED}
-    //     icon={<EuiIcon size="xl" type="document" color="subdued" />}
-    //     title={
-    //       <FormattedMessage
-    //         id="indexPatternManagement.createIndexPattern.emptyState.uploadCardTitle"
-    //         defaultMessage="Upload a file"
-    //       />
-    //     }
-    //     description={
-    //       <FormattedMessage
-    //         id="indexPatternManagement.createIndexPattern.emptyState.uploadCardDescription"
-    //         defaultMessage="Import a CSV, NDJSON, or log file."
-    //       />
-    //     }
-    //   />
-    // </EuiFlexItem>
+    <>
+      {/* // TODO: [RENAMEME] if have a replacement for this view we can re-enable this without //
+      upsell. Users can should be able to do everything within the application this card does // but
+      without the ML file visualizer. //
+      https://github.com/opensearch-project/OpenSearch-Dashboards/issues/384 */}
+      <EuiFlexItem>
+        <EuiCard
+          onClick={() => navigateToApp('ml', { path: '#/filedatavisualizer' })}
+          className="inpEmptyState__card"
+          betaBadgeLabel={
+            getMlCardState() === MlCardState.ENABLED
+              ? undefined
+              : i18n.translate(
+                  'indexPatternManagement.createIndexPattern.emptyState.basicLicenseLabel',
+                  {
+                    defaultMessage: 'Basic',
+                  }
+                )
+          }
+          betaBadgeTooltipContent={i18n.translate(
+            'indexPatternManagement.createIndexPattern.emptyState.basicLicenseDescription',
+            {
+              defaultMessage: 'This feature requires a Basic license.',
+            }
+          )}
+          // isDisabled={getMlCardState() === MlCardState.DISABLED}
+          icon={<EuiIcon size="xl" type="document" color="subdued" />}
+          title={
+            <FormattedMessage
+              id="indexPatternManagement.createIndexPattern.emptyState.uploadCardTitle"
+              defaultMessage="Upload a file"
+            />
+          }
+          description={
+            <FormattedMessage
+              id="indexPatternManagement.createIndexPattern.emptyState.uploadCardDescription"
+              defaultMessage="Import a CSV, NDJSON, or log file."
+            />
+          }
+        />
+      </EuiFlexItem>
+    </>
   );
 
   const createAnyway = (
@@ -151,7 +152,7 @@ export const EmptyState = ({
         <EuiSpacer size="m" />
         <EuiPageContentBody>
           <EuiFlexGrid className="inpEmptyState__cardGrid" columns={3} responsive={true}>
-            {/* TODO: [UNCOMMENTME] Once we have long-term fix for https://github.com/opensearch-project/OpenSearch-Dashboards/issues/2684
+            {/* TODO: [UNCOMMENTME] Once we have long-term fix for https://github.com/opensearch-project/OpenSearch-Dashboards/issues/2684 */}
             <EuiFlexItem>
               <EuiCard
                 className="inpEmptyState__card"
@@ -170,7 +171,7 @@ export const EmptyState = ({
                   />
                 }
               />
-            </EuiFlexItem> */}
+            </EuiFlexItem>
             {getMlCardState() !== MlCardState.HIDDEN ? mlCard : <></>}
             <EuiFlexItem>
               <EuiCard

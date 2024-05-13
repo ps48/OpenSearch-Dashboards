@@ -3,35 +3,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { FC, useState, useMemo } from 'react';
-import { i18n } from '@osd/i18n';
 import {
-  EuiPanel,
   EuiButtonIcon,
-  EuiTitle,
   EuiFlexGroup,
   EuiFlexItem,
-  EuiSpacer,
   EuiLink,
+  EuiPanel,
+  EuiSpacer,
   EuiText,
+  EuiTitle,
 } from '@elastic/eui';
+import { i18n } from '@osd/i18n';
+import React, { FC, useMemo, useState } from 'react';
 import { RenderFn, Section as SectionType } from '../../../services/section_type/section_type';
 import { LazyRender } from './lazy_render';
 
 interface Props {
   render: RenderFn;
   title: SectionType['title'];
+  titleAppend?: SectionType['titleAppend'];
   description?: SectionType['description'];
   links?: SectionType['links'];
 }
 
-export const Section: FC<Props> = ({ render, title, description, links }) => {
+export const Section: FC<Props> = ({ render, title, titleAppend, description, links }) => {
   const [isExpanded, setExpanded] = useState(true);
 
   const hasDescription = !!description;
   const hasLinks = Array.isArray(links) && links.length > 0;
   const hasDescriptionSection = hasDescription || hasLinks;
   const hasDescriptionSpacer = hasDescription && hasLinks;
+  const hasTitleAppend = !!titleAppend;
 
   const toggleExpanded = () => setExpanded((expanded) => !expanded);
 
@@ -80,11 +82,12 @@ export const Section: FC<Props> = ({ render, title, description, links }) => {
             }
           />
         </EuiFlexItem>
-        <EuiFlexItem grow>
+        <EuiFlexItem grow={false}>
           <EuiTitle size="m">
             <h2>{title}</h2>
           </EuiTitle>
         </EuiFlexItem>
+        {hasTitleAppend && <EuiFlexItem grow={false}> {titleAppend} </EuiFlexItem>}
       </EuiFlexGroup>
       {isExpanded && memoizedContent}
     </EuiPanel>

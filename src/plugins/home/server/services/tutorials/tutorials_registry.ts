@@ -30,12 +30,13 @@
 
 import Joi from 'joi';
 import { CoreSetup } from 'src/core/server';
-import {
-  TutorialProvider,
-  TutorialContextFactory,
-  ScopedTutorialContextFactory,
-} from './lib/tutorials_registry_types';
+import { builtInTutorials } from '../../tutorials/register';
 import { tutorialSchema } from './lib/tutorial_schema';
+import {
+  ScopedTutorialContextFactory,
+  TutorialContextFactory,
+  TutorialProvider,
+} from './lib/tutorials_registry_types';
 
 export class TutorialsRegistry {
   private tutorialProviders: TutorialProvider[] = []; // pre-register all the tutorials we know we want in here
@@ -97,7 +98,7 @@ export class TutorialsRegistry {
     // pre-populate with built in tutorials
     // TODO: [RENAMEME] Need prod urls.
     // https://github.com/opensearch-project/OpenSearch-Dashboards/issues/335
-    // this.tutorialProviders.push(...builtInTutorials);
+    this.tutorialProviders.push(...builtInTutorials);
     return {};
   }
 }
