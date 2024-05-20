@@ -5,9 +5,7 @@
 
 import {
   EuiCard,
-  EuiFlexGroup,
   EuiFlexItem,
-  EuiHorizontalRule,
   EuiIcon,
   EuiPage,
   EuiPageBody,
@@ -22,6 +20,7 @@ import {
 } from '@elastic/eui';
 import React from 'react';
 import { getServices } from '../../opensearch_dashboards_services';
+import { ObservabilityTutorialSection } from './observability_section';
 
 interface TutorialHomeProps {
   homeId: string;
@@ -133,21 +132,21 @@ export const TutorialHome = ({ homeId }: TutorialHomeProps) => {
     window.location.href = path;
   };
 
-  const cardNodes = Object.keys(cards).map(function (item, index) {
-    return (
-      <EuiFlexItem key={index}>
-        <EuiCard
-          icon={<EuiIcon size="xxl" type={cards[item].iconType} />}
-          title={cards[item].title}
-          description={cards[item].description}
-          selectable={{
-            onClick: () => redirecToTutorialsHome(cards[item].title.toLowerCase()),
-            isSelected: homeId === cards[item].title.toLowerCase(),
-          }}
-        />
-      </EuiFlexItem>
-    );
-  });
+  // const cardNodes = Object.keys(cards).map(function (item, index) {
+  //   return (
+  //     <EuiFlexItem key={index}>
+  //       <EuiCard
+  //         icon={<EuiIcon size="xxl" type={cards[item].iconType} />}
+  //         title={cards[item].title}
+  //         description={cards[item].description}
+  //         selectable={{
+  //           onClick: () => redirecToTutorialsHome(cards[item].title.toLowerCase()),
+  //           isSelected: homeId === cards[item].title.toLowerCase(),
+  //         }}
+  //       />
+  //     </EuiFlexItem>
+  //   );
+  // });
 
   function capitalizeFirstLetter(str: string): string {
     return str.charAt(0).toUpperCase() + str.slice(1);
@@ -159,7 +158,7 @@ export const TutorialHome = ({ homeId }: TutorialHomeProps) => {
         <EuiPageHeader>
           <EuiPageHeaderSection>
             <EuiTitle size="l">
-              <h1>Getting started</h1>
+              <h1>Getting started with {capitalizeFirstLetter(homeId)}</h1>
             </EuiTitle>
           </EuiPageHeaderSection>
         </EuiPageHeader>
@@ -167,10 +166,7 @@ export const TutorialHome = ({ homeId }: TutorialHomeProps) => {
           <EuiPageContentHeader>
             <EuiPageContentHeaderSection>
               <EuiTitle size="s">
-                <h3>
-                  Tutorials
-                  {/* <span className="panel-header-count"> ({customPanels.length})</span> */}
-                </h3>
+                <h3>Tutorials</h3>
               </EuiTitle>
               <EuiSpacer size="s" />
               <EuiText size="s" color="subdued">
@@ -180,19 +176,13 @@ export const TutorialHome = ({ homeId }: TutorialHomeProps) => {
               </EuiText>
             </EuiPageContentHeaderSection>
           </EuiPageContentHeader>
-          <EuiHorizontalRule margin="m" />
-          <EuiFlexGroup wrap direction="row" alignItems="stretch">
+          {/* <EuiHorizontalRule margin="m" /> */}
+          {/* <EuiFlexGroup wrap direction="row" alignItems="stretch">
             {cardNodes}
-          </EuiFlexGroup>
+          </EuiFlexGroup> */}
           <EuiSpacer size="l" />
 
-          <EuiText>
-            <h4>{capitalizeFirstLetter(homeId)} guides</h4>
-          </EuiText>
-          <EuiHorizontalRule margin="m" />
-          <EuiFlexGroup direction="row" alignItems="center">
-            {childCardNodes}
-          </EuiFlexGroup>
+          <ObservabilityTutorialSection homeId={homeId} />
         </EuiPageContent>
       </EuiPageBody>
     </EuiPage>
