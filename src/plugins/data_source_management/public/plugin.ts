@@ -37,6 +37,7 @@ import {
   getDefaultDataSourceId$,
 } from './components/utils';
 import { DataSourceSelectionService } from './service/data_source_selection_service';
+import { catalogRequestIntercept } from '../framework/catlog_cache/cache_intercept';
 
 export interface DataSourceManagementSetupDependencies {
   management: ManagementSetup;
@@ -226,6 +227,9 @@ export class DataSourceManagementPlugin
   public start(core: CoreStart) {
     this.started = true;
     setApplication(core.application);
+    core.http.intercept({
+      request: catalogRequestIntercept(),
+    });
     return {
       getAuthenticationMethodRegistry: () => this.authMethodsRegistry,
     };
