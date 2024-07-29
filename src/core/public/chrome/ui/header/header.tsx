@@ -74,6 +74,7 @@ import { CollapsibleNavGroupEnabled } from './collapsible_nav_group_enabled';
 import { ChromeNavGroupServiceStartContract, NavGroupItemInMap } from '../../nav_group';
 import { RecentItems } from './recent_items';
 import { WorkspaceObject } from '../../../../public/workspace';
+import { HeaderControls } from './header_controls';
 
 export interface HeaderProps {
   opensearchDashboardsVersion: string;
@@ -231,6 +232,10 @@ export function Header({
 
               <EuiHeaderSectionItem border="right">
                 <HeaderNavControls side="left" navControls$={observables.navControlsLeft$} />
+              </EuiHeaderSectionItem>
+
+              <EuiHeaderSectionItem border="right">
+                <HeaderControls side="Left" controls$={application.currentLeftControls$} />
               </EuiHeaderSectionItem>
 
               <EuiHeaderSectionItem border="right">

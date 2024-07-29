@@ -37,8 +37,8 @@ import { HeaderExtension } from './header_extension';
 
 interface Props {
   navControls$: Observable<readonly ChromeNavControl[]>;
-  side?: 'left' | 'right';
-  className?: HTMLElement['className'];
+    side?: 'left' | 'right';
+    className?: HTMLElement['className'];
 }
 
 export function HeaderNavControls({ navControls$, side, className }: Props) {

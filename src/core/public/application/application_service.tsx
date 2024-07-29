@@ -104,6 +104,7 @@ interface AppUpdaterWrapper {
 interface AppInternalState {
   leaveHandler?: AppLeaveHandler;
   actionMenu?: MountPoint;
+  leftControls?: MountPoint;
 }
 
 /**
@@ -117,6 +118,7 @@ export class ApplicationService {
   private readonly appInternalStates = new Map<string, AppInternalState>();
   private currentAppId$ = new BehaviorSubject<string | undefined>(undefined);
   private currentActionMenu$ = new BehaviorSubject<MountPoint | undefined>(undefined);
+  private currentLeftControls$ = new BehaviorSubject<MountPoint | undefined>(undefined);
   private readonly statusUpdaters$ = new BehaviorSubject<Map<symbol, AppUpdaterWrapper>>(new Map());
   private readonly subscriptions: Subscription[] = [];
   private stop$ = new Subject();
@@ -306,6 +308,15 @@ export class ApplicationService {
         distinctUntilChanged(),
         takeUntil(this.stop$)
       ),
+      currentLeftControls$: this.currentLeftControls$.pipe(
+        distinctUntilChanged(),
+        takeUntil(this.stop$)
+      ),
+      setAppLeftControls: (mount: MountPoint | undefined) => {
+        const currentAppId = this.currentAppId$.value;
+        if (!currentAppId) return;
+        this.setAppLeftControls(currentAppId, mount);
+      },
       history: this.history!,
       registerMountContext: this.mountContext.registerContext,
       getUrlForApp: (
@@ -339,6 +350,7 @@ export class ApplicationService {
             appStatuses$={applicationStatuses$}
             setAppLeaveHandler={this.setAppLeaveHandler}
             setAppActionMenu={this.setAppActionMenu}
+            setAppLeftControls={this.setAppLeftControls}
             setIsMounting={(isMounting) => httpLoadingCount$.next(isMounting ? 1 : 0)}
           />
         );
@@ -365,6 +377,20 @@ export class ApplicationService {
     const appId = this.currentAppId$.getValue();
     const currentActionMenu = appId ? this.appInternalStates.get(appId)?.actionMenu : undefined;
     this.currentActionMenu$.next(currentActionMenu);
+  };
+
+  private setAppLeftControls = (appPath: string, mount: MountPoint | undefined) => {
+    this.appInternalStates.set(appPath, {
+      ...(this.appInternalStates.get(appPath) ?? {}),
+      leftControls: mount,
+    });
+    this.refreshCurrentLeftControls();
+  };
+
+  private refreshCurrentLeftControls = () => {
+    const appId = this.currentAppId$.getValue();
+    const currentLeftControls = appId ? this.appInternalStates.get(appId)?.leftControls : undefined;
+    this.currentLeftControls$.next(currentLeftControls);
   };
 
   private async shouldNavigate(overlays: OverlayStart): Promise<boolean> {
@@ -402,6 +428,7 @@ export class ApplicationService {
     this.stop$.next();
     this.currentAppId$.complete();
     this.currentActionMenu$.complete();
+    this.currentLeftControls$.complete();
     this.statusUpdaters$.complete();
     this.subscriptions.forEach((sub) => sub.unsubscribe());
     window.removeEventListener('beforeunload', this.onBeforeUnload);

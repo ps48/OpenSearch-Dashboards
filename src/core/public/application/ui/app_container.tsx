@@ -52,6 +52,7 @@ interface Props {
   appStatus: AppStatus;
   setAppLeaveHandler: (appId: string, handler: AppLeaveHandler) => void;
   setAppActionMenu: (appId: string, mount: MountPoint | undefined) => void;
+  setAppLeftControls: (appPath: string, mount: MountPoint | undefined) => void;
   createScopedHistory: (appUrl: string) => ScopedHistory;
   setIsMounting: (isMounting: boolean) => void;
 }
@@ -62,6 +63,7 @@ export const AppContainer: FunctionComponent<Props> = ({
   appPath,
   setAppLeaveHandler,
   setAppActionMenu,
+  setAppLeftControls,
   createScopedHistory,
   appStatus,
   setIsMounting,
@@ -99,6 +101,7 @@ export const AppContainer: FunctionComponent<Props> = ({
             element: elementRef.current!,
             onAppLeave: (handler) => setAppLeaveHandler(appId, handler),
             setHeaderActionMenu: (menuMount) => setAppActionMenu(appId, menuMount),
+            setHeaderLeftControls: (menuMount) => setAppLeftControls(appPath, menuMount),
           })) || null;
       } catch (e) {
         // TODO: add error UI

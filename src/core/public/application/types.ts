@@ -535,6 +535,7 @@ export interface AppMountParameters<HistoryLocationState = unknown> {
    * ```
    */
   setHeaderActionMenu: (menuMount: MountPoint | undefined) => void;
+  setHeaderLeftControls: (menuMount: MountPoint | undefined) => void;
   /**
    * Optional datasource id to pass while mounting app
    */
@@ -828,6 +829,8 @@ export interface ApplicationStart {
    * An observable that emits the current application id and each subsequent id update.
    */
   currentAppId$: Observable<string | undefined>;
+
+  setAppLeftControls: (mount: MountPoint | undefined) => void;
 }
 
 /** @internal */
@@ -857,6 +860,7 @@ export interface InternalApplicationStart extends Omit<ApplicationStart, 'regist
    * @internal
    */
   currentActionMenu$: Observable<MountPoint | undefined>;
+  currentLeftControls$: Observable<MountPoint | undefined>;
 
   /**
    * The global history instance, exposed only to Core.

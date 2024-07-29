@@ -45,6 +45,7 @@ interface Props {
   appStatuses$: Observable<Map<string, AppStatus>>;
   setAppLeaveHandler: (appId: string, handler: AppLeaveHandler) => void;
   setAppActionMenu: (appId: string, mount: MountPoint | undefined) => void;
+  setAppLeftControls: (appPath: string, mount: MountPoint | undefined) => void;
   setIsMounting: (isMounting: boolean) => void;
 }
 
@@ -57,6 +58,7 @@ export const AppRouter: FunctionComponent<Props> = ({
   mounters,
   setAppLeaveHandler,
   setAppActionMenu,
+  setAppLeftControls,
   appStatuses$,
   setIsMounting,
 }) => {
@@ -79,7 +81,7 @@ export const AppRouter: FunctionComponent<Props> = ({
                 appPath={path}
                 appStatus={appStatuses.get(appId) ?? AppStatus.inaccessible}
                 createScopedHistory={createScopedHistory}
-                {...{ appId, mounter, setAppLeaveHandler, setAppActionMenu, setIsMounting }}
+                {...{ appId, mounter, setAppLeaveHandler, setAppLeftControls, setAppActionMenu, setIsMounting }}
               />
             )}
           />
@@ -101,7 +103,7 @@ export const AppRouter: FunctionComponent<Props> = ({
                 appId={id ?? appId}
                 appStatus={appStatuses.get(appId) ?? AppStatus.inaccessible}
                 createScopedHistory={createScopedHistory}
-                {...{ mounter, setAppLeaveHandler, setAppActionMenu, setIsMounting }}
+                {...{ mounter, setAppLeaveHandler, setAppLeftControls, setAppActionMenu, setIsMounting }}
               />
             );
           }}

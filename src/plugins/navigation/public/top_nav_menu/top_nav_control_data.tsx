@@ -28,40 +28,24 @@
  * under the License.
  */
 
-import React from 'react';
-import { I18nStart } from 'opensearch-dashboards/public';
-import { DataPublicPluginStart } from 'src/plugins/data/public';
-import { TopNavMenuProps, TopNavMenu } from './top_nav_menu';
-import { RegisteredTopNavMenuData } from './top_nav_menu_data';
-import { HeaderControls, TopNavControlsProps } from './top_nav_controls';
+import { EuiButtonProps } from '@elastic/eui';
+import { EuiIconType } from '@elastic/eui/src/components/icon/icon';
 
-export function createTopNav(
-  data: DataPublicPluginStart,
-  extraConfig: RegisteredTopNavMenuData[],
-  i18n: I18nStart
-) {
-  return (props: TopNavMenuProps) => {
-    const relevantConfig = extraConfig.filter(
-      (dataItem) => dataItem.appName === undefined || dataItem.appName === props.appName
-    );
-    const config = (props.config || []).concat(relevantConfig);
+export type TopNavControlAction = (anchorElement: HTMLElement) => void;
 
-    return (
-      <i18n.Context>
-        <TopNavMenu {...props} data={data} config={config} />
-      </i18n.Context>
-    );
-  };
+interface TopNavControlCommonData {
+  id?: string;
+  label: string;
+  testId?: string;
+  className?: string;
+  fill?: boolean;
+  isDisabled?: boolean | (() => boolean);
+  tooltip?: string | (() => string | undefined);
+  ariaLabel?: string;
+  emphasize?: boolean;
+  iconType?: EuiIconType;
+  iconSide?: EuiButtonProps['iconSide'];
 }
 
-export function createTopNavControl(
-  i18n: I18nStart
-) {
-  return (props: TopNavControlsProps) => {
-    return (
-      <i18n.Context>
-        <HeaderControls {...props} />
-      </i18n.Context>
-    );
-  };
-}
+export type TopNavControlData = TopNavControlCommonData &
+  ({ href?: string } | { run?: TopNavControlAction });
