@@ -1,0 +1,25 @@
+.headerBreadCrumbs {
+  margin-left: 0px;
+
+  .euiBreadcrumbWall {
+    background-image: none; // Removes any background image
+  }
+  .euiBreadcrumbWrapper {
+    padding-left: 15px;
+    padding-right: 5px;
+  }
+
+  .euiBreadcrumbWrapper.euiBreadcrumbWrapper--last::before {
+    content: '/';
+    background-color: transparent;
+    padding-top: 1px;
+    color: #a5a5a5;
+  }
+
+  .euiBreadcrumbWrapper:not(.euiBreadcrumbWrapper--last)::before {
+    content: '/';
+    background-color: transparent;
+    padding-top: 1px;
+    color: #a5a5a5;
+  }
+}

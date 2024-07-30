@@ -246,7 +246,7 @@ export function Header({
               </EuiHeaderSectionItem>
               {/* Only display recent items when navGroup is enabled */}
               {navGroupEnabled && (
-                <EuiHeaderSectionItem border="right">
+                <EuiHeaderSectionItem>
                   <RecentItems
                     recentlyAccessed$={observables.recentlyAccessed$}
                     workspaceList$={observables.workspaceList$}
@@ -262,6 +262,7 @@ export function Header({
               appTitle$={observables.appTitle$}
               breadcrumbs$={observables.breadcrumbs$}
               breadcrumbsEnricher$={observables.breadcrumbsEnricher$}
+              navGroupEnabled={navGroupEnabled}
             />
 
             <EuiHeaderSectionItem border="none">
