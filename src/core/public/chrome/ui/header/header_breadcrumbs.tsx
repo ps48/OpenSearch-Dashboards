@@ -75,5 +75,8 @@ export function HeaderBreadcrumbs({ appTitle$, breadcrumbs$, breadcrumbsEnricher
     ),
   }));
 
+  // Removes the last element in the breadcrumbs
+  crumbs.splice(-1);
+
   return <EuiHeaderBreadcrumbs breadcrumbs={crumbs} max={10} data-test-subj="breadcrumbs" />;
 }

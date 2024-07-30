@@ -28,37 +28,36 @@
  * under the License.
  */
 
-import { EuiBreadcrumb, IconType } from '@elastic/eui';
-import React from 'react';
+import { EuiBreadcrumb, EuiLink, IconType } from '@elastic/eui';
 import { FormattedMessage } from '@osd/i18n/react';
+import React from 'react';
 import { BehaviorSubject, combineLatest, merge, Observable, of, ReplaySubject } from 'rxjs';
 import { flatMap, map, takeUntil } from 'rxjs/operators';
-import { EuiLink } from '@elastic/eui';
-import { mountReactNode } from '../utils/mount';
+import { Branding, WorkspacesStart } from '../';
+import { getLogos } from '../../common';
+import type { Logos } from '../../common/types';
 import { InternalApplicationStart } from '../application';
 import { DocLinksStart } from '../doc_links';
 import { HttpStart } from '../http';
 import { InjectedMetadataStart } from '../injected_metadata';
 import { NotificationsStart } from '../notifications';
+import { OverlayStart } from '../overlays';
 import { IUiSettingsClient } from '../ui_settings';
+import { mountReactNode } from '../utils/mount';
 import { OPENSEARCH_DASHBOARDS_ASK_OPENSEARCH_LINK } from './constants';
 import { ChromeDocTitle, DocTitleService } from './doc_title';
 import { ChromeNavControls, NavControlsService } from './nav_controls';
-import { ChromeNavLinks, NavLinksService, ChromeNavLink } from './nav_links';
-import { ChromeRecentlyAccessed, RecentlyAccessedService } from './recently_accessed';
-import { Header } from './ui';
-import { ChromeHelpExtensionMenuLink } from './ui/header/header_help_menu';
-import { Branding, WorkspacesStart } from '../';
-import { getLogos } from '../../common';
-import type { Logos } from '../../common/types';
-import { OverlayStart } from '../overlays';
 import {
   ChromeNavGroupService,
   ChromeNavGroupServiceSetupContract,
   ChromeNavGroupServiceStartContract,
 } from './nav_group';
+import { ChromeNavLink, ChromeNavLinks, NavLinksService } from './nav_links';
+import { ChromeRecentlyAccessed, RecentlyAccessedService } from './recently_accessed';
+import { Header } from './ui';
+import { ChromeHelpExtensionMenuLink } from './ui/header/header_help_menu';
 
-export { ChromeNavControls, ChromeRecentlyAccessed, ChromeDocTitle };
+export { ChromeDocTitle, ChromeNavControls, ChromeRecentlyAccessed };
 
 const IS_LOCKED_KEY = 'core.chrome.isLocked';
 

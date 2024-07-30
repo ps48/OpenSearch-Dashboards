@@ -3,28 +3,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import './collapsible_nav_group_enabled.scss';
 import {
   EuiFlexItem,
   EuiFlyout,
-  EuiSideNavItemType,
-  EuiSideNav,
-  EuiPanel,
-  EuiText,
   EuiHorizontalRule,
+  EuiPanel,
+  EuiSideNav,
+  EuiSideNavItemType,
+  EuiText,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
+import classNames from 'classnames';
 import React, { useMemo } from 'react';
 import useObservable from 'react-use/lib/useObservable';
 import * as Rx from 'rxjs';
-import classNames from 'classnames';
 import { ChromeNavControl, ChromeNavLink } from '../..';
+import { ALL_USE_CASE_ID, DEFAULT_APP_CATEGORIES } from '../../../../../core/utils';
+import type { Logos } from '../../../../common/types';
 import { AppCategory, NavGroupStatus } from '../../../../types';
 import { InternalApplicationStart } from '../../../application/types';
 import { HttpStart } from '../../../http';
-import { OnIsLockedUpdate } from './';
-import { createEuiListItem } from './nav_link';
-import type { Logos } from '../../../../common/types';
 import {
   ChromeNavGroupServiceStartContract,
   ChromeRegistrationNavLink,
@@ -36,9 +34,11 @@ import {
   LinkItem,
   LinkItemType,
 } from '../../utils';
-import { ALL_USE_CASE_ID, DEFAULT_APP_CATEGORIES } from '../../../../../core/utils';
+import { OnIsLockedUpdate } from './';
+import './collapsible_nav_group_enabled.scss';
 import { CollapsibleNavTop } from './collapsible_nav_group_enabled_top';
 import { HeaderNavControls } from './header_nav_controls';
+import { createEuiListItem } from './nav_link';
 
 export interface CollapsibleNavGroupEnabledProps {
   appId$: InternalApplicationStart['currentAppId$'];
@@ -311,7 +311,6 @@ export function CollapsibleNavGroupEnabled({
         defaultMessage: 'Primary',
       })}
       type="push"
-      onClose={closeNav}
       outsideClickCloses={false}
       className="context-nav-wrapper"
       size={width}

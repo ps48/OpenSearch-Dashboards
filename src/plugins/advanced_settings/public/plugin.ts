@@ -30,12 +30,11 @@
 
 import { i18n } from '@osd/i18n';
 import { AppMountParameters, CoreSetup, CoreStart, Plugin } from 'opensearch-dashboards/public';
+import { AppNavLinkStatus, DEFAULT_NAV_GROUPS, WorkspaceAvailability } from '../../../core/public';
 import { FeatureCatalogueCategory } from '../../home/public';
-import { ComponentRegistry } from './component_registry';
-import { AdvancedSettingsSetup, AdvancedSettingsStart, AdvancedSettingsPluginSetup } from './types';
-import { setupTopNavThemeButton } from './register_nav_control';
-import { DEFAULT_NAV_GROUPS, AppNavLinkStatus, WorkspaceAvailability } from '../../../core/public';
 import { getScopedBreadcrumbs } from '../../opensearch_dashboards_react/public';
+import { ComponentRegistry } from './component_registry';
+import { AdvancedSettingsPluginSetup, AdvancedSettingsSetup, AdvancedSettingsStart } from './types';
 
 const component = new ComponentRegistry();
 
@@ -122,7 +121,7 @@ export class AdvancedSettingsPlugin
   public start(core: CoreStart) {
     const enableUserControl = core.uiSettings.get('theme:enableUserControl');
     if (enableUserControl) {
-      setupTopNavThemeButton(core);
+      // setupTopNavThemeButton(core);
     }
 
     return {
