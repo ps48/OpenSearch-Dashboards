@@ -45,6 +45,8 @@ interface TopNavControlCommonData {
   emphasize?: boolean;
   iconType?: EuiIconType;
   iconSide?: EuiButtonProps['iconSide'];
+  isLoading?: boolean;
+  color?: EuiButtonProps['color'];
 }
 
 export type TopNavControlData = TopNavControlCommonData &

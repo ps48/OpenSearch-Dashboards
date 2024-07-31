@@ -28,21 +28,22 @@
  * under the License.
  */
 
+import { mount } from 'enzyme';
 import React from 'react';
 import { act } from 'react-dom/test-utils';
-import { mount } from 'enzyme';
 import { mountWithIntl } from 'test_utils/enzyme_helpers';
 
-import { AppContainer } from './app_container';
-import { Mounter, AppMountParameters, AppStatus } from '../types';
 import { createMemoryHistory } from 'history';
 import { ScopedHistory } from '../scoped_history';
+import { AppMountParameters, AppStatus, Mounter } from '../types';
+import { AppContainer } from './app_container';
 
 describe('AppContainer', () => {
   const appId = 'someApp';
   const setAppLeaveHandler = jest.fn();
   const setAppActionMenu = jest.fn();
   const setIsMounting = jest.fn();
+  const setAppLeftControls = jest.fn();
 
   beforeEach(() => {
     setAppLeaveHandler.mockClear();
@@ -89,6 +90,7 @@ describe('AppContainer', () => {
         mounter={mounter}
         setAppLeaveHandler={setAppLeaveHandler}
         setAppActionMenu={setAppActionMenu}
+        setAppLeftControls={setAppLeftControls}
         setIsMounting={setIsMounting}
         createScopedHistory={(appPath: string) =>
           // Create a history using the appPath as the current location
@@ -130,6 +132,7 @@ describe('AppContainer', () => {
         mounter={mounter}
         setAppLeaveHandler={setAppLeaveHandler}
         setAppActionMenu={setAppActionMenu}
+        setAppLeftControls={setAppLeftControls}
         setIsMounting={setIsMounting}
         createScopedHistory={(appPath: string) =>
           // Create a history using the appPath as the current location
@@ -172,6 +175,7 @@ describe('AppContainer', () => {
         mounter={mounter}
         setAppLeaveHandler={setAppLeaveHandler}
         setAppActionMenu={setAppActionMenu}
+        setAppLeftControls={setAppLeftControls}
         setIsMounting={setIsMounting}
         createScopedHistory={(appPath: string) =>
           // Create a history using the appPath as the current location

@@ -28,14 +28,14 @@
  * under the License.
  */
 
+import { createHashHistory, createMemoryHistory, History } from 'history';
 import React from 'react';
 import { BehaviorSubject } from 'rxjs';
-import { createMemoryHistory, History, createHashHistory } from 'history';
 
-import { AppRouter, AppNotFound } from '../ui';
 import { MockedMounterMap, MockedMounterTuple } from '../test_types';
-import { createRenderer, createAppMounter, getUnmounter } from './utils';
 import { AppStatus } from '../types';
+import { AppNotFound, AppRouter } from '../ui';
+import { createAppMounter, createRenderer, getUnmounter } from './utils';
 
 describe('AppRouter', () => {
   let mounters: MockedMounterMap;
@@ -70,6 +70,7 @@ describe('AppRouter', () => {
         appStatuses$={mountersToAppStatus$()}
         setAppLeaveHandler={noop}
         setAppActionMenu={noop}
+        setAppLeftControls={noop}
         setIsMounting={noop}
       />
     );

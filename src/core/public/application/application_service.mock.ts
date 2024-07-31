@@ -33,14 +33,14 @@ import { BehaviorSubject, Subject } from 'rxjs';
 
 import type { MountPoint } from '../types';
 import { capabilitiesServiceMock } from './capabilities/capabilities_service.mock';
+import { ApplicationServiceContract } from './test_types';
 import {
   ApplicationSetup,
-  InternalApplicationStart,
   ApplicationStart,
   InternalApplicationSetup,
+  InternalApplicationStart,
   PublicAppInfo,
 } from './types';
-import { ApplicationServiceContract } from './test_types';
 
 const createSetupContractMock = (): jest.Mocked<ApplicationSetup> => ({
   register: jest.fn(),
@@ -59,11 +59,12 @@ const createStartContractMock = (): jest.Mocked<ApplicationStart> => {
 
   return {
     applications$: new BehaviorSubject<Map<string, PublicAppInfo>>(new Map()),
-    currentAppId$: currentAppId$.asObservable(),
     capabilities: capabilitiesServiceMock.createStartContract().capabilities,
-    navigateToApp: jest.fn(),
-    navigateToUrl: jest.fn(),
+    currentAppId$: currentAppId$.asObservable(),
+    setAppLeftControls: jest.fn(),
     getUrlForApp: jest.fn(),
+    navigateToApp: jest.fn().mockImplementation((appId) => currentAppId$.next(appId)),
+    navigateToUrl: jest.fn(),
     registerMountContext: jest.fn(),
   };
 };
@@ -98,6 +99,8 @@ const createInternalStartContractMock = (): jest.Mocked<InternalApplicationStart
     capabilities: capabilitiesServiceMock.createStartContract().capabilities,
     currentAppId$: currentAppId$.asObservable(),
     currentActionMenu$: new BehaviorSubject<MountPoint | undefined>(undefined),
+    currentLeftControls$: new BehaviorSubject<MountPoint | undefined>(undefined),
+    setAppLeftControls: jest.fn(),
     getComponent: jest.fn(),
     getUrlForApp: jest.fn(),
     navigateToApp: jest.fn().mockImplementation((appId) => currentAppId$.next(appId)),

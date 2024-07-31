@@ -28,23 +28,19 @@
  * under the License.
  */
 
+import { EuiButton, EuiToolTip } from '@elastic/eui';
 import { upperFirst } from 'lodash';
 import React, { MouseEvent } from 'react';
-import { EuiToolTip, EuiButton } from '@elastic/eui';
 import { TopNavControlData } from './top_nav_control_data';
 
 export function TopNavControlItem(props: TopNavControlData) {
   function isDisabled(): boolean {
-    const val = typeof props.isDisabled === 'function'
-      ? props.isDisabled()
-      : props.isDisabled;
+    const val = typeof props.isDisabled === 'function' ? props.isDisabled() : props.isDisabled;
     return val || false;
   }
 
   function getTooltip(): string {
-    const val = typeof props.tooltip === 'function'
-      ? props.tooltip()
-      : props.tooltip;
+    const val = typeof props.tooltip === 'function' ? props.tooltip() : props.tooltip;
     return val || '';
   }
 
@@ -61,6 +57,8 @@ export function TopNavControlItem(props: TopNavControlData) {
     'data-test-subj': props.testId,
     className: props.className,
     'aria-label': props.ariaLabel,
+    isLoading: props.isLoading,
+    color: props.color,
   };
 
   if (props.href) {
