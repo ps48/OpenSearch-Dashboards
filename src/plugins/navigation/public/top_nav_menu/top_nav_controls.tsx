@@ -32,21 +32,19 @@ import React, { ReactElement } from 'react';
 import { EuiHeaderLinks } from '@elastic/eui';
 import classNames from 'classnames';
 
-import { MountPointPortal } from '../../../opensearch_dashboards_react/public';
 import { MountPoint } from 'opensearch-dashboards/public';
+import { MountPointPortal } from '../../../opensearch_dashboards_react/public';
 import { TopNavControlItem } from './top_nav_control_item';
 import { TopNavControlData } from './top_nav_control_data';
 
-export type TopNavControlsProps = {
+export interface HeaderControlProps {
   controls?: TopNavControlData[];
   className?: string;
   setMountPoint?: (menuMount: MountPoint | undefined) => void;
-};
+}
 
-export function HeaderControls(props: TopNavControlsProps): ReactElement | null {
-  const {
-    controls,
-  } = props;
+export function HeaderControl(props: HeaderControlProps): ReactElement | null {
+  const { controls } = props;
 
   if (!Array.isArray(controls) || controls.length === 0) {
     return null;
@@ -70,13 +68,9 @@ export function HeaderControls(props: TopNavControlsProps): ReactElement | null 
     const { setMountPoint } = props;
     const menuClassName = classNames('osdTopControls', props.className);
 
-    return setMountPoint
-      ? (
-        <MountPointPortal setMountPoint={setMountPoint}>
-          {renderMenu(menuClassName)}
-        </MountPointPortal>
-      )
-      : null;
+    return setMountPoint ? (
+      <MountPointPortal setMountPoint={setMountPoint}>{renderMenu(menuClassName)}</MountPointPortal>
+    ) : null;
   }
 
   return renderLayout();

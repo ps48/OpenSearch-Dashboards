@@ -70,7 +70,7 @@ import './header.scss';
 import { HeaderActionMenu } from './header_action_menu';
 import { HeaderBadge } from './header_badge';
 import { HeaderBreadcrumbs } from './header_breadcrumbs';
-import { HeaderControls } from './header_controls';
+import { HeaderControl } from './header_controls';
 import { HeaderHelpMenu } from './header_help_menu';
 import { HeaderLogo } from './header_logo';
 import { HeaderNavControls } from './header_nav_controls';
@@ -295,11 +295,14 @@ export function Header({
 
                   {/* new top nav controls left */}
                   <EuiHeaderSectionItem border="none">
-                    <HeaderControls side="Left" controls$={application.currentLeftControls$} />
+                    <HeaderControl
+                      data-test-subj="headerLeftControl"
+                      controls$={application.currentLeftControls$}
+                    />
                   </EuiHeaderSectionItem>
 
-                  {/* nav controls center right*/}
-                  {/* contains security item and appearence item */}
+                  {/* nav controls center right */}
+                  {/* contains security item and appearance item */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderNavControls side="right" navControls$={observables.navControlsRight$} />
                   </EuiHeaderSectionItem>

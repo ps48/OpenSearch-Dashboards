@@ -186,6 +186,11 @@ function createAppMountParametersMock(appBasePath = '') {
     onAppLeave: jest.fn(),
     setHeaderActionMenu: jest.fn(),
     setHeaderLeftControls: jest.fn(),
+    setHeaderCenterControls: jest.fn(),
+    setHeaderRightControls: jest.fn(),
+    setHeaderBadgeControls: jest.fn(),
+    setHeaderDescriptionControls: jest.fn(),
+    setHeaderBottomControls: jest.fn(),
   };
 
   return params;

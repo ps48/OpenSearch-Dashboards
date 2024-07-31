@@ -59,7 +59,7 @@ export class NavigationPublicPlugin
     return {
       ui: {
         TopNavMenu: createTopNav(data, extensions, i18n),
-        HeaderControls: createTopNavControl(i18n),
+        HeaderControl: createTopNavControl(i18n),
       },
     };
   }

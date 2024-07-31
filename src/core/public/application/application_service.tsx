@@ -59,6 +59,7 @@ import {
 import { getLeaveAction, isConfirmAction } from './application_leave';
 import { appendAppPath, parseAppUrl, relativeToAbsolute, getAppInfo } from './utils';
 import { WorkspacesStart } from '../workspace';
+import { HeaderControlsContainer } from '../chrome/constants';
 
 interface SetupDeps {
   context: ContextSetup;
@@ -105,6 +106,11 @@ interface AppInternalState {
   leaveHandler?: AppLeaveHandler;
   actionMenu?: MountPoint;
   leftControls?: MountPoint;
+  centerControls?: MountPoint;
+  rightControls?: MountPoint;
+  badgeControls?: MountPoint;
+  descriptionControls?: MountPoint;
+  bottomControls?: MountPoint;
 }
 
 /**
@@ -118,7 +124,15 @@ export class ApplicationService {
   private readonly appInternalStates = new Map<string, AppInternalState>();
   private currentAppId$ = new BehaviorSubject<string | undefined>(undefined);
   private currentActionMenu$ = new BehaviorSubject<MountPoint | undefined>(undefined);
+
+  // HeaderControls
   private currentLeftControls$ = new BehaviorSubject<MountPoint | undefined>(undefined);
+  private currentCenterControls$ = new BehaviorSubject<MountPoint | undefined>(undefined);
+  private currentRightControls$ = new BehaviorSubject<MountPoint | undefined>(undefined);
+  private currentBadgeControls$ = new BehaviorSubject<MountPoint | undefined>(undefined);
+  private currentDescriptionControls$ = new BehaviorSubject<MountPoint | undefined>(undefined);
+  private currentBottomControls$ = new BehaviorSubject<MountPoint | undefined>(undefined);
+
   private readonly statusUpdaters$ = new BehaviorSubject<Map<symbol, AppUpdaterWrapper>>(new Map());
   private readonly subscriptions: Subscription[] = [];
   private stop$ = new Subject();
@@ -308,15 +322,46 @@ export class ApplicationService {
         distinctUntilChanged(),
         takeUntil(this.stop$)
       ),
+
+      // HeaderControls
       currentLeftControls$: this.currentLeftControls$.pipe(
         distinctUntilChanged(),
         takeUntil(this.stop$)
       ),
-      setAppLeftControls: (mount: MountPoint | undefined) => {
-        const currentAppId = this.currentAppId$.value;
-        if (!currentAppId) return;
-        this.setAppLeftControls(currentAppId, mount);
-      },
+      currentCenterControls$: this.currentCenterControls$.pipe(
+        distinctUntilChanged(),
+        takeUntil(this.stop$)
+      ),
+      currentRightControls$: this.currentRightControls$.pipe(
+        distinctUntilChanged(),
+        takeUntil(this.stop$)
+      ),
+      currentBadgeControls$: this.currentDescriptionControls$.pipe(
+        distinctUntilChanged(),
+        takeUntil(this.stop$)
+      ),
+      currentDescriptionControls$: this.currentDescriptionControls$.pipe(
+        distinctUntilChanged(),
+        takeUntil(this.stop$)
+      ),
+      currentBottomControls$: this.currentBottomControls$.pipe(
+        distinctUntilChanged(),
+        takeUntil(this.stop$)
+      ),
+
+      setAppLeftControls: (mount: MountPoint | undefined) =>
+        this.setAppLeftControls(this.currentAppId$.value, mount),
+      setAppCenterControls: (mount: MountPoint | undefined) =>
+        this.setAppCenterControls(this.currentAppId$.value, mount),
+      setAppRightControls: (mount: MountPoint | undefined) =>
+        this.setAppRightControls(this.currentAppId$.value, mount),
+      setAppBadgeControls: (mount: MountPoint | undefined) =>
+        this.setAppBadgeControls(this.currentAppId$.value, mount),
+      setAppDescriptionControls: (mount: MountPoint | undefined) =>
+        this.setAppDescriptionControls(this.currentAppId$.value, mount),
+      setAppBottomControls: (mount: MountPoint | undefined) =>
+        this.setAppBottomControls(this.currentAppId$.value, mount),
+
       history: this.history!,
       registerMountContext: this.mountContext.registerContext,
       getUrlForApp: (
@@ -351,6 +396,11 @@ export class ApplicationService {
             setAppLeaveHandler={this.setAppLeaveHandler}
             setAppActionMenu={this.setAppActionMenu}
             setAppLeftControls={this.setAppLeftControls}
+            setAppCenterControls={this.setAppCenterControls}
+            setAppRightControls={this.setAppRightControls}
+            setAppBadgeControls={this.setAppBadgeControls}
+            setAppDescriptionControls={this.setAppDescriptionControls}
+            setAppBottomControls={this.setAppBottomControls}
             setIsMounting={(isMounting) => httpLoadingCount$.next(isMounting ? 1 : 0)}
           />
         );
@@ -379,18 +429,69 @@ export class ApplicationService {
     this.currentActionMenu$.next(currentActionMenu);
   };
 
-  private setAppLeftControls = (appPath: string, mount: MountPoint | undefined) => {
+  private setAppLeftControls = (appPath: string | undefined, mount: MountPoint | undefined) =>
+    this.setAppControls(appPath, mount, HeaderControlsContainer.LEFT);
+
+  private setAppCenterControls = (appPath: string | undefined, mount: MountPoint | undefined) =>
+    this.setAppControls(appPath, mount, HeaderControlsContainer.CENTER);
+
+  private setAppRightControls = (appPath: string | undefined, mount: MountPoint | undefined) =>
+    this.setAppControls(appPath, mount, HeaderControlsContainer.RIGHT);
+
+  private setAppBadgeControls = (appPath: string | undefined, mount: MountPoint | undefined) =>
+    this.setAppControls(appPath, mount, HeaderControlsContainer.BADGE);
+
+  private setAppDescriptionControls = (
+    appPath: string | undefined,
+    mount: MountPoint | undefined
+  ) => this.setAppControls(appPath, mount, HeaderControlsContainer.DESCRIPTION);
+
+  private setAppBottomControls = (appPath: string | undefined, mount: MountPoint | undefined) =>
+    this.setAppControls(appPath, mount, HeaderControlsContainer.BOTTOM);
+
+  private setAppControls = (
+    appPath: string | undefined,
+    mount: MountPoint | undefined,
+    container: HeaderControlsContainer
+  ) => {
+    if (!appPath) return;
+
     this.appInternalStates.set(appPath, {
       ...(this.appInternalStates.get(appPath) ?? {}),
-      leftControls: mount,
+      [`${container}Controls`]: mount,
     });
-    this.refreshCurrentLeftControls();
+
+    this.refreshCurrentControls(container);
   };
 
-  private refreshCurrentLeftControls = () => {
+  private refreshCurrentControls = (container: HeaderControlsContainer) => {
     const appId = this.currentAppId$.getValue();
-    const currentLeftControls = appId ? this.appInternalStates.get(appId)?.leftControls : undefined;
-    this.currentLeftControls$.next(currentLeftControls);
+    switch (container) {
+      case HeaderControlsContainer.LEFT:
+        return this.currentLeftControls$.next(
+          appId ? this.appInternalStates.get(appId)?.leftControls : undefined
+        );
+      case HeaderControlsContainer.CENTER:
+        return this.currentCenterControls$.next(
+          appId ? this.appInternalStates.get(appId)?.centerControls : undefined
+        );
+      case HeaderControlsContainer.RIGHT:
+        return this.currentRightControls$.next(
+          appId ? this.appInternalStates.get(appId)?.rightControls : undefined
+        );
+      case HeaderControlsContainer.BADGE:
+        return this.currentBadgeControls$.next(
+          appId ? this.appInternalStates.get(appId)?.badgeControls : undefined
+        );
+      case HeaderControlsContainer.DESCRIPTION:
+        return this.currentDescriptionControls$.next(
+          appId ? this.appInternalStates.get(appId)?.descriptionControls : undefined
+        );
+      case HeaderControlsContainer.BOTTOM:
+        return this.currentBottomControls$.next(
+          appId ? this.appInternalStates.get(appId)?.bottomControls : undefined
+        );
+    }
   };
 
   private async shouldNavigate(overlays: OverlayStart): Promise<boolean> {

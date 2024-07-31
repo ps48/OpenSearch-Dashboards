@@ -91,6 +91,11 @@ describe('AppContainer', () => {
         setAppLeaveHandler={setAppLeaveHandler}
         setAppActionMenu={setAppActionMenu}
         setAppLeftControls={setAppLeftControls}
+        setAppCenterControls={setAppLeftControls}
+        setAppRightControls={setAppLeftControls}
+        setAppBadgeControls={setAppLeftControls}
+        setAppDescriptionControls={setAppLeftControls}
+        setAppBottomControls={setAppLeftControls}
         setIsMounting={setIsMounting}
         createScopedHistory={(appPath: string) =>
           // Create a history using the appPath as the current location
@@ -133,6 +138,11 @@ describe('AppContainer', () => {
         setAppLeaveHandler={setAppLeaveHandler}
         setAppActionMenu={setAppActionMenu}
         setAppLeftControls={setAppLeftControls}
+        setAppCenterControls={setAppLeftControls}
+        setAppRightControls={setAppLeftControls}
+        setAppBadgeControls={setAppLeftControls}
+        setAppDescriptionControls={setAppLeftControls}
+        setAppBottomControls={setAppLeftControls}
         setIsMounting={setIsMounting}
         createScopedHistory={(appPath: string) =>
           // Create a history using the appPath as the current location
@@ -176,6 +186,11 @@ describe('AppContainer', () => {
         setAppLeaveHandler={setAppLeaveHandler}
         setAppActionMenu={setAppActionMenu}
         setAppLeftControls={setAppLeftControls}
+        setAppCenterControls={setAppLeftControls}
+        setAppRightControls={setAppLeftControls}
+        setAppBadgeControls={setAppLeftControls}
+        setAppDescriptionControls={setAppLeftControls}
+        setAppBottomControls={setAppLeftControls}
         setIsMounting={setIsMounting}
         createScopedHistory={(appPath: string) =>
           // Create a history using the appPath as the current location

@@ -32,12 +32,15 @@ import React, { FC, useRef, useLayoutEffect, useState } from 'react';
 import { Observable } from 'rxjs';
 import { MountPoint, UnmountCallback } from '../../../types';
 
-interface HeaderControlsProps {
+interface HeaderControlProps {
   controls$: Observable<MountPoint | undefined>;
-  side: 'Left' | 'Right' | 'Center';
+  'data-test-subj'?: string;
 }
 
-export const HeaderControls: FC<HeaderControlsProps> = ({ controls$, side }) => {
+export const HeaderControl: FC<HeaderControlProps> = ({
+  controls$,
+  'data-test-subj': testSubject,
+}) => {
   // useObservable relies on useState under the hood. The signature is type SetStateAction<S> = S | ((prevState: S) => S);
   // As we got a Observable<Function> here, React's setState setter assume he's getting a `(prevState: S) => S` signature,
   // therefore executing the mount method, causing everything to crash.
@@ -65,12 +68,11 @@ export const HeaderControls: FC<HeaderControlsProps> = ({ controls$, side }) => 
       try {
         unmountRef.current = mounter.mount(elementRef.current);
       } catch (e) {
-        // TODO: use client-side logger when feature is implemented
         // eslint-disable-next-line no-console
         console.error(e);
       }
     }
   }, [mounter]);
 
-  return <div data-test-subj={`header${side}Controls`} ref={elementRef} />;
+  return <div data-test-subj={testSubject || 'headerControl'} ref={elementRef} />;
 };

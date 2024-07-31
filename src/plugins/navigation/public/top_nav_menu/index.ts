@@ -30,7 +30,7 @@
 
 export { createTopNav, createTopNavControl } from './create_top_nav_menu';
 export { TopNavMenu, TopNavMenuProps } from './top_nav_menu';
-export { HeaderControls, TopNavControlsProps } from './top_nav_controls';
+export { HeaderControl, HeaderControlProps } from './top_nav_controls';
 export { TopNavMenuData } from './top_nav_menu_data';
 export {
   TopNavMenuExtensionsRegistrySetup,
