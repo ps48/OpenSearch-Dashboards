@@ -208,6 +208,7 @@ export function Header({
 
           {navGroupEnabled ? (
             <div>
+              {/* Primary header */}
               <EuiHeader
                 position="fixed"
                 className="primaryHeader newTopNavHeader"
@@ -238,7 +239,7 @@ export function Header({
                     </EuiHeaderSectionItem>
                   )}
 
-                  {/* recent items */}
+                  {/* Recent items */}
                   {/* Only display recent items when navGroup is enabled */}
                   {navGroupEnabled && (
                     <EuiHeaderSectionItem>
@@ -253,7 +254,7 @@ export function Header({
                   )}
                 </EuiHeaderSection>
 
-                {/* breadcrumbs */}
+                {/* Header breadcrumbs */}
                 <HeaderBreadcrumbs
                   appTitle$={observables.appTitle$}
                   breadcrumbs$={observables.breadcrumbs$}
@@ -262,7 +263,7 @@ export function Header({
                 />
               </EuiHeader>
 
-              {/* Second header */}
+              {/* Secondary header */}
               <EuiHeader className="newTopNavHeader">
                 <EuiHeaderSection side="left">
                   <EuiHeaderSectionItem border="none" className="newTopNavApplicationTitle">
@@ -271,29 +272,29 @@ export function Header({
                     </EuiText>
                   </EuiHeaderSectionItem>
 
-                  {/* nav controls badge */}
+                  {/* Nav controls badge */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderBadge badge$={observables.badge$} />
                   </EuiHeaderSectionItem>
 
-                  {/* nav controls left */}
+                  {/* Nav controls left */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderNavControls side="left" navControls$={observables.navControlsLeft$} />
                   </EuiHeaderSectionItem>
                 </EuiHeaderSection>
 
                 <EuiHeaderSection side="right">
-                  {/* nav controls center*/}
+                  {/* Nav controls center*/}
                   <EuiHeaderSectionItem border="none">
                     <HeaderNavControls navControls$={observables.navControlsCenter$} />
                   </EuiHeaderSectionItem>
 
-                  {/* nav actions menu only for datasources */}
+                  {/* Nav actions menu only for datasources */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderActionMenu actionMenu$={application.currentActionMenu$} />
                   </EuiHeaderSectionItem>
 
-                  {/* new top nav controls left */}
+                  {/* New top Nav controls left */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderControl
                       data-test-subj="headerLeftControl"
@@ -301,8 +302,8 @@ export function Header({
                     />
                   </EuiHeaderSectionItem>
 
-                  {/* nav controls center right */}
-                  {/* contains security item and appearance item */}
+                  {/* Nav controls center right*/}
+                  {/* Contains security item and appearance item */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderNavControls side="right" navControls$={observables.navControlsRight$} />
                   </EuiHeaderSectionItem>
@@ -336,7 +337,7 @@ export function Header({
                   </EuiHeaderSectionItem>
                 )}
 
-                {/* nav controls left */}
+                {/* Nav controls left */}
                 <EuiHeaderSectionItem border="right">
                   <HeaderNavControls side="left" navControls$={observables.navControlsLeft$} />
                 </EuiHeaderSectionItem>
@@ -354,7 +355,7 @@ export function Header({
                   />
                 </EuiHeaderSectionItem>
 
-                {/* recent items */}
+                {/* Recent items */}
                 {/* Only display recent items when navGroup is enabled */}
                 {navGroupEnabled && (
                   <EuiHeaderSectionItem border="right">
@@ -369,35 +370,35 @@ export function Header({
                 )}
               </EuiHeaderSection>
 
-              {/* breadcrumbs */}
+              {/* Header breadcrumbs */}
               <HeaderBreadcrumbs
                 appTitle$={observables.appTitle$}
                 breadcrumbs$={observables.breadcrumbs$}
                 breadcrumbsEnricher$={observables.breadcrumbsEnricher$}
               />
 
-              {/* nav controls badge */}
+              {/* Nav controls badge */}
               <EuiHeaderSectionItem border="none">
                 <HeaderBadge badge$={observables.badge$} />
               </EuiHeaderSectionItem>
 
-              {/* nav actions menu only for datasources */}
+              {/* Nav actions menu only for datasources */}
               <EuiHeaderSection side="right">
                 <EuiHeaderSectionItem border="none">
                   <HeaderActionMenu actionMenu$={application.currentActionMenu$} />
                 </EuiHeaderSectionItem>
 
-                {/* nav controls center*/}
+                {/* Nav controls center*/}
                 <EuiHeaderSectionItem border="left">
                   <HeaderNavControls navControls$={observables.navControlsCenter$} />
                 </EuiHeaderSectionItem>
 
-                {/* nav controls center right*/}
+                {/* Nav controls center right*/}
                 <EuiHeaderSectionItem border="left">
                   <HeaderNavControls side="right" navControls$={observables.navControlsRight$} />
                 </EuiHeaderSectionItem>
 
-                {/* nav help section*/}
+                {/* Nav help section*/}
                 <EuiHeaderSectionItem border="left">
                   <HeaderHelpMenu
                     helpExtension$={observables.helpExtension$}

@@ -69,10 +69,12 @@ export function TopNavControlItem(props: TopNavControlData) {
     elementProps.onClick = handleClick;
   }
 
-  const component = (
+  const component = !props.renderComponent ? (
     <EuiButton size="s" {...elementProps}>
       {upperFirst(props.label || props.id!)}
     </EuiButton>
+  ) : (
+    <>{props.renderComponent}</>
   );
 
   const tooltip = getTooltip();

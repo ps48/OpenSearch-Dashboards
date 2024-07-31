@@ -49,5 +49,6 @@ interface TopNavControlCommonData {
   color?: EuiButtonProps['color'];
 }
 
-export type TopNavControlData = TopNavControlCommonData &
-  ({ href?: string } | { run?: TopNavControlAction });
+export type TopNavControlData =
+  | (TopNavControlCommonData & ({ href?: string } | { run?: TopNavControlAction }))
+  | { renderComponent?: React.ReactElement };
