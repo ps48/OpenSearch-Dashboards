@@ -28,18 +28,20 @@
  * under the License.
  */
 
+import { RecursiveReadonly } from '@osd/utility-types';
+import { createBrowserHistory, History } from 'history';
 import React from 'react';
 import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
-import { map, shareReplay, takeUntil, distinctUntilChanged, filter } from 'rxjs/operators';
-import { createBrowserHistory, History } from 'history';
-import { RecursiveReadonly } from '@osd/utility-types';
+import { distinctUntilChanged, filter, map, shareReplay, takeUntil } from 'rxjs/operators';
 
-import { MountPoint } from '../types';
+import { HeaderControlsContainer } from '../chrome/constants';
+import { ContextSetup, IContextContainer } from '../context';
 import { HttpSetup, HttpStart } from '../http';
 import { OverlayStart } from '../overlays';
-import { ContextSetup, IContextContainer } from '../context';
 import { PluginOpaqueId } from '../plugins';
-import { AppRouter } from './ui';
+import { MountPoint } from '../types';
+import { WorkspacesStart } from '../workspace';
+import { getLeaveAction, isConfirmAction } from './application_leave';
 import { Capabilities, CapabilitiesService } from './capabilities';
 import {
   App,
@@ -56,10 +58,8 @@ import {
   NavigateToAppOptions,
   WorkspaceAvailability,
 } from './types';
-import { getLeaveAction, isConfirmAction } from './application_leave';
-import { appendAppPath, parseAppUrl, relativeToAbsolute, getAppInfo } from './utils';
-import { WorkspacesStart } from '../workspace';
-import { HeaderControlsContainer } from '../chrome/constants';
+import { AppRouter } from './ui';
+import { appendAppPath, getAppInfo, parseAppUrl, relativeToAbsolute } from './utils';
 
 interface SetupDeps {
   context: ContextSetup;
@@ -336,7 +336,7 @@ export class ApplicationService {
         distinctUntilChanged(),
         takeUntil(this.stop$)
       ),
-      currentBadgeControls$: this.currentDescriptionControls$.pipe(
+      currentBadgeControls$: this.currentBadgeControls$.pipe(
         distinctUntilChanged(),
         takeUntil(this.stop$)
       ),

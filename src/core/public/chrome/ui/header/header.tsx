@@ -272,9 +272,25 @@ export function Header({
                     </EuiText>
                   </EuiHeaderSectionItem>
 
+                  {/* New top nav controls badge */}
+                  <EuiHeaderSectionItem border="none">
+                    <HeaderControl
+                      data-test-subj="headerBadgeControl"
+                      controls$={application.currentBadgeControls$}
+                    />
+                  </EuiHeaderSectionItem>
+
                   {/* Nav controls badge */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderBadge badge$={observables.badge$} />
+                  </EuiHeaderSectionItem>
+
+                  {/* New top nav controls left */}
+                  <EuiHeaderSectionItem border="none">
+                    <HeaderControl
+                      data-test-subj="headerLeftControl"
+                      controls$={application.currentLeftControls$}
+                    />
                   </EuiHeaderSectionItem>
 
                   {/* Nav controls left */}
@@ -284,6 +300,14 @@ export function Header({
                 </EuiHeaderSection>
 
                 <EuiHeaderSection side="right">
+                  {/* New top nav controls center */}
+                  <EuiHeaderSectionItem border="none">
+                    <HeaderControl
+                      data-test-subj="headerCenterControl"
+                      controls$={application.currentCenterControls$}
+                    />
+                  </EuiHeaderSectionItem>
+
                   {/* Nav controls center*/}
                   <EuiHeaderSectionItem border="none">
                     <HeaderNavControls navControls$={observables.navControlsCenter$} />
@@ -294,11 +318,11 @@ export function Header({
                     <HeaderActionMenu actionMenu$={application.currentActionMenu$} />
                   </EuiHeaderSectionItem>
 
-                  {/* New top Nav controls left */}
+                  {/* New top nav controls right */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderControl
-                      data-test-subj="headerLeftControl"
-                      controls$={application.currentLeftControls$}
+                      data-test-subj="headerRightControl"
+                      controls$={application.currentRightControls$}
                     />
                   </EuiHeaderSectionItem>
 
@@ -308,6 +332,23 @@ export function Header({
                     <HeaderNavControls side="right" navControls$={observables.navControlsRight$} />
                   </EuiHeaderSectionItem>
                 </EuiHeaderSection>
+              </EuiHeader>
+              <EuiHeader className="newTopNavHeader">
+                {/* New top nav decription */}
+                <EuiHeaderSectionItem border="none">
+                  <HeaderControl
+                    data-test-subj="headerDescriptionControl"
+                    controls$={application.currentDescriptionControls$}
+                  />
+                </EuiHeaderSectionItem>
+
+                {/* New top nav bottom */}
+                <EuiHeaderSectionItem border="none">
+                  <HeaderControl
+                    data-test-subj="headerBottomControl"
+                    controls$={application.currentBottomControls$}
+                  />
+                </EuiHeaderSectionItem>
               </EuiHeader>
             </div>
           ) : (
