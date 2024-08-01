@@ -7,19 +7,28 @@
   .euiBreadcrumbWrapper {
     padding-left: 15px;
     padding-right: 5px;
-  }
 
-  .euiBreadcrumbWrapper.euiBreadcrumbWrapper--last::before {
-    content: '/';
-    background-color: transparent;
-    padding-top: 1px;
-    color: #a5a5a5;
-  }
+    &:not(.euiBreadcrumbWrapper--first)::before {
+      content: '/';
+      background-color: transparent;
+      padding-top: 1px;
+      color: #a5a5a5;
+    }
 
-  .euiBreadcrumbWrapper:not(.euiBreadcrumbWrapper--last)::before {
-    content: '/';
-    background-color: transparent;
-    padding-top: 1px;
-    color: #a5a5a5;
+    &.euiBreadcrumbWrapper--first {
+      padding-left: 0px;
+
+      &::before {
+        background-color: transparent;
+      }
+    }
+
+    .euiLink.euiBreadcrumb {
+      color: #006BB4 !important;
+
+      &:hover {
+        color: #006BB4 !important;
+      }
+    }
   }
 }
