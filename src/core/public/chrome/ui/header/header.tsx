@@ -136,6 +136,11 @@ export function Header({
   const [isNavOpen, setIsNavOpen] = useState(false);
   const sidecarConfig = useObservable(observables.sidecarConfig$, undefined);
   const breadcrumbs = useObservable(observables.breadcrumbs$, []);
+  const currentDescriptionControls = useObservable(
+    application.currentDescriptionControls$,
+    undefined
+  );
+  const currentBottomControls = useObservable(application.currentBottomControls$, undefined);
 
   /**
    * This is a workaround on 2.16 to hide the navigation items within left navigation
@@ -163,7 +168,10 @@ export function Header({
     <>
       <header className={className} data-test-subj="headerGlobalNav">
         <div id="globalHeaderBars">
-          {useExpandedHeader && (
+          {/* Ensure an explicit check for navGroupEnabled. Without this, the useExpandedHeader is rendered 
+              even though when branding sets useExpandedHeader to false in core systems, resulting in an empty header 
+              with a shadow.*/}
+          {!navGroupEnabled && useExpandedHeader && (
             <EuiHeader
               className="expandedHeader"
               theme={expandedHeaderColorScheme}
@@ -300,6 +308,11 @@ export function Header({
                 </EuiHeaderSection>
 
                 <EuiHeaderSection side="right">
+                  {/* Expanded nav controls center */}
+                  <EuiHeaderSectionItem border="none">
+                    <HeaderNavControls navControls$={observables.navControlsExpandedCenter$} />
+                  </EuiHeaderSectionItem>
+
                   {/* New top nav controls center */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderControl
@@ -318,6 +331,11 @@ export function Header({
                     <HeaderActionMenu actionMenu$={application.currentActionMenu$} />
                   </EuiHeaderSectionItem>
 
+                  {/* Expanded nav controls right */}
+                  <EuiHeaderSectionItem border="none">
+                    <HeaderNavControls navControls$={observables.navControlsExpandedRight$} />
+                  </EuiHeaderSectionItem>
+
                   {/* New top nav controls right */}
                   <EuiHeaderSectionItem border="none">
                     <HeaderControl
@@ -331,25 +349,45 @@ export function Header({
                   <EuiHeaderSectionItem border="none">
                     <HeaderNavControls side="right" navControls$={observables.navControlsRight$} />
                   </EuiHeaderSectionItem>
+
+                  {/* Nav help section*/}
+                  <EuiHeaderSectionItem border="left">
+                    <HeaderHelpMenu
+                      helpExtension$={observables.helpExtension$}
+                      helpSupportUrl$={observables.helpSupportUrl$}
+                      opensearchDashboardsDocLink={opensearchDashboardsDocLink}
+                      opensearchDashboardsVersion={opensearchDashboardsVersion}
+                      surveyLink={survey}
+                    />
+                  </EuiHeaderSectionItem>
                 </EuiHeaderSection>
               </EuiHeader>
-              <EuiHeader className="newTopNavHeader">
-                {/* New top nav decription */}
-                <EuiHeaderSectionItem border="none">
-                  <HeaderControl
-                    data-test-subj="headerDescriptionControl"
-                    controls$={application.currentDescriptionControls$}
-                  />
-                </EuiHeaderSectionItem>
-
-                {/* New top nav bottom */}
-                <EuiHeaderSectionItem border="none">
-                  <HeaderControl
-                    data-test-subj="headerBottomControl"
-                    controls$={application.currentBottomControls$}
-                  />
-                </EuiHeaderSectionItem>
-              </EuiHeader>
+              {currentDescriptionControls && currentDescriptionControls.length > 0 && (
+                <EuiHeader className="newTopNavHeader">
+                  <EuiHeaderSection side="left" grow={true}>
+                    {/* New top nav description */}
+                    <EuiHeaderSectionItem border="none">
+                      <HeaderControl
+                        data-test-subj="headerDescriptionControl"
+                        controls$={application.currentDescriptionControls$}
+                      />
+                    </EuiHeaderSectionItem>
+                  </EuiHeaderSection>
+                </EuiHeader>
+              )}
+              {currentBottomControls && currentBottomControls.length > 0 && (
+                <EuiHeader className="newTopNavHeader">
+                  <EuiHeaderSection side="left" grow={true}>
+                    {/* New top nav bottom */}
+                    <EuiHeaderSectionItem border="none">
+                      <HeaderControl
+                        data-test-subj="headerBottomControl"
+                        controls$={application.currentBottomControls$}
+                      />
+                    </EuiHeaderSectionItem>
+                  </EuiHeaderSection>
+                </EuiHeader>
+              )}
             </div>
           ) : (
             <EuiHeader position="fixed" className="primaryHeader" style={sidecarPaddingStyle}>
