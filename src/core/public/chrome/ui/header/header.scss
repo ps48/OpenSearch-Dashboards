@@ -26,6 +26,11 @@
     padding-top: $euiSizeM;
   }
 
+  &.primaryApplicationHeader {
+    height: auto;
+    padding-top: $euiSizeXS / 2;
+  }
+
   &:has(.headerDescriptionControl, .headerBottomControl) {
     height: auto;
   }
@@ -35,8 +40,20 @@
   padding: 0 $euiSizeM;
 }
 
-.newTopNavExpander {
+.newPageTopNavExpander,
+.newAppTopNavExpander {
   position: fixed;
   left: 0;
+}
+
+.newPageTopNavExpander {
   top: $euiSizeL - $euiSizeXS;
+}
+
+.stretchedActionMenu {
+  width: 100%;
+}
+
+[data-test-subj="headerAppActionMenu"] {
+  width: 100%;
 }
