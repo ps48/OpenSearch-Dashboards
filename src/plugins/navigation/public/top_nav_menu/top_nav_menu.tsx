@@ -143,7 +143,7 @@ export function TopNavMenu(props: TopNavMenuProps): ReactElement | null {
         <>
           <MountPointPortal setMountPoint={setMenuMountPoint}>
             <EuiFlexGroup alignItems="center" gutterSize="s">
-              <EuiFlexItem grow={false}>{props.appName}</EuiFlexItem>
+              <EuiFlexItem grow={false}>{props.screenTitle ?? ''}</EuiFlexItem>
               <EuiFlexItem grow={false}>{renderMenu(menuClassName)}</EuiFlexItem>
               <EuiFlexItem>{renderSearchBar()}</EuiFlexItem>
             </EuiFlexGroup>
