@@ -28,7 +28,7 @@
 
   &.primaryApplicationHeader {
     height: auto;
-    padding-top: $euiSizeXS / 2;
+    padding-top: calc($euiSizeXS / 2);
   }
 
   &:has(.headerDescriptionControl, .headerBottomControl) {
@@ -40,13 +40,15 @@
   padding: 0 $euiSizeM;
 }
 
-.newPageTopNavExpander,
 .newAppTopNavExpander {
   position: fixed;
   left: 0;
+  top: $euiSizeS - calc($euiSizeXS / 2);
 }
 
 .newPageTopNavExpander {
+  position: fixed;
+  left: 0;
   top: $euiSizeL - $euiSizeXS;
 }
 
