@@ -14,6 +14,7 @@ import {
   DatasetField,
 } from '../../../data/common';
 import { DatasetTypeConfig, IDataPluginServices } from '../../../data/public';
+import { useOpenSearchDashboards } from '../../../opensearch_dashboards_react/public';
 import { DATASET, handleQueryStatus } from '../../common';
 import S3_ICON from '../assets/s3_mark.svg';
 
@@ -94,6 +95,8 @@ export const s3TypeConfig: DatasetTypeConfig = {
   },
 
   fetchFields: async (dataset: Dataset): Promise<DatasetField[]> => {
+    console.log('dataset :', dataset);
+    useFetchTableFields(dataset);
     return [];
   },
 
@@ -105,7 +108,7 @@ export const s3TypeConfig: DatasetTypeConfig = {
 const fetch = async (
   http: HttpSetup,
   path: DataStructure[],
-  type: 'DATABASE' | 'TABLE'
+  type: 'DATABASE' | 'TABLE' | 'TABLE_FIELDS'
 ): Promise<DataStructure[]> => {
   const dataSource = path.find((ds) => ds.type === 'DATA_SOURCE');
   const connection = path.find((ds) => ds.type === 'CONNECTION');
@@ -230,4 +233,21 @@ const fetchTables = async (http: HttpSetup, path: DataStructure[]): Promise<Data
   database.meta = setMeta(database, response);
 
   return fetch(http, path, 'TABLE');
+};
+
+const useFetchTableFields = async (dataset: Dataset): Promise<DataStructure[]> => {
+  const { services } = useOpenSearchDashboards<IDataPluginServices>();
+  const dataSource = dataset.dataSource?.title;
+  const connection = dataset.dataSource;
+  const sessionId = (connection?.meta as DataStructureCustomMeta).sessionId;
+  const response = await services.http.post(`../../api/enhancements/datasource/jobs`, {
+    body: JSON.stringify({
+      lang: 'sql',
+      query: `SHOW COLUMNS in ${dataset.title}`,
+      datasource: connection?.meta?.name,
+      ...(sessionId && { sessionId }),
+    }),
+  });
+
+  return [];
 };
