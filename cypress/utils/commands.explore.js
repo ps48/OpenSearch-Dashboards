@@ -670,3 +670,88 @@ cy.explore.add(
     cy.getElementByTestId('headerApplicationTitle').should('contain', indexPattern);
   }
 );
+
+// Correlation-specific commands
+
+cy.explore.add('navigateToCorrelatedDatasetsTab', (workspaceName, datasetName) => {
+  cy.osd.navigateToWorkSpaceSpecificPage({
+    workspaceName,
+    page: 'datasets',
+    isEnhancement: true,
+  });
+
+  // Wait for datasets table to load
+  cy.wait(3000);
+
+  // Get the dataset link href and navigate programmatically without waiting for page load
+  cy.contains('a.euiButtonEmpty', datasetName, { timeout: 10000 })
+    .should('be.visible')
+    .invoke('attr', 'href')
+    .then((href) => {
+      // Use window.location.href to navigate without Cypress page load detection
+      cy.window().then((win) => {
+        win.location.href = href;
+      });
+    });
+
+  // Wait for detail page to load by checking for a tab element
+  cy.getElementByTestId('correlatedDatasetsTab', { timeout: 30000 }).should('be.visible');
+
+  // Click Correlated datasets tab
+  cy.getElementByTestId('correlatedDatasetsTab').click();
+  cy.wait(1000);
+});
+
+cy.explore.add('openCreateCorrelationModal', () => {
+  cy.getElementByTestId('createCorrelationButton').should('be.visible').click();
+  cy.getElementByTestId('configureCorrelationModal').should('be.visible');
+});
+
+cy.explore.add('selectLogDatasets', (datasetNames) => {
+  datasetNames.forEach((name) => {
+    cy.getElementByTestId('logDatasetsSelector')
+      .find('[data-test-subj="comboBoxSearchInput"]')
+      .type(`${name}{enter}`);
+    cy.wait(300);
+  });
+});
+
+cy.explore.add('configureFieldMappings', (datasetName, mappings) => {
+  // Open accordion if closed
+  cy.getElementByTestId('manageFieldMappingsAccordion')
+    .invoke('attr', 'aria-expanded')
+    .then((expanded) => {
+      if (expanded === 'false') {
+        cy.getElementByTestId('manageFieldMappingsAccordion').click();
+        cy.wait(500);
+      }
+    });
+
+  // Find the dataset row and click edit
+  cy.contains('tr', datasetName).find('[data-test-subj^="editDataset-"]').click();
+  cy.wait(300);
+
+  // Fill field mappings
+  Object.keys(mappings).forEach((field) => {
+    cy.get(`[data-test-subj*="fieldSelector-${field}"]`)
+      .find('[data-test-subj="comboBoxSearchInput"]')
+      .type(`${mappings[field]}{enter}`);
+    cy.wait(200);
+  });
+
+  // Save
+  cy.contains('tr', datasetName).find('[data-test-subj^="saveDataset-"]').click();
+
+  cy.getElementByTestId('euiToastHeader').contains('saved').should('be.visible');
+  cy.wait(500);
+});
+
+cy.explore.add('createCorrelation', () => {
+  cy.getElementByTestId('createCorrelationConfirmButton')
+    .should('be.visible')
+    .should('not.be.disabled')
+    .click();
+
+  cy.getElementByTestId('euiToastHeader').contains('created').should('be.visible');
+  cy.wait(1000);
+});

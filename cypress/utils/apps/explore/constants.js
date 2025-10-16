@@ -38,6 +38,28 @@ export const TRACE_INDEX_PATTERN = 'otel_v1_apm_span_*';
 export const TRACE_TIME_FIELD = 'endTimeUnixNano';
 export const TRACE_INDEX = 'otel_v1_apm_span_sample_1';
 
+// Log dataset constants for correlation testing
+export const LOG_INDEX_1 = 'data_logs_small_time_1';
+export const LOG_INDEX_2 = 'data_logs_small_time_2';
+export const LOG_INDEX_PATTERN = 'data_logs_small_time_*';
+export const LOG_TIME_FIELD = 'timestamp';
+
+// OTel field mapping for testing (maps existing log fields to OTel schema)
+export const TEST_FIELD_MAPPINGS = {
+  LOG_DATASET_1: {
+    timestamp: 'timestamp',
+    traceId: 'agent',
+    spanId: 'clientip',
+    serviceName: 'extension',
+  },
+  LOG_DATASET_2: {
+    timestamp: 'timestamp',
+    traceId: 'agent',
+    spanId: 'bytes',
+    serviceName: 'machine.os',
+  },
+};
+
 export const RESOURCES = {
   DATASETS: {
     OTEL_V1_APM_SPAN: {
