@@ -97,7 +97,7 @@ export const getDefaultSuggestions = async ({
   selectionStart,
   selectionEnd,
   indexPattern,
-  dataset,
+  datasetType,
   position,
   query,
   services,
@@ -138,7 +138,7 @@ export const getDefaultSuggestions = async ({
           text: `${af}()`,
           type: monaco.languages.CompletionItemKind.Function,
           insertText: af + ' ',
-          labelDescription: SuggestionItemDetailsTags.AggregateFunction,
+          detail: SuggestionItemDetailsTags.AggregateFunction,
         }))
       );
     }
@@ -148,7 +148,7 @@ export const getDefaultSuggestions = async ({
         text: indexPattern.title,
         type: monaco.languages.CompletionItemKind.Struct,
         insertText: `${indexPattern.title} `,
-        labelDescription: SuggestionItemDetailsTags.Table,
+        detail: SuggestionItemDetailsTags.Table,
       });
     }
 
@@ -157,7 +157,7 @@ export const getDefaultSuggestions = async ({
         text: 'as',
         insertText: 'as ',
         type: monaco.languages.CompletionItemKind.Keyword,
-        labelDescription: SuggestionItemDetailsTags.Keyword,
+        detail: SuggestionItemDetailsTags.Keyword,
       });
     }
 
@@ -168,7 +168,7 @@ export const getDefaultSuggestions = async ({
           text: sk.value.toLowerCase(),
           insertText: `${sk.value.toLowerCase()} `,
           type: monaco.languages.CompletionItemKind.Keyword,
-          labelDescription: SuggestionItemDetailsTags.Keyword,
+          detail: SuggestionItemDetailsTags.Keyword,
           // sortText is the only option to sort suggestions, compares strings
           sortText:
             PPL_SUGGESTION_IMPORTANCE.get(sk.id)?.importance ?? '9' + sk.value.toLowerCase(), // '9' used to devalue every other suggestion

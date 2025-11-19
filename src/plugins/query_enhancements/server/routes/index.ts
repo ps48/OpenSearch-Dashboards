@@ -139,5 +139,4 @@ export function defineRoutes(
   registerDataSourceConnectionsRoutes(router, client);
   registerQueryAssistRoutes(router);
   registerResourceRoutes(router);
-  registerResourceRoutes(router, client);
 }

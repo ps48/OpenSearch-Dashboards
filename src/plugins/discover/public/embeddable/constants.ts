@@ -1,4 +1,3 @@
-import { METRIC } from '../../../vis_type_timeseries/public/test_utils/index';
 /*
  * SPDX-License-Identifier: Apache-2.0
  *

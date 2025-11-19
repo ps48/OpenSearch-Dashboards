@@ -241,7 +241,7 @@ export const getSuggestions = async ({
             return {
               text: val,
               type: monaco.languages.CompletionItemKind.Value,
-              labelDescription: SuggestionItemDetailsTags.Value,
+              detail: SuggestionItemDetailsTags.Value,
               replacePosition: new monaco.Range(
                 cursorLine,
                 cursorColumn - lastValue.length + 1,
@@ -277,17 +277,17 @@ export const getSuggestions = async ({
 
       if (tokenSymbolName) {
         let type = monaco.languages.CompletionItemKind.Keyword;
-        let labelDescription = SuggestionItemDetailsTags.Keyword;
+        let detail = SuggestionItemDetailsTags.Keyword;
 
         if (booleanOperators.has(token) || relationalOperators.has(token)) {
           type = monaco.languages.CompletionItemKind.Operator;
-          labelDescription = SuggestionItemDetailsTags.Operator;
+          detail = SuggestionItemDetailsTags.Operator;
         }
 
         completions.push({
           text: tokenSymbolName,
           type,
-          labelDescription,
+          detail,
           insertText: `${tokenSymbolName} `,
         });
       }

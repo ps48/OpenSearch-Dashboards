@@ -128,6 +128,13 @@ class PrometheusManager extends BaseConnectionManager<OpenSearchClient> {
       querystring: new URLSearchParams(query.query).toString(),
     });
   }
+
+  handlePostRequest(
+    _context: RequestHandlerContext,
+    _request: OpenSearchDashboardsRequest
+  ): Promise<any> {
+    throw new Error('POST requests are not supported for Prometheus manager');
+  }
 }
 
 // we must export as singleton so all changes to clientFactory are respected across plugins

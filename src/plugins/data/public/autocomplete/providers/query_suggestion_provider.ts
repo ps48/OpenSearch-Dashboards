@@ -31,7 +31,6 @@
 import { monaco } from '@osd/monaco';
 import { Dataset } from 'src/plugins/data/common';
 import { IFieldType, IndexPattern } from '../../../common/index_patterns';
-import { DataView as Dataset } from '../../../common/data_views';
 
 import { IDataPluginServices } from '../../types';
 

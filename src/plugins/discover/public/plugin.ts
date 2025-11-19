@@ -56,13 +56,14 @@ import {
   setExpressions,
 } from './opensearch_dashboards_services';
 import { createSavedSearchesLoader } from './saved_searches';
+import { createSavedMetricLoader } from './saved_metric_viz';
 import { buildServices } from './build_services';
 import {
   DiscoverUrlGeneratorState,
   DISCOVER_APP_URL_GENERATOR,
   DiscoverUrlGenerator,
 } from './url_generator';
-import { SearchEmbeddableFactory } from './embeddable';
+import { SearchEmbeddableFactory, MetricEmbeddableFactory } from './embeddable';
 import { PLUGIN_ID } from '../common';
 import { DataExplorerPluginSetup } from '../../data_explorer/public';
 import { registerFeature } from './register_feature';
