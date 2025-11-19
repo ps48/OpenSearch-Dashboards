@@ -29,6 +29,7 @@
  */
 
 import { monaco } from '@osd/monaco';
+import { Dataset } from 'src/plugins/data/common';
 import { IFieldType, IndexPattern } from '../../../common/index_patterns';
 import { DataView as Dataset } from '../../../common/data_views';
 
@@ -84,7 +85,7 @@ export interface MonacoCompatibleQuerySuggestion
   extends Pick<QuerySuggestionBasic, 'description' | 'cursorIndex'> {
   type: monaco.languages.CompletionItemKind;
   text: string;
-  detail: string;
+  labelDescription: string;
   insertText?: string;
   insertTextRules?: monaco.languages.CompletionItemInsertTextRule;
   replacePosition?: monaco.Range;

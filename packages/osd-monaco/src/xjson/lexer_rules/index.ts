@@ -34,6 +34,8 @@ import * as xJson from './xjson';
 import * as opensearchql from './opensearchql';
 import * as painless from './painless';
 import * as opensearchsql from './opensearchsql';
+import * as opensearchppl from './opensearchppl';
+import * as promql from './promql';
 
 export const registerLexerRules = (m: typeof monaco) => {
   m.languages.register({ id: xJson.ID });
@@ -45,5 +47,6 @@ export const registerLexerRules = (m: typeof monaco) => {
   m.languages.register({ id: opensearchsql.ID });
   m.languages.setMonarchTokensProvider(opensearchsql.ID, opensearchsql.lexerRules);
   m.languages.register({ id: 'kuery' });
-  m.languages.register({ id: 'AI' });
+  m.languages.register({ id: promql.ID });
+  m.languages.setMonarchTokensProvider(promql.ID, promql.lexerRules);
 };

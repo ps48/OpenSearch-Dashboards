@@ -34,6 +34,7 @@ import { SavedSearch } from '../../../saved_searches';
 import { useSelector } from '../../utils/state_management';
 import { SEARCH_ON_PAGE_LOAD_SETTING } from '../../../../common';
 import { trackQueryMetric } from '../../../ui_metric';
+import { SavedMetric } from '../../../saved_metric_viz';
 
 import { ABORT_DATA_QUERY_TRIGGER } from '../../../../../ui_actions/public';
 import {
@@ -119,6 +120,7 @@ export const useSearch = (services: DiscoverViewServices) => {
   const { pathname } = useLocation();
   const initalSearchComplete = useRef(false);
   const [savedSearch, setSavedSearch] = useState<SavedSearch | undefined>(undefined);
+  const [savedMetric, setSavedMetric] = useState<SavedMetric | undefined>(undefined);
   const { savedSearch: savedSearchId, sort, interval, savedQuery } = useSelector(
     (state) => state.discover
   );
@@ -129,6 +131,7 @@ export const useSearch = (services: DiscoverViewServices) => {
     uiActions,
     filterManager,
     getSavedSearchById,
+    getSavedMetricById,
     core,
     toastNotifications,
     osdUrlStateStorage,
@@ -165,10 +168,11 @@ export const useSearch = (services: DiscoverViewServices) => {
     // A saved search is created on every page load, so we check the ID to see if we're loading a
     // previously saved search or if it is just transient
     return (
-      datasetPreference ||
-      uiSettings.get(SEARCH_ON_PAGE_LOAD_SETTING) ||
-      savedSearch?.id !== undefined ||
-      timefilter.getRefreshInterval().pause === false
+      (datasetPreference ||
+        uiSettings.get(SEARCH_ON_PAGE_LOAD_SETTING) ||
+        savedSearch?.id !== undefined ||
+        timefilter.getRefreshInterval().pause === false) &&
+      queryString
     );
   }, [data.query, savedSearch, uiSettings, timefilter]);
 
@@ -543,6 +547,16 @@ export const useSearch = (services: DiscoverViewServices) => {
     shouldSearchOnPageLoad,
   ]);
 
+  // Get savedMetric if it exists
+  useEffect(() => {
+    (async () => {
+      const savedMetricInstance = await getSavedMetricById('');
+      setSavedMetric(savedMetricInstance);
+    })();
+    // This effect will only run when getSavedMetricById is called, which is
+    // only called when the component is first mounted.
+  }, [getSavedMetricById]);
+
   // Get savedSearch if it exists
   useEffect(() => {
     const loadSavedSearch = async () => {
@@ -632,6 +646,7 @@ export const useSearch = (services: DiscoverViewServices) => {
     refetch$,
     indexPattern,
     savedSearch,
+    savedMetric,
     inspectorAdapters,
     fetchForMaxCsvOption,
     fetchForMaxCsvStateRef,

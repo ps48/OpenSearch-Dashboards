@@ -53,6 +53,7 @@ import {
   syncHistoryLocations,
   getServices,
   setUsageCollector,
+  setExpressions,
 } from './opensearch_dashboards_services';
 import { createSavedSearchesLoader } from './saved_searches';
 import { buildServices } from './build_services';
@@ -99,6 +100,7 @@ export interface DiscoverSetup {
 
 export interface DiscoverStart {
   savedSearchLoader: SavedObjectLoader;
+  savedMetricLoader: SavedObjectLoader;
 
   /**
    * `share` plugin URL generator for Discover app. Use it to generate links into
@@ -150,6 +152,7 @@ export interface DiscoverStartPlugins {
   urlForwarding: UrlForwardingStart;
   inspector: InspectorPublicPluginStart;
   visualizations: VisualizationsStart;
+  expressions: ExpressionsStart;
 }
 
 /**
@@ -423,6 +426,7 @@ export class DiscoverPlugin
       }
       const services = buildServices(core, plugins, this.initializerContext);
       setServices(services);
+      setExpressions(plugins.expressions);
       this.servicesInitialized = true;
 
       return { core, plugins };
@@ -463,6 +467,13 @@ export class DiscoverPlugin
         chrome: core.chrome,
         overlays: core.overlays,
       }),
+      savedMetricLoader: createSavedMetricLoader({
+        savedObjectsClient: core.savedObjects.client,
+        indexPatterns: plugins.data.indexPatterns,
+        search: plugins.data.search,
+        chrome: core.chrome,
+        overlays: core.overlays,
+      }),
     };
   }
 
@@ -485,6 +496,8 @@ export class DiscoverPlugin
     };
 
     const factory = new SearchEmbeddableFactory(getStartServices);
+    const metricFactory = new MetricEmbeddableFactory(getStartServices);
     plugins.embeddable.registerEmbeddableFactory(factory.type, factory);
+    plugins.embeddable.registerEmbeddableFactory(metricFactory.type, metricFactory);
   }
 }

@@ -31,7 +31,7 @@
 import { CoreSetup, CoreStart, Plugin } from 'opensearch-dashboards/server';
 import { uiSettings } from './ui_settings';
 import { capabilitiesProvider } from './capabilities_provider';
-import { searchSavedObjectType } from './saved_objects';
+import { metricSavedObjectType, searchSavedObjectType } from './saved_objects';
 
 export class DiscoverServerPlugin implements Plugin<object, object> {
   public setup(core: CoreSetup) {
@@ -47,6 +47,7 @@ export class DiscoverServerPlugin implements Plugin<object, object> {
     });
     core.uiSettings.register(uiSettings);
     core.savedObjects.registerType(searchSavedObjectType);
+    core.savedObjects.registerType(metricSavedObjectType);
 
     return {};
   }

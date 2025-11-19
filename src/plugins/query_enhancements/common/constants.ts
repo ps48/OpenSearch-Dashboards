@@ -11,11 +11,13 @@ export const BASE_API_ASSISTANT = '/api/assistant';
 
 export const DATASET = {
   S3: 'S3',
+  PROMETHEUS: 'PROMETHEUS',
 };
 
 export const SEARCH_STRATEGY = {
   PPL: 'ppl',
   PPL_RAW: 'pplraw',
+  PROMQL: 'promql',
   SQL: 'sql',
   SQL_ASYNC: 'sqlasync',
   PPL_ASYNC: 'pplasync',
@@ -24,6 +26,7 @@ export const SEARCH_STRATEGY = {
 export const API = {
   SEARCH: `${BASE_API}/search`,
   PPL_SEARCH: `${BASE_API}/search/${SEARCH_STRATEGY.PPL}`,
+  PROMQL_SEARCH: `${BASE_API}/search/${SEARCH_STRATEGY.PROMQL}`,
   SQL_SEARCH: `${BASE_API}/search/${SEARCH_STRATEGY.SQL}`,
   SQL_ASYNC_SEARCH: `${BASE_API}/search/${SEARCH_STRATEGY.SQL_ASYNC}`,
   PPL_ASYNC_SEARCH: `${BASE_API}/search/${SEARCH_STRATEGY.PPL_ASYNC}`,
@@ -42,12 +45,20 @@ export const API = {
   AGENT_API: {
     CONFIG_EXISTS: `${BASE_API_ASSISTANT}/agent_config/_exists`,
   },
+  RESOURCES: {
+    BASE_PROMETHEUS: `${BASE_API}/prometheus`,
+  },
 };
 
 export const URI = {
   PPL: '/_plugins/_ppl',
+  PROMQL: '/_plugins/_promql',
   SQL: '/_plugins/_sql',
   ASYNC_QUERY: '/_plugins/_async_query',
+  DIRECT_QUERY: {
+    QUERY: '/_plugins/_directquery/_query',
+    RESOURCES: '/_plugins/_directquery/_resources',
+  },
   ML: '/_plugins/_ml',
   OBSERVABILITY: '/_plugins/_observability',
   DATA_CONNECTIONS: '/_plugins/_query/_datasources',
@@ -56,6 +67,7 @@ export const URI = {
 export const OPENSEARCH_API = {
   PANELS: `${URI.OBSERVABILITY}/object`,
   DATA_CONNECTIONS: URI.DATA_CONNECTIONS,
+  METRICS: URI.PROMQL,
 };
 
 export const UI_SETTINGS = {

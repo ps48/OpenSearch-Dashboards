@@ -591,6 +591,7 @@ export * from '../common/field_mapping';
  */
 
 import { DataPublicPlugin } from './plugin';
+import { PrometheusResourceClient } from './resources/prometheus_resource_client';
 
 export function plugin(initializerContext: PluginInitializerContext<ConfigSchema>) {
   return new DataPublicPlugin(initializerContext);

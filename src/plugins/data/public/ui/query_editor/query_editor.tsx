@@ -249,7 +249,7 @@ export const QueryEditorUI: React.FC<Props> = (props) => {
       selectionEnd: model.getOffsetAt(position),
       language,
       indexPattern,
-      datasetType: dataset?.type,
+      dataset,
       position,
       services,
     });
@@ -263,6 +263,7 @@ export const QueryEditorUI: React.FC<Props> = (props) => {
       wordUntil.endColumn
     );
 
+    // TODO: figure out how to get decimals in duration to keep suggestion window open with each change
     return {
       suggestions:
         suggestions && suggestions.length > 0
@@ -292,6 +293,15 @@ export const QueryEditorUI: React.FC<Props> = (props) => {
       incomplete: false,
     };
   };
+
+  const triggerCharacters = (() => {
+    // TODO: move into autocomplete service?
+    // TODO: figure out why the first load doesn't have these triggers
+    if (queryRef.current.language === 'PROMQL') {
+      return [' ', '(', '{', '[', '=', '"', ','];
+    }
+    return [' '];
+  })();
 
   const useQueryEditor = query.language !== 'kuery' && query.language !== 'lucene';
 
@@ -363,7 +373,10 @@ export const QueryEditorUI: React.FC<Props> = (props) => {
         </EuiButtonEmpty>,
       ],
     },
-    provideCompletionItems,
+    languageProviders: {
+      provideCompletionItems,
+      triggerCharacters,
+    },
     queryStatus: props.queryStatus,
   };
 
@@ -386,7 +399,10 @@ export const QueryEditorUI: React.FC<Props> = (props) => {
         onSubmit(newQuery, timefilter.getTime());
       });
     },
-    provideCompletionItems,
+    languageProviders: {
+      provideCompletionItems,
+      triggerCharacters,
+    },
     prepend: props.prepend,
     footerItems: {
       start: [

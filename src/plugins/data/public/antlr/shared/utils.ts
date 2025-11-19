@@ -250,7 +250,7 @@ export const formatFieldsToSuggestions = (
     return {
       text: field.name,
       type: monaco.languages.CompletionItemKind.Field,
-      detail: `Field: ${field.esTypes?.[0] ?? field.type}`,
+      labelDescription: `Field: ${field.esTypes?.[0] ?? field.type}`,
       ...(modifyInsertText && { insertText: modifyInsertText(field.name) }), // optionally include insert text if fn exists
       ...(sortTextImportance && { sortText: sortTextImportance }),
     };
@@ -338,7 +338,15 @@ const singleParseQuery = <
     suggestKeywords,
   };
 
-  return enrichAutocompleteResult(result, rules, tokenStream, cursorTokenIndex, cursor, query);
+  return enrichAutocompleteResult(
+    result,
+    rules,
+    tokenStream,
+    cursorTokenIndex,
+    cursor,
+    query,
+    tree
+  );
 };
 
 export const parseQuery = <

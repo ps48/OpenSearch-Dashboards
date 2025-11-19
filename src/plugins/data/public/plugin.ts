@@ -108,6 +108,7 @@ import {
   getSimplifiedPPLSuggestions,
 } from './antlr/opensearch_ppl/code_completion';
 import { createStorage, DataStorage, UI_SETTINGS } from '../common';
+import { ResourceClientFactory } from './resources/resource_client_factory';
 
 declare module '../../ui_actions/public' {
   export interface ActionContextMapping {
@@ -333,6 +334,7 @@ export class DataPublicPlugin
         dataSourceService,
         dataSourceFactory,
       },
+      resourceClientFactory: new ResourceClientFactory(core.http),
     };
 
     registerDefaultDataSource(dataServices);

@@ -59,6 +59,7 @@ export enum DataSourceEngineType {
   OpenSearch = 'OpenSearch',
   OpenSearchServerless = 'OpenSearch Serverless',
   Elasticsearch = 'Elasticsearch',
+  Prometheus = 'Prometheus',
   NA = 'No Engine Type Available',
   OpenSearchCrossCluster = 'OpenSearch(Cross-cluster search)',
 }
