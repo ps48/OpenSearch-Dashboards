@@ -113,7 +113,98 @@ export class ExploreEmbeddableFactory
     }
   };
 
-  public async create(input: ExploreInput) {
-    return new ErrorEmbeddable('Saved explores can only be created from a saved object', input);
+  /**
+   * Creates an explore embeddable.
+   * Supports both by-reference (with savedObjectId) and by-value (with attributes) embeddables.
+   *
+   * @param input - Embeddable input configuration
+   * @param parent - Optional parent container
+   */
+  public async create(
+    input: ExploreInput & { attributes?: any; references?: any[] },
+    parent?: Container
+  ): Promise<ExploreEmbeddable | ErrorEmbeddable> {
+    const services = getServices();
+    const filterManager = services.filterManager;
+
+    // Check if this is a by-value embeddable (contains attributes)
+    if (input.attributes) {
+      const attributes = input.attributes;
+      const references = input.references || [];
+
+      try {
+        // Parse the search source JSON
+        const searchSourceJSON = JSON.parse(attributes.kibanaSavedObjectMeta.searchSourceJSON);
+
+        // Find the index pattern reference (optional for external data sources like Prometheus)
+        const indexPatternRef = references.find(
+          (ref: any) => ref.name === 'kibanaSavedObjectMeta.searchSourceJSON.index'
+        );
+
+        // Get the index pattern if reference exists (not needed for external data sources)
+        let indexPattern;
+        if (indexPatternRef) {
+          indexPattern = await services.dataViews.get(indexPatternRef.id).catch();
+        }
+
+        // Create a search source
+        const searchSource = await services.data.search.searchSource.create();
+
+        // Set up the search source with the saved data
+        if (indexPattern) {
+          searchSource.setField('index', indexPattern);
+        }
+        if (searchSourceJSON.query) {
+          searchSource.setField('query', searchSourceJSON.query);
+        }
+        if (searchSourceJSON.filter) {
+          searchSource.setField('filter', searchSourceJSON.filter);
+        }
+
+        // Create a minimal SavedExplore-like object
+        const savedExplore = {
+          id: input.id,
+          title: attributes.title,
+          description: attributes.description || '',
+          columns: attributes.columns || ['_source'],
+          sort: attributes.sort || [],
+          type: attributes.type || 'logs',
+          visualization: attributes.visualization || '',
+          uiState: attributes.uiState || '{}',
+          searchSource,
+        };
+
+        const { executeTriggerActions } = await this.getStartServices();
+        const { ExploreEmbeddable: ExploreEmbeddableClass } = await import('./explore_embeddable');
+        const flavor = savedExplore.type;
+        const editUrl = '';
+        const editPath = '';
+
+        return new ExploreEmbeddableClass(
+          {
+            savedExplore: savedExplore as any,
+            editUrl,
+            editPath,
+            filterManager,
+            editable: false,
+            indexPatterns: indexPattern ? [indexPattern] : [],
+            services,
+            editApp: `explore/${flavor}`,
+          },
+          input,
+          executeTriggerActions,
+          parent
+        );
+      } catch (e) {
+        return new ErrorEmbeddable(e, input, parent);
+      }
+    }
+
+    // For by-reference embeddables (saved object ID), return error since we need createFromSavedObject
+    return new ErrorEmbeddable(
+      'Saved explores can only be created from a saved object using createFromSavedObject()',
+      input,
+      parent
+    );
   }
 }

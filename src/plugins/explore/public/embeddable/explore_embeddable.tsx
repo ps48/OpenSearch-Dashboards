@@ -171,13 +171,13 @@ export class ExploreEmbeddable
   private initializeSearchProps() {
     const { searchSource } = this.savedExplore;
     const indexPattern = searchSource.getField('index');
-    if (!indexPattern) return;
+    // Create searchProps even without index pattern (for external data sources like Prometheus)
     const searchProps: SearchProps = {
       inspectorAdapters: this.inspectorAdaptors,
       rows: [],
       description: this.savedExplore.description,
       services: this.services,
-      indexPattern,
+      indexPattern: indexPattern || undefined,
       isLoading: false,
       displayTimeColumn: this.services.uiSettings.get(DOC_HIDE_TIME_COLUMN_SETTING, false),
       title: this.savedExplore.title,
@@ -185,7 +185,8 @@ export class ExploreEmbeddable
     const timeRangeSearchSource = searchSource.create();
     timeRangeSearchSource.setField('filter', () => {
       if (!this.searchProps || !this.input.timeRange) return;
-      return getTime(indexPattern, this.input.timeRange);
+      // Only set time filter if index pattern exists
+      return indexPattern ? getTime(indexPattern, this.input.timeRange) : undefined;
     });
     this.filtersSearchSource = searchSource.create();
     this.filtersSearchSource.setParent(timeRangeSearchSource);
@@ -201,12 +202,16 @@ export class ExploreEmbeddable
         query.query = prepareQueryForLanguage(query).query;
       }
     }
-    searchSource.setFields({
-      index: indexPattern,
+    // Only set index field if indexPattern exists
+    const fields: any = {
       query,
       highlightAll: true,
       version: true,
-    });
+    };
+    if (indexPattern) {
+      fields.index = indexPattern;
+    }
+    searchSource.setFields(fields);
 
     searchProps.onSort = (newSort) => {
       this.updateInput({ sort: newSort });
@@ -249,6 +254,8 @@ export class ExploreEmbeddable
     };
 
     searchProps.onFilter = async (field, value, operator) => {
+      // Only generate filters if index pattern exists
+      if (!indexPattern) return;
       let filters = opensearchFilters.generateFilters(
         this.filterManager,
         field,
@@ -390,9 +397,19 @@ export class ExploreEmbeddable
             allColumns
           );
           if (!matchedRule || !matchedRule.toSpec) {
-            throw new Error(
-              `Cannot load saved visualization "${this.panelTitle}" with id ${this.savedExplore.id}`
+            // Log warning but don't throw error - allow empty state to render
+            // eslint-disable-next-line no-console
+            console.warn(
+              `No matching visualization rule found for "${this.panelTitle}" with id ${this.savedExplore.id}. ` +
+                `This may be due to missing data or incompatible axes mapping.`
             );
+            this.searchProps.rows = [];
+            this.updateOutput({ loading: false, error: undefined });
+            inspectorRequest.ok({ json: resp });
+            if (this.node && this.searchProps) {
+              this.renderComponent(this.node, this.searchProps);
+            }
+            return;
           }
           const searchContext = {
             query: this.input.query,
@@ -421,6 +438,11 @@ export class ExploreEmbeddable
     // NOTE: PPL response is not the same as OpenSearch response, resp.hits.total here is 0.
     this.searchProps.hits = resp.hits.hits.length;
     this.searchProps.isLoading = false;
+
+    // Render the component with updated data
+    if (this.node && this.searchProps) {
+      this.renderComponent(this.node, this.searchProps);
+    }
   };
 
   private renderComponent(node: HTMLElement, searchProps: SearchProps) {
@@ -466,6 +488,8 @@ export class ExploreEmbeddable
       ReactDOM.unmountComponentAtNode(this.node);
     }
     this.node = node;
+    node.style.height = '100%';
+    node.style.width = '100%';
   }
 
   public getInspectorAdapters() {
