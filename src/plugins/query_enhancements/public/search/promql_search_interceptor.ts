@@ -25,7 +25,7 @@ export class PromQLSearchInterceptor extends SearchInterceptor {
     });
   }
 
-  public search(_request: IOpenSearchDashboardsSearchRequest, options: ISearchOptions) {
+  public search(request: IOpenSearchDashboardsSearchRequest, options: ISearchOptions) {
     const context: EnhancedFetchContext = {
       http: this.deps.http,
       path: trimEnd(`${API.SEARCH}/${SEARCH_STRATEGY.PROMQL}`),
@@ -35,6 +35,12 @@ export class PromQLSearchInterceptor extends SearchInterceptor {
       },
     };
 
-    return fetch(context, this.queryService.queryString.getQuery());
+    // Extract the query from the request if available, otherwise fall back to global query service
+    let query = this.queryService.queryString.getQuery();
+    if (request.params?.body?.query?.queries && request.params.body.query.queries.length > 0) {
+      query = request.params.body.query.queries[0];
+    }
+
+    return fetch(context, query);
   }
 }

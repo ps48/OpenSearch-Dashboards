@@ -233,7 +233,6 @@ export class QueryEnhancementsPlugin
     queryString.getDatasetService().registerType(s3TypeConfig);
 
     // Register PPL language configuration
-    // TODO: This will need to get updated when we're closer to dispatching queries
     const promqlLanguageConfig: LanguageConfig = {
       id: 'PROMQL',
       title: 'PromQL',
@@ -252,7 +251,7 @@ export class QueryEnhancementsPlugin
         formatter: (value: string, type: OSD_FIELD_TYPES) => {
           switch (type) {
             case OSD_FIELD_TYPES.DATE:
-              return moment.utc(value).format('YYYY-MM-DDTHH:mm:ss.SSSZ'); // PPL date fields need special formatting in order for discover table formatter to render in the correct time zone
+              return moment.utc(value).format('YYYY-MM-DDTHH:mm:ss.SSSZ'); // Date fields need special formatting in order for discover table formatter to render in the correct time zone
 
             default:
               return value;
@@ -260,10 +259,10 @@ export class QueryEnhancementsPlugin
         },
       },
       docLink: {
-        title: i18n.translate('queryEnhancements.pplLanguage.docLink', {
-          defaultMessage: 'PPL documentation',
+        title: i18n.translate('queryEnhancements.promqlLanguage.docLink', {
+          defaultMessage: 'PromQL documentation',
         }),
-        url: 'https://opensearch.org/docs/latest/search-plugins/sql/ppl/syntax/',
+        url: 'https://prometheus.io/docs/prometheus/latest/querying/basics/',
       },
       showDocLinks: false,
       showVisualization: true,
@@ -272,41 +271,22 @@ export class QueryEnhancementsPlugin
       supportedAppNames: ['discover', 'data-explorer'],
       sampleQueries: [
         {
-          title: i18n.translate('queryEnhancements.sampleQuery.titleContainsWind', {
-            defaultMessage: 'The title field contains the word wind.',
+          title: i18n.translate('queryEnhancements.promqlSampleQuery.upMetric', {
+            defaultMessage: 'Query the up metric',
           }),
-          query: `SOURCE = your_table | WHERE LIKE(title, '%wind%')`,
+          query: `up`,
         },
         {
-          title: i18n.translate('queryEnhancements.sampleQuery.titleContainsWindOrWindy', {
-            defaultMessage: 'The title field contains the word wind or the word windy.',
+          title: i18n.translate('queryEnhancements.promqlSampleQuery.rateQuery', {
+            defaultMessage: 'Query rate of HTTP requests',
           }),
-          query: `SOURCE = your_table | WHERE LIKE(title, '%wind%') OR LIKE(title, '%windy%')`,
+          query: `rate(http_requests_total[5m])`,
         },
         {
-          title: i18n.translate('queryEnhancements.sampleQuery.titleContainsPhraseWindRises', {
-            defaultMessage: 'The title field contains the phrase wind rises.',
+          title: i18n.translate('queryEnhancements.promqlSampleQuery.aggregation', {
+            defaultMessage: 'Sum by job',
           }),
-          query: `SOURCE = your_table | WHERE LIKE(title, '%wind rises%')`,
-        },
-        {
-          title: i18n.translate('queryEnhancements.sampleQuery.titleExactMatchWindRises', {
-            defaultMessage: 'The title.keyword field exactly matches The wind rises.',
-          }),
-          query: `SOURCE = your_table | WHERE title = 'The wind rises'`,
-        },
-        {
-          title: i18n.translate('queryEnhancements.sampleQuery.titleFieldsContainWind', {
-            defaultMessage:
-              'Any field that starts with title (for example, title and title.keyword) contains the word wind',
-          }),
-          query: `SOURCE = your_table | WHERE LIKE(title, '%wind%') OR title = 'wind'`,
-        },
-        {
-          title: i18n.translate('queryEnhancements.sampleQuery.descriptionFieldExists', {
-            defaultMessage: 'Documents in which the field description exists.',
-          }),
-          query: `SOURCE = your_table | WHERE ISNOTNULL(description) AND description != '';`,
+          query: `sum by (job) (rate(http_requests_total[5m]))`,
         },
       ],
     };
