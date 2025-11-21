@@ -75,7 +75,10 @@ export const promqlSearchStrategyProvider = (
           dataconnection: datasetId,
         };
 
-        const queryClient = client.asScoped(request).callAsCurrentUser;
+        // Support multi-datasource routing like PPL strategy
+        const queryClient = request.dataSourceId
+          ? context.dataSource.opensearch.legacy.getClient(request.dataSourceId).callAPI
+          : client.asScoped(request).callAsCurrentUser;
         const queryRes = (await queryClient(
           'enhancements.promqlQuery',
           params
