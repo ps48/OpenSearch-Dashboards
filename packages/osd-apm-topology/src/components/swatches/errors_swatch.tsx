@@ -1,0 +1,10 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+
+import { ColorScheme } from '../../shared/utils/colors.utils';
+import { ColorSwatch } from './color_swatch';
+
+export const ErrorsSwatch = () => <ColorSwatch color={ColorScheme.errors} />;

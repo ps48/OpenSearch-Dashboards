@@ -1,0 +1,60 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+
+import { useReactFlow } from '@xyflow/react';
+import { useCallback } from 'react';
+import { useCelestialLayout } from '../../shared/hooks/use_celestial_layout.hook';
+import { CelestialNodes } from 'src/types';
+
+export interface LayoutControlsActions {
+    onLayoutChange: (e: React.MouseEvent) => void;
+    onExpandAll: (e: React.MouseEvent) => void;
+}
+
+export const useLayoutControls = (): LayoutControlsActions => {
+    const { getLaidOutElements } = useCelestialLayout();
+    const { getNodes, setNodes, getEdges, setEdges, fitView } = useReactFlow();
+
+    /**
+     * Handler for zooming in the view
+     * @param e Mouse event from zoom button click
+     */
+    const onLayoutChange = useCallback(
+        (e: React.MouseEvent) => {
+            e.stopPropagation();
+            const nodes = getNodes();
+            const edges = getEdges();
+
+            const layout = getLaidOutElements(nodes as CelestialNodes, edges);
+
+            setNodes(layout.nodes);
+            setEdges(layout.edges);
+            fitView({ duration: 300 });
+        },
+        [getLaidOutElements, getNodes, setNodes, getEdges, setEdges],
+    );
+
+    const onExpandAll = useCallback(
+        (e: React.MouseEvent) => {
+            e.stopPropagation();
+
+            const nodes = getNodes().map((node) => ({ ...node, hidden: false }));
+            const edges = getEdges().map((edge) => ({ ...edge, hidden: false }));
+
+            const layout = getLaidOutElements(nodes as CelestialNodes, edges);
+
+            setNodes(layout.nodes);
+            setEdges(layout.edges);
+            fitView({ duration: 300 });
+        },
+        [getNodes, getEdges, setNodes, setEdges, fitView],
+    );
+
+    return {
+        onLayoutChange,
+        onExpandAll,
+    };
+};

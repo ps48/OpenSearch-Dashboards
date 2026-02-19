@@ -1,0 +1,22 @@
+{
+  "name": "@osd/apm-topology",
+  "version": "1.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "main": "./target/index.js",
+  "scripts": {
+    "build": "babel src --out-dir target --delete-dir-on-start --extensions .ts,.tsx --copy-files --ignore **/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.stories.tsx",
+    "osd:bootstrap": "yarn build",
+    "osd:watch": "yarn build --watch"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^1.1.5",
+    "@xyflow/react": "^12.8.2"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.22.9",
+    "@babel/core": "^7.22.9",
+    "@osd/babel-preset": "1.0.0"
+  },
+  "@osd/pm": {}
+}

@@ -1,0 +1,225 @@
+/**
+ * Celestial topology styles
+ * Converted from Tailwind CSS to plain SCSS for OSD compatibility
+ */
+
+// ============================================================
+// CSS Custom Properties (Design Tokens)
+// ============================================================
+:root {
+  // Base sizing (pixel-based to keep node sizes consistent)
+  --clt-rem: 16px;
+  --clt-spacing: calc(var(--clt-rem) * 0.25);
+
+  // Celestial colors
+  --clt-red-100: #fff5f5;
+  --clt-red-300: #ea7158;
+  --clt-red-500: #d13313;
+
+  --clt-blue-100: #d1f1ff;
+  --clt-blue-300: #75cfff;
+  --clt-blue-400: #42b4ff;
+  --clt-blue-450: #7aa4f0;
+  --clt-blue-500: #006ce0;
+  --clt-blue-900: #002b66;
+
+  --clt-squid-black: #151d26;
+
+  --clt-amber-400: #ff9900;
+  --clt-purple-500: #d476fd;
+
+  --clt-gray-50: #ebebf0;
+  --clt-gray-250: #eaeded;
+  --clt-gray-350: #c6c6cd;
+  --clt-gray-400: #b4b4bb;
+  --clt-gray-500: #7d8998;
+  --clt-gray-600: #687078;
+  --clt-gray-650: #424650;
+  --clt-gray-700: #545b64;
+  --clt-gray-750: #232b37;
+  --clt-gray-950: #0f141a;
+
+  // Semantic tokens (light mode defaults)
+  --clt-container-default: #ffffff;
+  --clt-container-breached: var(--clt-red-100);
+
+  --clt-status-default: var(--clt-gray-500);
+  --clt-status-breached: var(--clt-red-500);
+  --clt-status-default-hover: var(--clt-gray-400);
+  --clt-status-breached-hover: var(--clt-red-300);
+  --clt-divider-default: var(--clt-gray-350);
+
+  --clt-body-default: var(--clt-gray-950);
+  --clt-body-secondary: var(--clt-gray-650);
+
+  --clt-interactive: var(--clt-blue-500);
+
+  --clt-link-default: var(--clt-blue-500);
+  --clt-link-hover: var(--clt-blue-900);
+
+  --clt-button-hover: var(--clt-blue-100);
+
+  // Donut colors
+  --clt-ok: var(--clt-blue-450);
+  --clt-faults: var(--clt-red-500);
+  --clt-errors: var(--clt-amber-400);
+  --clt-throttles: var(--clt-purple-500);
+  --clt-requests: var(--clt-gray-700);
+  --clt-icon: var(--clt-gray-600);
+  --clt-spinner: var(--clt-gray-500);
+  --clt-map-dots: var(--clt-gray-50);
+
+  // Also set Tailwind-compatible color vars used by the codebase
+  --color-container-default: var(--clt-container-default);
+  --color-container-breached: var(--clt-container-breached);
+  --color-status-default: var(--clt-status-default);
+  --color-status-breached: var(--clt-status-breached);
+  --color-status-default-hover: var(--clt-status-default-hover);
+  --color-status-breached-hover: var(--clt-status-breached-hover);
+  --color-divider-default: var(--clt-divider-default);
+  --color-body-default: var(--clt-body-default);
+  --color-body-secondary: var(--clt-body-secondary);
+  --color-interactive: var(--clt-interactive);
+  --color-link-default: var(--clt-link-default);
+  --color-link-hover: var(--clt-link-hover);
+  --color-button-hover: var(--clt-button-hover);
+  --color-ok: var(--clt-ok);
+  --color-faults: var(--clt-faults);
+  --color-errors: var(--clt-errors);
+  --color-throttles: var(--clt-throttles);
+  --color-requests: var(--clt-requests);
+  --color-icon: var(--clt-icon);
+  --color-spinner: var(--clt-spinner);
+  --color-map-dots: var(--clt-map-dots);
+  --color-group-caret: var(--clt-gray-600);
+}
+
+// Dark mode overrides (OSD pattern)
+.theme-dark {
+  --clt-container-default: var(--clt-squid-black);
+  --clt-container-breached: var(--clt-squid-black);
+  --clt-status-default: var(--clt-gray-250);
+  --clt-status-default-hover: var(--clt-gray-400);
+  --clt-divider-default: var(--clt-gray-650);
+  --clt-body-default: var(--clt-gray-350);
+  --clt-body-secondary: var(--clt-gray-350);
+  --clt-interactive: var(--clt-blue-400);
+  --clt-link-default: var(--clt-blue-400);
+  --clt-link-hover: var(--clt-blue-300);
+  --clt-requests: #ffffff;
+  --clt-map-dots: var(--clt-gray-750);
+}
+
+// OSD-specific color overrides
+:root:has(#opensearch-dashboards-body) {
+  --clt-blue-500: #0268bc;
+  --clt-red-500: #c61e25;
+  --clt-amber-400: #eaae01;
+}
+
+// ============================================================
+// React Flow Overrides
+// ============================================================
+.react-flow {
+  background-color: var(--clt-container-default);
+}
+
+.react-flow__handle {
+  opacity: 0 !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+.react-flow__attribution {
+  background-color: transparent;
+}
+
+// ============================================================
+// Utility Classes (clt prefix = celestial topology)
+// ============================================================
+
+// Icon sizing
+.cltIcon {
+  width: 1rem;
+  height: 1rem;
+  display: inline-block;
+}
+
+.cltIconSm {
+  width: 1rem;
+  height: 1rem;
+}
+
+.cltIconMd {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+// Actions icon animation
+.cltActionsIcon {
+  transition: transform 200ms;
+  transform: rotate(0deg);
+}
+
+.group:hover .cltActionsIcon {
+  transform: rotate(90deg);
+}
+
+// Shadow for selected nodes
+.shadow-node-selected {
+  box-shadow: 0 6px 16px 2px rgba(59, 130, 246, 0.6);
+}
+
+// ============================================================
+// Breadcrumb Component Styles
+// ============================================================
+.cltBreadcrumbTrail {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+}
+
+.cltBreadcrumbItem {
+  display: flex;
+  align-items: center;
+}
+
+.cltBreadcrumbTitle {
+  color: var(--clt-body-secondary);
+  padding: 0.25rem 0.5rem;
+}
+
+.cltBreadcrumbLink {
+  color: var(--clt-link-default);
+  transition: color 200ms;
+  border: none;
+  background: none;
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--clt-link-hover);
+  }
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.cltBreadcrumbDivider {
+  color: var(--clt-body-secondary);
+  margin: 0 0.5rem;
+}
+
+// ============================================================
+// Text color helpers
+// ============================================================
+.cltTextSecondary {
+  color: var(--clt-body-secondary);
+}
+
+// ============================================================
+// Tailwind utility classes (OSD has no Tailwind — defined in SCSS)
+// ============================================================
+@import 'utilities';

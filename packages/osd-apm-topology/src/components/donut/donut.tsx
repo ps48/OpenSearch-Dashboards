@@ -1,0 +1,47 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+
+import { type PropsWithChildren } from 'react';
+import { type DonutProps } from './types';
+import './_donut.scss';
+import { DonutSegments } from './components/donut_segments';
+
+export const DONUT_TEST_ID = 'donut';
+export const DONUT_ICON_TEST_ID = 'donut-icon';
+export const DONUT_TORUS_TEST_ID = 'donut-torus';
+
+export const Donut: React.FC<PropsWithChildren<DonutProps>> = ({
+    segments,
+    iconSize,
+    diameter,
+    fill,
+    stroke,
+    isInverted,
+    children,
+}) => (
+    <div data-testid={DONUT_TEST_ID} className="celDonut" style={{ width: diameter, height: diameter }}>
+        <svg
+            data-testid={DONUT_TORUS_TEST_ID}
+            width={diameter}
+            height={diameter}
+            viewBox={`0 0 ${diameter} ${diameter}`}
+        >
+            <DonutSegments diameter={diameter} segments={segments} fill={fill} stroke={stroke} />
+        </svg>
+        {children && (
+            <div
+                data-testid={DONUT_ICON_TEST_ID}
+                className={`celDonutIcon ${isInverted ? 'celDonutInverted' : ''}`}
+                style={{
+                    width: iconSize,
+                    height: iconSize,
+                }}
+            >
+                {children}
+            </div>
+        )}
+    </div>
+);

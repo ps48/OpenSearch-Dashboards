@@ -1,0 +1,316 @@
+/**
+ * Tailwind CSS utility classes for @osd/apm-topology
+ *
+ * OSD does not include Tailwind CSS, so every utility class used in the
+ * topology TSX components is defined here as plain SCSS.
+ *
+ * Classes are intentionally global (not scoped under .celestial) because
+ * some components render via React Portal outside the .celestial DOM subtree.
+ *
+ * Naming follows Tailwind conventions so the TSX markup remains readable.
+ * CSS custom properties referenced here (--color-*) are declared in
+ * _celestial.scss :root block.
+ */
+
+// ============================================================
+// Display
+// ============================================================
+.flex { display: flex; }
+.inline-flex { display: inline-flex; }
+.inline-block { display: inline-block; }
+.block { display: block; }
+.grid { display: grid; }
+
+// ============================================================
+// Flex & Grid
+// ============================================================
+.flex-col { flex-direction: column; }
+.flex-row-reverse { flex-direction: row-reverse; }
+.flex-grow { flex-grow: 1; }
+.items-center { align-items: center; }
+.items-end { align-items: flex-end; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+
+// Custom grid: 58-column layout used by celestial_card
+.grid-cols-58 { grid-template-columns: repeat(58, minmax(0, 1fr)); }
+.col-span-14 { grid-column: span 14 / span 14; }
+.col-span-16 { grid-column: span 16 / span 16; }
+.col-span-42 { grid-column: span 42 / span 42; }
+.col-span-44 { grid-column: span 44 / span 44; }
+.col-start-1 { grid-column-start: 1; }
+.row-start-1 { grid-row-start: 1; }
+
+// ============================================================
+// Sizing
+// ============================================================
+.w-4 { width: 1rem; }
+.w-6 { width: 1.5rem; }
+.w-8 { width: 2rem; }
+.w-10 { width: 2.5rem; }
+.w-24 { width: 6rem; }
+.w-58 { width: 14.5rem; }
+.w-60 { width: 15rem; }
+.w-68 { width: 17rem; }
+.w-full { width: 100%; }
+.h-6 { height: 1.5rem; }
+.h-8 { height: 2rem; }
+.h-10 { height: 2.5rem; }
+.h-24 { height: 6rem; }
+.h-80 { height: 20rem; }
+.h-full { height: 100%; }
+.min-h-24 { min-height: 6rem; }
+.aspect-square { aspect-ratio: 1 / 1; }
+
+// ============================================================
+// Spacing — Padding
+// ============================================================
+.p-0 { padding: 0; }
+.p-2 { padding: 0.5rem; }
+.p-3 { padding: 0.75rem; }
+.p-4 { padding: 1rem; }
+.px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+.px-4 { padding-left: 1rem; padding-right: 1rem; }
+.py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+.py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.pl-1 { padding-left: 0.25rem; }
+.pl-2 { padding-left: 0.5rem; }
+.pl-2\.5 { padding-left: 0.625rem; }
+.pr-1 { padding-right: 0.25rem; }
+
+// ============================================================
+// Spacing — Margin
+// ============================================================
+.mr-0 { margin-right: 0; }
+.mt-1 { margin-top: 0.25rem; }
+.mb-0\.5 { margin-bottom: 0.125rem; }
+.-mt-0\.5 { margin-top: -0.125rem; }
+.-mt-2 { margin-top: -0.5rem; }
+.-ml-0\.5 { margin-left: -0.125rem; }
+
+// ============================================================
+// Spacing — Gap
+// ============================================================
+.gap-0\.5 { gap: 0.125rem; }
+.gap-1\.5 { gap: 0.375rem; }
+.gap-2 { gap: 0.5rem; }
+.gap-3 { gap: 0.75rem; }
+.gap-4 { gap: 1rem; }
+
+// ============================================================
+// Positioning
+// ============================================================
+.relative { position: relative; }
+.absolute { position: absolute; }
+.inset-0 { top: 0; right: 0; bottom: 0; left: 0; }
+.left-0 { left: 0; }
+.top-0 { top: 0; }
+.top-2 { top: 0.5rem; }
+.top-15 { top: 3.75rem; }
+.top-\[14px\] { top: 14px; }
+.top-1\/2 { top: 50%; }
+.right-0 { right: 0; }
+.right-4 { right: 1rem; }
+.-right-4 { right: -1rem; }
+
+// ============================================================
+// Transforms
+// ============================================================
+.-translate-y-1\/2 { transform: translateY(-50%); }
+
+// ============================================================
+// Z-index
+// ============================================================
+.z-1 { z-index: 1; }
+.z-10 { z-index: 10; }
+.z-50 { z-index: 50; }
+.z-1000 { z-index: 1000; }
+.z-9999 { z-index: 9999; }
+
+// ============================================================
+// Typography
+// ============================================================
+.text-xs { font-size: 0.75rem; line-height: 1rem; }
+.text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+.text-left { text-align: left; }
+.text-center { text-align: center; }
+.font-bold { font-weight: 700; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.whitespace-nowrap { white-space: nowrap; }
+
+// ============================================================
+// Colors — Backgrounds (CSS custom properties)
+// ============================================================
+.bg-container-default { background-color: var(--color-container-default); }
+.bg-container-breached { background-color: var(--color-container-breached); }
+.bg-transparent { background-color: transparent; }
+
+// Opacity modifiers on bg-container-default
+// bg-container-default/0.2 → 20% opacity
+.bg-container-default\/0\.2 {
+  background-color: color-mix(in srgb, var(--color-container-default) 20%, transparent);
+}
+// bg-container-default/50 → 50% opacity
+.bg-container-default\/50 {
+  background-color: color-mix(in srgb, var(--color-container-default) 50%, transparent);
+}
+
+// ============================================================
+// Colors — Backgrounds (static)
+// ============================================================
+.bg-white { background-color: #ffffff; }
+.bg-blue-50 { background-color: #eff6ff; }
+.bg-blue-100 { background-color: #dbeafe; }
+.bg-blue-600 { background-color: #2563eb; }
+
+// ============================================================
+// Colors — Text (CSS custom properties)
+// ============================================================
+.text-body-default { color: var(--color-body-default); }
+.text-body-secondary { color: var(--color-body-secondary); }
+.text-link-default { color: var(--color-link-default); }
+.text-link-hover { color: var(--color-link-hover); }
+.text-interactive { color: var(--color-interactive); }
+.text-group-caret { color: var(--color-group-caret); }
+.text-faults { color: var(--color-faults); }
+.text-errors { color: var(--color-errors); }
+
+// ============================================================
+// Colors — Text (static)
+// ============================================================
+.text-white { color: #ffffff; }
+.text-black { color: #000000; }
+.text-gray-400 { color: #9ca3af; }
+.text-gray-500 { color: #6b7280; }
+.text-blue-800 { color: #1e40af; }
+
+// ============================================================
+// Colors — Border (CSS custom properties)
+// ============================================================
+.border-status-default { border-color: var(--color-status-default); }
+.border-status-breached { border-color: var(--color-status-breached); }
+.border-divider-default { border-color: var(--color-divider-default); }
+.border-spinner { border-color: var(--color-spinner); }
+
+// ============================================================
+// Colors — Border (static)
+// ============================================================
+.border-blue-400 { border-color: #60a5fa; }
+.border-blue-500 { border-color: #3b82f6; }
+.border-gray-200 { border-color: #e5e7eb; }
+
+// ============================================================
+// Borders
+// ============================================================
+.border { border-width: 1px; border-style: solid; }
+.border-0 { border-width: 0; }
+.border-2 { border-width: 2px; border-style: solid; }
+.border-8 { border-width: 8px; border-style: solid; }
+.border-l-1 { border-left-width: 1px; border-left-style: solid; }
+.border-b-transparent { border-bottom-color: transparent; }
+.border-solid { border-style: solid; }
+
+// ============================================================
+// Border Radius
+// ============================================================
+.rounded { border-radius: 0.25rem; }
+.rounded-xs { border-radius: 0.125rem; }
+.rounded-lg { border-radius: 0.5rem; }
+.rounded-xl { border-radius: 0.75rem; }
+.rounded-2xl { border-radius: 1rem; }
+.rounded-full { border-radius: 9999px; }
+
+// ============================================================
+// Outlines
+// ============================================================
+.outline-2 { outline-width: 2px; outline-style: solid; }
+.outline-offset-4 { outline-offset: 4px; }
+.outline-blue-500 { outline-color: #3b82f6; }
+
+// ============================================================
+// Box Model
+// ============================================================
+.box-border { box-sizing: border-box; }
+
+// ============================================================
+// Shadows
+// ============================================================
+.shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+.shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); }
+.shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1); }
+.shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); }
+
+// ============================================================
+// Opacity
+// ============================================================
+.opacity-30 { opacity: 0.3; }
+.opacity-100 { opacity: 1; }
+
+// ============================================================
+// Overflow
+// ============================================================
+.overflow-hidden { overflow: hidden; }
+.overflow-auto { overflow: auto; }
+.overflow-visible { overflow: visible; }
+
+// ============================================================
+// Backdrop
+// ============================================================
+.backdrop-blur-xs { backdrop-filter: blur(2px); }
+
+// ============================================================
+// Transitions & Animations
+// ============================================================
+.transition-all { transition-property: all; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
+.transition-colors { transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
+.duration-200 { transition-duration: 200ms; }
+.duration-300 { transition-duration: 300ms; }
+
+@keyframes clt-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin { animation: clt-spin 1s linear infinite; }
+
+// ============================================================
+// Interactivity
+// ============================================================
+.cursor-pointer { cursor: pointer; }
+.cursor-not-allowed { cursor: not-allowed; }
+
+// ============================================================
+// Hover States
+// Tailwind hover: prefix → :hover pseudo-class
+// ============================================================
+.hover\:text-interactive:hover { color: var(--color-interactive); }
+.hover\:text-link-hover:hover { color: var(--color-link-hover); }
+.hover\:border-blue-600:hover { border-color: #2563eb; }
+.hover\:border-status-default-hover:hover { border-color: var(--color-status-default-hover); }
+.hover\:border-status-breached-hover:hover { border-color: var(--color-status-breached-hover); }
+.hover\:bg-gray-100:hover { background-color: #f3f4f6; }
+.hover\:bg-white:hover { background-color: #ffffff; }
+.hover\:shadow-xl:hover { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); }
+.hover\:cursor-pointer:hover { cursor: pointer; }
+
+// ============================================================
+// Dark Mode
+// OSD uses .theme-dark on body, not Tailwind's dark: media query
+// ============================================================
+.theme-dark {
+  .dark\:shadow-md {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  }
+}
+
+// ============================================================
+// Group marker (no-op class for group-hover pattern)
+// The .group class itself has no styles; it's used as a parent
+// selector target in _celestial.scss (.group:hover .cltActionsIcon)
+// ============================================================
+.group { /* intentional no-op — used as hover target parent */ }

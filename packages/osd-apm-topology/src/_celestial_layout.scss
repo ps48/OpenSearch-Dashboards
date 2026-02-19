@@ -1,0 +1,13 @@
+.celContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 100vh;
+    min-height: 0;
+}
+
+.celMapContainer {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+}

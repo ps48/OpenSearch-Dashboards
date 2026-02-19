@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationDir": "./target/types",
+    "outDir": "./target",
+    "emitDeclarationOnly": true,
+    "stripInternal": true,
+    "declarationMap": true,
+    "skipLibCheck": true,
+    "types": ["jest", "node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "types/**/*.d.ts"],
+  "exclude": ["target", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.stories.tsx"]
+}

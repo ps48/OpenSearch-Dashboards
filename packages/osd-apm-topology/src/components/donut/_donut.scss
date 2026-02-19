@@ -1,0 +1,25 @@
+.celDonut {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.celDonutIcon {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-icon);
+
+    /* Ensure icon stays the donut */
+    z-index: 1;
+}
+
+.celDonutInverted {
+    img {
+        filter: brightness(0) invert(1);
+    }
+}
