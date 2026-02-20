@@ -19,12 +19,12 @@ export const LegendPanel: React.FC<LegendPanelProps> = ({ onClose }) => {
     useOnClickOutside(legendRef, onClose);
 
     return (
-        <div ref={legendRef} className="w-58 h-80 bg-container-default rounded-xl shadow-xl z-50 overflow-auto">
+        <div ref={legendRef} className="cltLegendPanel">
             <div className="p-4 grid gap-3 text-body-secondary">
                 <div className="flex justify-between items-center">
                     <h3 className="font-bold text-sm">{t('legend.title')}</h3>
                     <button onClick={onClose} className="hover:text-interactive cursor-pointer">
-                        <img src={closeIcon} alt="Close" className="cltIcon" />
+                        <img src={closeIcon} alt="Close" className="cltIcon cltIconThemed" />
                     </button>
                 </div>
                 <div className="flex justify-center items-center py-2">

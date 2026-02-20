@@ -48,9 +48,8 @@ export const StackWrapper: React.FC<StackWrapperProps> = ({
 
             {/* Hidden children count badge */}
             <div
-                className="absolute top-0 right-0 bg-blue-600 text-white text-xs font-semibold rounded-full w-6 h-6 flex items-center justify-center shadow-lg"
+                className="cltStackBadge"
                 style={{
-                    transform: 'translate(8px, -8px)',
                     zIndex: maxVisibleStacks + 2,
                 }}
                 title={`${hiddenChildrenCount} hidden children`}

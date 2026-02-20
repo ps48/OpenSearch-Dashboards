@@ -25,7 +25,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ nodeId, onClose }) => {
     return (
         <ul
             ref={menuRef}
-            className="absolute z-9999 overflow-visible bg-white border border-gray-200 rounded shadow-md w-60"
+            className="cltContextMenu"
         >
             <MenuItem
                 label={t('contextMenu.expandDependencies')}

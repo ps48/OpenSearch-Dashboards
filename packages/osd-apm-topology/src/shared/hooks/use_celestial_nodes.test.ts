@@ -57,7 +57,7 @@ describe('useCelestialNodes', () => {
         AwsAccountId: '12345678910',
     };
     it('returns nodes, edges with expected properties', () => {
-        const { result } = renderHook(() => useCelestialNodes(mockFixtureData));
+        const { result } = renderHook(() => useCelestialNodes(mockFixtureData, false));
         const { nodes, edges } = result.current;
         // Validate nodes
         expect(nodes).toHaveLength(3);

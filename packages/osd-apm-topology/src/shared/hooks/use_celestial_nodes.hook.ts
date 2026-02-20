@@ -13,8 +13,11 @@ import { type CelestialNode, type CelestialMapModel, type CelestialEdge } from '
 
 import { DEFAULT_GRID_CONFIG, calculatePosition, computeDependencyTypes } from '../utils/celestial_node.utils';
 
-export const useCelestialNodes = (data: GetServiceMapOutput): CelestialMapModel =>
+export const useCelestialNodes = (data: GetServiceMapOutput, isDarkMode = false): CelestialMapModel =>
     useMemo(() => {
+        // SVG markers cannot parse var() strings — resolve to concrete hex based on theme
+        const edgeColor = isDarkMode ? '#7a8fa8' : '#64748b';
+
         const nodes: CelestialNode[] = data.Nodes.map((node: any, idx: number) => {
             const position = calculatePosition(idx, DEFAULT_GRID_CONFIG);
             const enhancedNode = {
@@ -41,8 +44,8 @@ export const useCelestialNodes = (data: GetServiceMapOutput): CelestialMapModel 
                 target: edge.DestinationNodeId,
                 sourceHandle: 'source-right',
                 targetHandle: 'target-left',
-                markerEnd: { type: MarkerType.ArrowClosed },
-                style: { strokeWidth: 2 },
+                markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor, width: 20, height: 20 },
+                style: { strokeWidth: 2, stroke: edgeColor },
                 type: 'bezier',
                 data: {
                     relationship: 'Invoke',
@@ -50,4 +53,4 @@ export const useCelestialNodes = (data: GetServiceMapOutput): CelestialMapModel 
                 },
             })) || [];
         return { nodes, edges };
-    }, [data]);
+    }, [data, isDarkMode]);

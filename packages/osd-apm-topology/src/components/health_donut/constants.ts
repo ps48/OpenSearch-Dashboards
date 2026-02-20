@@ -10,7 +10,7 @@ export const HEALTH_DONUT_COLORS = {
     ok2xx: 'var(--color-ok)',
     okFill: 'var(--color-ok)',
     error4xx: 'var(--color-errors)',
-    errorFill: '#8a6b05', // @todo - convert colors to css colors
+    errorFill: 'var(--color-errors)',
     fault5xx: 'var(--color-faults)',
     faultFill: 'var(--color-faults)',
 } as const;

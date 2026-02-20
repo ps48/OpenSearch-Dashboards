@@ -54,12 +54,7 @@ export const CelestialCard = (props: CelestialCardProps) => {
     return (
         <div
             ref={nodeRef}
-            className={`w-68 min-h-24 rounded-xl p-3 flex justify-center items-center border-2 box-border border-solid
-                ${health?.breached ? 'bg-container-breached border-status-breached' : 'bg-container-default border-status-default'} 
-                ${health?.breached ? 'hover:border-status-breached-hover' : 'hover:border-status-default-hover'} 
-                ${isSelected ? 'outline-2 outline-blue-500 outline-offset-4 shadow-node-selected' : ''} 
-                ${isFaded ? 'opacity-30' : 'opacity-100'} 
-                transition-all duration-200`}
+            className={`cltCard ${health?.breached ? 'cltCardBreached' : 'cltCardDefault'} ${isSelected ? 'cltCardSelected' : ''} ${isFaded ? 'cltCardFaded' : ''}`}
             onDoubleClick={onDoubleClick}
         >
             <div>
@@ -91,7 +86,7 @@ export const CelestialCard = (props: CelestialCardProps) => {
                                     className="text-group-caret transition-colors mr-0 bg-transparent border-0 p-0"
                                     aria-expanded={false}
                                 >
-                                    <img src={actionsIcon} alt="Actions" className="cltIconSm cltActionsIcon" />
+                                    <img src={actionsIcon} alt="Actions" className="cltIconSm cltActionsIcon cltIconThemed" />
                                 </button>
                                 <a className="font-bold text-sm text-link-default hover:text-link-hover transition-colors truncate">
                                     {title}
@@ -106,7 +101,7 @@ export const CelestialCard = (props: CelestialCardProps) => {
                     </div>
                 </div>
                 {!isAggregated && (
-                    <div className="grid grid-cols-58 py-2">
+                    <div className="grid grid-cols-58 cltCardMetrics">
                         <div className="col-span-16">
                             <Description className="pr-1" label={t('node.labels.requests')} value={totalRequests} />
                         </div>

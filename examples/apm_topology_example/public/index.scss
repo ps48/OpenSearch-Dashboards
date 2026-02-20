@@ -4,6 +4,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  color: #343741;
 }
 
 .ateContent {
@@ -164,4 +165,73 @@
   text-align: center;
   color: #98a2b3;
   font-style: italic;
+}
+
+// ============================================================
+// Dark Mode Overrides
+// .theme-dark is applied on the .ateApp wrapper itself
+// ============================================================
+.ateApp.theme-dark {
+  color: #e2e8f0;
+
+  .ateTopologyContainer,
+  .ateInfoPanel,
+  .ateEventLog {
+    background: #1e293b;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+
+    h2, h3 {
+      background: #0f172a;
+      border-bottom-color: rgba(255, 255, 255, 0.08);
+      color: #e2e8f0;
+    }
+  }
+
+  .ateMapWrapper {
+    background: #060a14;
+  }
+
+  .ateNodeDetails,
+  .ateEdgeDetails {
+    h4 {
+      color: #e2e8f0;
+      border-bottom-color: rgba(255, 255, 255, 0.08);
+    }
+
+    p {
+      color: #94a3b8;
+    }
+
+    strong {
+      color: #e2e8f0;
+    }
+  }
+
+  .ateHealth,
+  .ateMetrics {
+    h5 {
+      color: #60a5fa;
+    }
+
+    li {
+      background: #0f172a;
+      color: #94a3b8;
+    }
+  }
+
+  .ateSliBreach {
+    background: rgba(239, 68, 68, 0.15) !important;
+    color: #ef4444 !important;
+  }
+
+  .ateNoSelection,
+  .ateNoEvents {
+    color: #64748b;
+  }
+
+  .ateLogEntry {
+    background: #0f172a;
+    color: #94a3b8;
+    border-left-color: #60a5fa;
+  }
 }

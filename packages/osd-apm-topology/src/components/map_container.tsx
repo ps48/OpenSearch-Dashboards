@@ -4,7 +4,7 @@
  */
 
 
-import { Edge, Node, OnEdgesChange, OnNodesChange, ReactFlow } from '@xyflow/react';
+import { Edge, MiniMap, Node, OnEdgesChange, OnNodesChange, ReactFlow } from '@xyflow/react';
 import React, { ReactNode } from 'react';
 import { type CelestialEdge } from '../types';
 import { Breadcrumb, BreadcrumbTrail } from './breadcrumb_trail';
@@ -57,7 +57,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         </div>
         {numMatches !== undefined && (
             <div className="absolute top-[14px] right-4 flex z-1000">
-                <div className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm bg-blue-50 text-black border-2 border-blue-500">
+                <div className="cltMatchBadge">
                     {numMatches} {numMatches === 1 ? t('matchForFilter') : t('matchesForFilter')}
                 </div>
             </div>
@@ -90,7 +90,23 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                 nodeTypes={nodeTypes}
                 proOptions={{ hideAttribution: true }}
                 className="w-full h-full z-1"
-            />
+            >
+                <MiniMap
+                    nodeColor={(node) => {
+                        if (node.data?.health?.breached) return 'var(--clt-faults)';
+                        return 'var(--clt-ok)';
+                    }}
+                    maskColor="var(--clt-minimap-bg)"
+                    style={{
+                        backgroundColor: 'var(--clt-surface)',
+                        borderRadius: '0.5rem',
+                        border: '1px solid var(--clt-surface-border)',
+                        boxShadow: 'var(--clt-shadow-md)',
+                    }}
+                    pannable
+                    zoomable
+                />
+            </ReactFlow>
         </div>
     </div>
 );

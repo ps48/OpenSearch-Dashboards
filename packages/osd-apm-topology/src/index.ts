@@ -17,3 +17,4 @@ export * from './shared/types/common.types';
 export * from './shared/hooks/use_celestial_nodes.hook';
 export * from './shared/hooks/use_celestial_group_nodes';
 export { getIcon } from './shared/utils/icons.utils';
+export { useDarkMode } from './shared/hooks/use_dark_mode.hook';

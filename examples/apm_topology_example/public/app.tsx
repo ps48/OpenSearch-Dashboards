@@ -5,11 +5,12 @@
 
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CelestialMap, getIcon } from '@osd/apm-topology';
+import { CelestialMap, getIcon, useDarkMode } from '@osd/apm-topology';
 import type { CelestialMapProps, CelestialEdge } from '@osd/apm-topology';
 import type { CelestialCardProps } from '@osd/apm-topology';
 
 const ApmTopologyExampleApp = () => {
+  const isDarkMode = useDarkMode();
   const [selectedNode, setSelectedNode] = useState<CelestialCardProps | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<CelestialEdge | null>(null);
   const [eventLog, setEventLog] = useState<string[]>([]);
@@ -176,7 +177,7 @@ const ApmTopologyExampleApp = () => {
   };
 
   return (
-    <div className="ateApp">
+    <div className={`ateApp ${isDarkMode ? 'theme-dark' : 'theme-light'}`}>
       <div className="ateContent">
         <div className="ateTopologyContainer">
           <h2>Service Topology Map</h2>

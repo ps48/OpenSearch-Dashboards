@@ -15,11 +15,13 @@ import { MapContainer } from './components/map_container';
 import { CelestialNodeActionsProvider } from './shared/contexts/node_actions_context';
 import { useCelestialLayout } from './shared/hooks/use_celestial_layout.hook';
 import { useCelestialMapActions } from './shared/hooks/use_celestial_map_actions.hook';
+import { useDarkMode } from './shared/hooks/use_dark_mode.hook';
 import { useFitViewWithDelay } from './shared/hooks/use_fit_view_with_delay.hook';
 import { useFocusOnNodes } from './shared/hooks/use_focus_on_nodes.hook';
 import { type CelestialMapProps } from './types';
 
 export const Celestial = (props: CelestialMapProps) => {
+    const isDarkMode = useDarkMode();
     const fitViewWithDelay = useFitViewWithDelay();
     const { focusOnNodes } = useFocusOnNodes();
 
@@ -87,7 +89,7 @@ export const Celestial = (props: CelestialMapProps) => {
             addBreadcrumb={addBreadcrumb}
             onDashboardClick={props.onDashboardClick}
         >
-            <div className="celContainer celestial reset">
+            <div className={`celContainer celestial reset ${isDarkMode ? 'theme-dark' : 'theme-light'}`}>
                 <div className="celMapContainer">
                     <MapContainer
                         isLoading={props.isLoading}

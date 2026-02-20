@@ -69,6 +69,50 @@
   --clt-spinner: var(--clt-gray-500);
   --clt-map-dots: var(--clt-gray-50);
 
+  // Shadow / glow system
+  --clt-shadow-xs: 0 1px 2px 0 rgba(0,0,0,0.04);
+  --clt-shadow-sm: 0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.06);
+  --clt-shadow-md: 0 4px 8px -2px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.04);
+  --clt-shadow-lg: 0 12px 24px -4px rgba(0,0,0,0.08), 0 4px 8px -4px rgba(0,0,0,0.03);
+
+  // Neon glow colors (health-based) — visible on light backgrounds
+  --clt-glow-ok: rgba(59,130,246,0.3);
+  --clt-glow-ok-strong: rgba(59,130,246,0.5);
+  --clt-glow-breached: rgba(209,51,19,0.3);
+  --clt-glow-breached-strong: rgba(209,51,19,0.5);
+  --clt-glow-warning: rgba(255,153,0,0.4);
+  --clt-glow-warning-strong: rgba(255,153,0,0.6);
+
+  // Card tokens — ambient glow at rest, pronounced on hover
+  --clt-card-bg: #ffffff;
+  --clt-card-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
+  --clt-card-shadow-hover: 0 0 24px var(--clt-glow-ok-strong), 0 4px 16px rgba(0,0,0,0.1);
+  --clt-card-breached-shadow-hover: 0 0 24px var(--clt-glow-breached-strong), 0 4px 16px rgba(0,0,0,0.1);
+  --clt-card-selected-glow: 0 0 0 2px rgba(59,130,246,0.3), 0 0 24px rgba(59,130,246,0.25);
+
+  // Canvas — visible dot grid
+  --clt-canvas-bg: #f1f5f9;
+  --clt-canvas-dot: rgba(0,0,0,0.12);
+
+  // Surface (controls, panels)
+  --clt-surface: #ffffff;
+  --clt-surface-hover: #f1f5f9;
+  --clt-surface-border: rgba(0,0,0,0.08);
+
+  // Edges — darker for visibility on light canvas
+  --clt-edge-default: #64748b;
+  --clt-edge-critical: #d13313;
+
+  // Breadcrumb
+  --clt-breadcrumb-bg: rgba(255,255,255,0.85);
+  --clt-breadcrumb-border: rgba(0,0,0,0.06);
+
+  // Minimap
+  --clt-minimap-bg: rgba(0,0,0,0.03);
+  --clt-minimap-node-ok: #7aa4f0;
+  --clt-minimap-node-breached: #d13313;
+  --clt-minimap-node-default: #94a3b8;
+
   // Also set Tailwind-compatible color vars used by the codebase
   --color-container-default: var(--clt-container-default);
   --color-container-breached: var(--clt-container-breached);
@@ -96,18 +140,61 @@
 
 // Dark mode overrides (OSD pattern)
 .theme-dark {
-  --clt-container-default: var(--clt-squid-black);
-  --clt-container-breached: var(--clt-squid-black);
+  // Fix broken tokens — container-breached was SAME as container-default
+  --clt-container-default: #0f172a;
+  --clt-container-breached: #1a0f0f;
   --clt-status-default: var(--clt-gray-250);
   --clt-status-default-hover: var(--clt-gray-400);
-  --clt-divider-default: var(--clt-gray-650);
-  --clt-body-default: var(--clt-gray-350);
-  --clt-body-secondary: var(--clt-gray-350);
+  --clt-divider-default: rgba(255,255,255,0.08);
+  // Fix: body-default and body-secondary were identical
+  --clt-body-default: #e2e8f0;
+  --clt-body-secondary: #64748b;
   --clt-interactive: var(--clt-blue-400);
   --clt-link-default: var(--clt-blue-400);
   --clt-link-hover: var(--clt-blue-300);
-  --clt-requests: #ffffff;
+  --clt-requests: rgba(255, 255, 255, 0.15);
   --clt-map-dots: var(--clt-gray-750);
+  --clt-icon: #94a3b8;
+
+  // Neon glows — MORE visible on dark backgrounds
+  --clt-glow-ok: rgba(122,164,240,0.35);
+  --clt-glow-ok-strong: rgba(122,164,240,0.55);
+  --clt-glow-breached: rgba(239,68,68,0.4);
+  --clt-glow-breached-strong: rgba(239,68,68,0.6);
+  --clt-glow-warning: rgba(251,191,36,0.35);
+  --clt-glow-warning-strong: rgba(251,191,36,0.55);
+
+  // Card — dark glass surface with glow
+  --clt-card-bg: rgba(30,41,59,0.8);
+  --clt-card-shadow: 0 0 8px rgba(0,0,0,0.3), 0 0 1px rgba(255,255,255,0.05) inset;
+  --clt-card-shadow-hover: 0 0 24px var(--clt-glow-ok), 0 0 1px rgba(255,255,255,0.08) inset;
+  --clt-card-breached-shadow-hover: 0 0 24px var(--clt-glow-breached), 0 0 1px rgba(255,255,255,0.08) inset;
+  --clt-card-selected-glow: 0 0 0 2px rgba(96,165,250,0.4), 0 0 30px rgba(96,165,250,0.2);
+
+  // Canvas — deep dark with faint dot grid
+  --clt-canvas-bg: #060a14;
+  --clt-canvas-dot: rgba(255,255,255,0.035);
+
+  // Surface — dark glass for panels
+  --clt-surface: rgba(30,41,59,0.9);
+  --clt-surface-hover: rgba(51,65,85,0.9);
+  --clt-surface-border: rgba(255,255,255,0.08);
+
+  // Edges — brighter for visibility on dark canvas
+  --clt-edge-default: #7a8fa8;
+  --clt-edge-critical: #ef4444;
+
+  // Breadcrumb — frosted glass
+  --clt-breadcrumb-bg: rgba(15,23,42,0.85);
+  --clt-breadcrumb-border: rgba(255,255,255,0.06);
+
+  // Minimap
+  --clt-minimap-bg: rgba(255,255,255,0.03);
+
+  // Dark shadow overrides
+  --clt-shadow-sm: 0 1px 3px 0 rgba(0,0,0,0.4), 0 1px 2px -1px rgba(0,0,0,0.3);
+  --clt-shadow-md: 0 4px 8px -2px rgba(0,0,0,0.5), 0 2px 4px -2px rgba(0,0,0,0.3);
+  --clt-shadow-lg: 0 12px 24px -4px rgba(0,0,0,0.6), 0 4px 8px -4px rgba(0,0,0,0.4);
 }
 
 // OSD-specific color overrides
@@ -118,10 +205,12 @@
 }
 
 // ============================================================
-// React Flow Overrides
+// React Flow Overrides — Canvas + Edges
 // ============================================================
 .react-flow {
-  background-color: var(--clt-container-default);
+  background-color: var(--clt-canvas-bg);
+  background-image: radial-gradient(circle, var(--clt-canvas-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 .react-flow__handle {
@@ -130,8 +219,49 @@
   border-color: transparent !important;
 }
 
+.react-flow__node.selected,
+.react-flow__node:focus,
+.react-flow__node:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .react-flow__attribution {
   background-color: transparent;
+}
+
+// Edge animations
+@keyframes clt-edge-flow {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+
+.react-flow__edge-path {
+  stroke: var(--clt-edge-default);
+  stroke-width: 2;
+  transition: stroke 300ms, stroke-width 300ms, opacity 300ms;
+}
+
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 3;
+  stroke-dasharray: 8 4;
+  animation: clt-edge-flow 0.6s linear infinite;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--clt-interactive);
+  stroke-width: 3;
+}
+
+.theme-dark .react-flow__edge-path {
+  stroke-width: 2.5;
+}
+
+// Minimap
+.react-flow__minimap {
+  border-radius: 0.5rem !important;
+  border: 1px solid var(--clt-surface-border) !important;
+  box-shadow: var(--clt-shadow-md);
 }
 
 // ============================================================
@@ -155,6 +285,12 @@
   height: 1.25rem;
 }
 
+// Icon theming for dark mode
+.cltIconThemed { transition: filter 200ms; }
+.theme-dark .cltIconThemed {
+  filter: invert(0.75) sepia(0.1) saturate(0.5) hue-rotate(180deg);
+}
+
 // Actions icon animation
 .cltActionsIcon {
   transition: transform 200ms;
@@ -171,12 +307,220 @@
 }
 
 // ============================================================
-// Breadcrumb Component Styles
+// Card Component Styles — Neon Glow
+// ============================================================
+.cltCard {
+  width: 17rem;
+  min-height: 6rem;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  border: 2px solid;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--clt-card-bg);
+  box-shadow: var(--clt-card-shadow);
+  transition: box-shadow 300ms cubic-bezier(0.4,0,0.2,1),
+              transform 200ms cubic-bezier(0.4,0,0.2,1),
+              border-color 200ms cubic-bezier(0.4,0,0.2,1);
+
+  &:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.cltCardDefault {
+  border-color: var(--clt-status-default);
+  border-left: 3px solid var(--clt-ok);
+  &:hover {
+    border-color: var(--clt-ok);
+    border-left-color: var(--clt-ok);
+    box-shadow: var(--clt-card-shadow-hover);
+  }
+}
+
+.cltCardBreached {
+  border-color: var(--clt-status-breached);
+  border-left-width: 4px;
+  &:hover {
+    border-color: var(--clt-faults);
+    box-shadow: var(--clt-card-breached-shadow-hover);
+  }
+}
+
+.cltCardSelected {
+  box-shadow: var(--clt-card-selected-glow);
+}
+
+.cltCardFaded {
+  opacity: 0.25;
+  &:hover { transform: none; box-shadow: var(--clt-card-shadow); }
+}
+
+// Metrics divider line
+.cltCardMetrics {
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--clt-divider-default);
+}
+
+// ============================================================
+// Control Panel Styles — Glass Surface
+// ============================================================
+.cltControlPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: var(--clt-surface);
+  padding: 0.375rem;
+  border-radius: 9999px;
+  box-shadow: var(--clt-shadow-md);
+  border: 1px solid var(--clt-surface-border);
+  backdrop-filter: blur(8px);
+  z-index: 50;
+}
+
+.cltControlBtn {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background-color 200ms, color 200ms, transform 100ms;
+  border: none;
+  background: transparent;
+  color: var(--clt-body-secondary);
+  &:hover { background: var(--clt-surface-hover); color: var(--clt-interactive); }
+  &:active { transform: scale(0.92); }
+}
+
+// ============================================================
+// Legend Button & Panel
+// ============================================================
+.cltLegendBtn {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background: var(--clt-surface);
+  box-shadow: var(--clt-shadow-md);
+  border: 1px solid var(--clt-surface-border);
+  backdrop-filter: blur(8px);
+  color: var(--clt-body-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 250ms, color 200ms, transform 100ms;
+  &:hover { box-shadow: var(--clt-shadow-lg); color: var(--clt-interactive); }
+  &:active { transform: scale(0.95); }
+}
+
+.cltLegendPanel {
+  width: 14.5rem;
+  max-height: 22rem;
+  background: var(--clt-surface);
+  border-radius: 0.75rem;
+  box-shadow: var(--clt-shadow-lg);
+  border: 1px solid var(--clt-surface-border);
+  backdrop-filter: blur(12px);
+  z-index: 50;
+  overflow: auto;
+  // Gradient accent bar at top
+  &::before {
+    content: '';
+    display: block;
+    height: 3px;
+    background: linear-gradient(90deg, var(--clt-ok) 0%, var(--clt-errors) 50%, var(--clt-faults) 100%);
+    border-radius: 0.75rem 0.75rem 0 0;
+  }
+}
+
+// ============================================================
+// Context Menu & Menu Items
+// ============================================================
+.cltContextMenu {
+  position: absolute;
+  z-index: 9999;
+  overflow: visible;
+  background: var(--clt-surface);
+  border: 1px solid var(--clt-surface-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--clt-shadow-lg);
+  backdrop-filter: blur(8px);
+  width: 15rem;
+}
+
+.cltContextMenuItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+  color: var(--clt-body-default);
+  cursor: pointer;
+  transition: background-color 150ms;
+  &:hover { background: var(--clt-surface-hover); }
+  &:disabled {
+    cursor: not-allowed;
+    color: var(--clt-body-secondary);
+    &:hover { background: transparent; }
+  }
+}
+
+// ============================================================
+// Match Badge
+// ============================================================
+.cltMatchBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  background: color-mix(in srgb, var(--clt-interactive) 10%, transparent);
+  color: var(--clt-body-default);
+  border: 2px solid var(--clt-interactive);
+}
+
+// ============================================================
+// Stack Badge
+// ============================================================
+.cltStackBadge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--clt-interactive);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px var(--clt-surface), var(--clt-shadow-sm);
+  transform: translate(8px, -8px);
+}
+
+// ============================================================
+// Breadcrumb Component Styles — Frosted Glass
 // ============================================================
 .cltBreadcrumbTrail {
   display: flex;
   align-items: center;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--clt-breadcrumb-bg);
+  backdrop-filter: blur(8px);
+  border-radius: 0.5rem;
+  border: 1px solid var(--clt-breadcrumb-border);
+  box-shadow: var(--clt-shadow-sm);
+  margin-left: 0.5rem;
 }
 
 .cltBreadcrumbItem {

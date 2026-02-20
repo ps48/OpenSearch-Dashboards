@@ -28,7 +28,7 @@ export const BreadcrumbTrail = ({ breadcrumbs, onBreadcrumbClick, hotspot }: Bre
                 }
             >
                 {index === 0 ? (
-                    <img src={globeIcon} alt="Globe" className="cltIconMd cltTextSecondary" />
+                    <img src={globeIcon} alt="Globe" className="cltIconMd cltTextSecondary cltIconThemed" />
                 ) : (
                     <HealthDonut
                         metrics={breadcrumb.node?.metrics || { ...DEFAULT_METRICS }}

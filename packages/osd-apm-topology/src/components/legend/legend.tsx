@@ -20,10 +20,10 @@ export const Legend: React.FC = () => {
             <button
                 ref={ref}
                 onClick={onToggle}
-                className="flex items-center justify-center w-10 h-10 rounded-full bg-container-default shadow-md hover:shadow-xl text-body-secondary hover:text-interactive transition-all duration-300 cursor-pointer"
+                className="cltLegendBtn"
                 aria-label={t(`legend.toggle`)}
             >
-                <img src={legendIcon} alt="Legend" className="cltIcon" />
+                <img src={legendIcon} alt="Legend" className="cltIcon cltIconThemed" />
             </button>
 
             {/* Legend Popup */}

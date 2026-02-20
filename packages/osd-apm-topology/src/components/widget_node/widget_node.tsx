@@ -39,7 +39,7 @@ export const WidgetNode = (props: NodeProps<WidgetNodeType>) => {
                 </HealthDonut>
             </div>
             <div className="mt-1 text-center">
-                <div className="font-medium text-xs">{title}</div>
+                <div className="font-medium text-xs text-body-default">{title}</div>
                 {subtitle && <div className="text-xs text-gray-500">{subtitle || type}</div>}
             </div>
         </div>
