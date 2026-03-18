@@ -461,7 +461,35 @@ export class ExplorePlugin
       },
     ];
 
-    core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, navLinks(true));
+    const enableIconSideNav = core.uiSettings.get('home:enableIconSideNav', false);
+
+    if (enableIconSideNav) {
+      core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, [
+        {
+          id: `${PLUGIN_ID}/${ExploreFlavor.Logs}`,
+          category: undefined,
+          order: 300,
+          title: 'Logs',
+          euiIconType: 'discoverApp',
+        },
+        {
+          id: `${PLUGIN_ID}/${ExploreFlavor.Metrics}`,
+          category: undefined,
+          order: 400,
+          title: 'Metrics',
+          euiIconType: 'stats',
+        },
+        {
+          id: `${PLUGIN_ID}/${ExploreFlavor.Traces}`,
+          category: DEFAULT_APP_CATEGORIES.applicationMonitoring,
+          order: 4050,
+          title: 'Traces',
+          euiIconType: 'apmTrace',
+        },
+      ]);
+    } else {
+      core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, navLinks(true));
+    }
 
     core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.all, navLinks(false));
     this.registerEmbeddable(core, setupDeps);

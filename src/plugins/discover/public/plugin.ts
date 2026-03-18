@@ -308,11 +308,13 @@ export class DiscoverPlugin
     // If Explore plugin is enabled, it will register a Discover menu to the
     // side nav in observability workspaces, we should skip registration here.
     if (!plugins.explore) {
+      const enableIconSideNav = core.uiSettings.get('home:enableIconSideNav', false);
       core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, [
         {
           id: PLUGIN_ID,
           category: undefined,
           order: 300,
+          ...(enableIconSideNav ? { title: 'Logs', euiIconType: 'discoverApp' } : {}),
         },
       ]);
     }

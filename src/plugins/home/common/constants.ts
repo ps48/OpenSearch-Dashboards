@@ -36,4 +36,5 @@ export const USE_NEW_HOME_PAGE = 'home:useNewHomePage';
  * The id is used in src/plugins/workspace/public/plugin.ts and please change that accordingly if you change the id here.
  */
 export const IMPORT_SAMPLE_DATA_APP_ID = 'import_sample_data';
+export const ENABLE_ICON_SIDE_NAV = 'home:enableIconSideNav';
 export const SEARCH_WORKSPACE_DISMISS_GET_STARTED = 'searchWorkspace:dismissGetStarted';

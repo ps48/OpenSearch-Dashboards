@@ -275,7 +275,16 @@ export class AgentTracesPlugin
     core.application.register(createAgentTracesApp());
 
     // Register nav links for observability and analytics workspaces
-    const navLinks = [
+    const enableIconSideNav = core.uiSettings.get('home:enableIconSideNav', false);
+    const observabilityNavLinks = [
+      {
+        id: PLUGIN_ID,
+        category: undefined,
+        order: enableIconSideNav ? 600 : 300,
+        ...(enableIconSideNav ? { title: 'Agent Traces', euiIconType: 'uptimeApp' } : {}),
+      },
+    ];
+    const allNavLinks = [
       {
         id: PLUGIN_ID,
         category: undefined,
@@ -283,8 +292,11 @@ export class AgentTracesPlugin
       },
     ];
 
-    core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, navLinks);
-    core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.all, navLinks);
+    core.chrome.navGroup.addNavLinksToGroup(
+      DEFAULT_NAV_GROUPS.observability,
+      observabilityNavLinks
+    );
+    core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.all, allNavLinks);
     this.registerEmbeddable(core, setupDeps);
 
     return {

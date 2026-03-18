@@ -27,6 +27,9 @@ export interface CollapsibleNavTopProps {
   logos: Logos;
   onClickShrink?: () => void;
   shouldShrinkNavigation: boolean;
+  enableIconSideNav?: boolean;
+  isLocked?: boolean;
+  onIsLockedUpdate?: (isLocked: boolean) => void;
 }
 
 export const CollapsibleNavTop = ({
@@ -37,6 +40,9 @@ export const CollapsibleNavTop = ({
   onClickShrink,
   shouldShrinkNavigation,
   homeLink,
+  enableIconSideNav,
+  isLocked,
+  onIsLockedUpdate,
 }: CollapsibleNavTopProps) => {
   const homeIcon = logos.Mark.url;
 
@@ -91,15 +97,32 @@ export const CollapsibleNavTop = ({
           </EuiFlexItem>
         ) : null}
         <EuiFlexItem grow={false}>
-          <EuiButtonIcon
-            onClick={onClickShrink}
-            iconType={shouldShrinkNavigation ? 'menu' : 'menuLeft'}
-            color="subdued"
-            display="empty"
-            aria-label="shrink-button"
-            data-test-subj="collapsibleNavShrinkButton"
-            size="xs"
-          />
+          <EuiFlexGroup gutterSize="xs" responsive={false} alignItems="center">
+            {enableIconSideNav && onIsLockedUpdate && (
+              <EuiFlexItem grow={false}>
+                <EuiButtonIcon
+                  onClick={() => onIsLockedUpdate(!isLocked)}
+                  iconType={isLocked ? 'pinFilled' : 'pin'}
+                  color="subdued"
+                  display="empty"
+                  aria-label={isLocked ? 'Unpin navigation' : 'Pin navigation'}
+                  data-test-subj="collapsibleNavPinButton"
+                  size="xs"
+                />
+              </EuiFlexItem>
+            )}
+            <EuiFlexItem grow={false}>
+              <EuiButtonIcon
+                onClick={onClickShrink}
+                iconType={shouldShrinkNavigation ? 'menu' : 'menuLeft'}
+                color="subdued"
+                display="empty"
+                aria-label="shrink-button"
+                data-test-subj="collapsibleNavShrinkButton"
+                size="xs"
+              />
+            </EuiFlexItem>
+          </EuiFlexGroup>
         </EuiFlexItem>
       </EuiFlexGroup>
       {

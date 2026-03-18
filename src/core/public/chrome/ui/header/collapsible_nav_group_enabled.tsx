@@ -29,6 +29,7 @@ import { CollapsibleNavTop } from './collapsible_nav_group_enabled_top';
 import { HeaderNavControls } from './header_nav_controls';
 import { NavGroups } from './collapsible_nav_groups';
 import { HeaderSearchBar, HeaderSearchBarIcon } from './header_search_bar';
+import { CollapsedNavStrip } from './collapsed_nav_strip';
 
 export interface CollapsibleNavGroupEnabledProps {
   appId$: InternalApplicationStart['currentAppId$'];
@@ -50,6 +51,9 @@ export interface CollapsibleNavGroupEnabledProps {
   capabilities: InternalApplicationStart['capabilities'];
   currentWorkspace$: WorkspacesStart['currentWorkspace$'];
   globalSearchCommands$: Rx.Observable<GlobalSearchCommand[]>;
+  enableIconSideNav?: boolean;
+  isLocked?: boolean;
+  onIsLockedUpdate?: (isLocked: boolean) => void;
 }
 
 const titleForSeeAll = i18n.translate('core.ui.primaryNav.seeAllLabel', {
@@ -73,6 +77,9 @@ export function CollapsibleNavGroupEnabled({
   setCurrentNavGroup,
   capabilities,
   collapsibleNavHeaderRender,
+  enableIconSideNav,
+  isLocked,
+  onIsLockedUpdate,
   ...observables
 }: CollapsibleNavGroupEnabledProps) {
   const allNavLinks = useObservable(observables.navLinks$, []);
@@ -216,10 +223,26 @@ export function CollapsibleNavGroupEnabled({
               currentNavGroup={currentNavGroupId ? navGroupsMap[currentNavGroupId] : undefined}
               shouldShrinkNavigation={!isNavOpen}
               onClickShrink={closeNav}
+              enableIconSideNav={enableIconSideNav}
+              isLocked={isLocked}
+              onIsLockedUpdate={onIsLockedUpdate}
             />
           </EuiPanel>
         )}
-        {!isNavOpen ? (
+        {!isNavOpen && enableIconSideNav ? (
+          <div className="collapsedNavContainer">
+            {globalSearchCommands && (
+              <div className="collapsedNavSearchIcon">
+                <HeaderSearchBarIcon globalSearchCommands={globalSearchCommands} />
+              </div>
+            )}
+            <CollapsedNavStrip
+              navLinks={navLinksForRender}
+              appId={appId}
+              navigateToApp={navigateToApp}
+            />
+          </div>
+        ) : !isNavOpen ? (
           <div className="searchBarIcon euiHeaderSectionItemButton">
             {globalSearchCommands && (
               <HeaderSearchBarIcon globalSearchCommands={globalSearchCommands} />
@@ -259,12 +282,13 @@ export function CollapsibleNavGroupEnabled({
               appId={appId}
               categoryCollapsible={currentNavGroupId === ALL_USE_CASE_ID}
               currentWorkspaceId={currentWorkspace?.id}
+              enableIconSideNav={enableIconSideNav}
             />
           </EuiPanel>
         )}
         {
           // This element is used to push icons to the bottom of left navigation when collapsed
-          !isNavOpen ? <div className="flex-1-container" /> : null
+          !isNavOpen && !enableIconSideNav ? <div className="flex-1-container" /> : null
         }
         <div
           className={classNames({

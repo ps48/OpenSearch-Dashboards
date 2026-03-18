@@ -234,14 +234,17 @@ export class VisualizePlugin
       defaultMessage: 'Visualizations',
     });
 
-    core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, [
-      {
-        id: visualizeAppId,
-        category: DEFAULT_APP_CATEGORIES.visualizeAndReport,
-        order: 100,
-        title: titleInLeftNav,
-      },
-    ]);
+    const enableIconSideNav = core.uiSettings.get('home:enableIconSideNav', false);
+    if (!enableIconSideNav) {
+      core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, [
+        {
+          id: visualizeAppId,
+          category: DEFAULT_APP_CATEGORIES.visualizeAndReport,
+          order: 100,
+          title: titleInLeftNav,
+        },
+      ]);
+    }
     core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS['security-analytics'], [
       {
         id: visualizeAppId,

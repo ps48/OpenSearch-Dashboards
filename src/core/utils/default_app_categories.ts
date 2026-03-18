@@ -144,4 +144,30 @@ export const DEFAULT_APP_CATEGORIES: Record<string, AppCategory> = Object.freeze
     }),
     order: 9000,
   },
+  applicationMonitoring: {
+    id: 'applicationMonitoring',
+    label: i18n.translate('core.ui.applicationMonitoring.label', {
+      defaultMessage: 'Application Monitoring',
+    }),
+    euiIconType: 'apmApp',
+    order: 4000,
+  },
+  observabilitySettings: {
+    id: 'observabilitySettings',
+    label: i18n.translate('core.ui.observabilitySettings.label', {
+      defaultMessage: 'Settings',
+    }),
+    euiIconType: 'gear',
+    order: 9500,
+    collapsible: true,
+    defaultOpen: false,
+  },
+  observabilityTools: {
+    id: 'observabilityTools',
+    label: i18n.translate('core.ui.observabilityTools.label', {
+      defaultMessage: 'Tools',
+    }),
+    euiIconType: 'wrench',
+    order: 5000,
+  },
 });

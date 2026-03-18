@@ -79,6 +79,11 @@ export const WORKSPACE_USE_CASES = Object.freeze({
       'observability-metrics',
       'observability-traces',
       'observability-applications',
+      'agentTraces',
+      'observability-apm-services',
+      'observability-apm-application-map',
+      'observability-traces-nav',
+      'observability-services-nav',
       // Add management avoid index patterns application not found for dashboards or visualize
       'management',
       'indexPatterns',

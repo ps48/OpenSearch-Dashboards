@@ -16,6 +16,7 @@ import {
   DEFAULT_NAV_GROUPS,
   ALL_USE_CASE_ID,
   UseCaseId,
+  OBSERVABILITY_USE_CASE_ID,
 } from '../../../../core/public';
 import {
   WORKSPACE_DETAIL_APP_ID,
@@ -55,6 +56,7 @@ export class UseCaseService {
   private async registerManageWorkspaceCategory(setupDeps: UseCaseServiceSetupDeps) {
     const [coreStart] = await setupDeps.getStartServices();
     const isPermissionEnabled = coreStart?.application?.capabilities.workspaces.permissionEnabled;
+    const enableIconSideNav = coreStart?.uiSettings?.get('home:enableIconSideNav', false);
 
     this.workspaceAndManageWorkspaceCategorySubscription?.unsubscribe();
     this.workspaceAndManageWorkspaceCategorySubscription = combineLatest([
@@ -78,10 +80,16 @@ export class UseCaseService {
       )
       .subscribe((navGroupInfo) => {
         if (navGroupInfo) {
+          const isObservability = navGroupInfo.id === OBSERVABILITY_USE_CASE_ID;
+          const category =
+            enableIconSideNav && isObservability
+              ? DEFAULT_APP_CATEGORIES.observabilitySettings
+              : DEFAULT_APP_CATEGORIES.manageWorkspace;
+
           setupDeps.chrome.navGroup.addNavLinksToGroup(navGroupInfo, [
             {
               id: WORKSPACE_DETAIL_APP_ID,
-              category: DEFAULT_APP_CATEGORIES.manageWorkspace,
+              category,
               order: 100,
               title: i18n.translate('workspace.settings.workspaceDetails', {
                 defaultMessage: 'Workspace details',
@@ -91,7 +99,7 @@ export class UseCaseService {
               ? [
                   {
                     id: WORKSPACE_COLLABORATORS_APP_ID,
-                    category: DEFAULT_APP_CATEGORIES.manageWorkspace,
+                    category,
                     order: 200,
                     title: i18n.translate('workspace.settings.workspaceCollaborators', {
                       defaultMessage: 'Collaborators',
@@ -101,27 +109,27 @@ export class UseCaseService {
               : []),
             {
               id: 'dataSources',
-              category: DEFAULT_APP_CATEGORIES.manageWorkspace,
+              category,
               order: 300,
             },
             {
               id: 'indexPatterns',
-              category: DEFAULT_APP_CATEGORIES.manageWorkspace,
+              category,
               order: 400,
             },
             {
               id: 'datasets',
-              category: DEFAULT_APP_CATEGORIES.manageWorkspace,
+              category,
               order: 400,
             },
             {
               id: 'objects',
-              category: DEFAULT_APP_CATEGORIES.manageWorkspace,
+              category,
               order: 500,
             },
             {
               id: 'import_sample_data',
-              category: DEFAULT_APP_CATEGORIES.manageWorkspace,
+              category,
               order: 600,
               title: i18n.translate('workspace.left.sampleData.label', {
                 defaultMessage: 'Sample data',

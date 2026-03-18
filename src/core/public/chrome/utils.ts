@@ -230,8 +230,9 @@ function getCategoryLocalStorageKey(id: string) {
   return `core.navGroup.${id}`;
 }
 
-export function getIsCategoryOpen(id: string, storage: Storage) {
-  const value = storage.getItem(getCategoryLocalStorageKey(id)) ?? 'true';
+export function getIsCategoryOpen(id: string, storage: Storage, defaultOpen: boolean = true) {
+  const value = storage.getItem(getCategoryLocalStorageKey(id));
+  if (value === null) return defaultOpen;
 
   return value === 'true';
 }

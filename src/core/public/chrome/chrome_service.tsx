@@ -151,7 +151,9 @@ export class ChromeService {
   private readonly navGroup = new ChromeNavGroupService();
   private readonly globalSearch = new GlobalSearchService();
   private useUpdatedHeader = false;
+  private enableIconSideNav = false;
   private updatedHeaderSubscription: Subscription | undefined;
+  private enableIconSideNavSubscription: Subscription | undefined;
   private collapsibleNavHeaderRender?: CollapsibleNavHeaderRender;
   private navGroupStart?: ChromeNavGroupServiceStartContract;
   private applicationStart?: InternalApplicationStart;
@@ -264,6 +266,12 @@ export class ChromeService {
       .get$('home:useNewHomePage', false)
       .subscribe((value) => {
         this.useUpdatedHeader = value;
+      });
+
+    this.enableIconSideNavSubscription = uiSettings
+      .get$('home:enableIconSideNav', false)
+      .subscribe((value) => {
+        this.enableIconSideNav = value;
       });
 
     const appTitle$ = new BehaviorSubject<string>('Overview');
@@ -427,6 +435,7 @@ export class ChromeService {
           globalSearchCommands$={globalSearch.getAllSearchCommands$()}
           globalBanner$={this.globalBanner$.pipe(takeUntil(this.stop$))}
           keyboardShortcut={keyboardShortcut}
+          enableIconSideNav={this.enableIconSideNav}
         />
       ),
 
@@ -504,6 +513,7 @@ export class ChromeService {
     this.navLinks.stop();
     this.navGroup.stop();
     this.updatedHeaderSubscription?.unsubscribe();
+    this.enableIconSideNavSubscription?.unsubscribe();
     this.stop$.next();
   }
 }

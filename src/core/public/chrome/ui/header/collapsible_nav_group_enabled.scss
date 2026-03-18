@@ -27,15 +27,16 @@
   .nav-link-parent-item {
     padding-top: 0;
     padding-bottom: 0;
-    margin-bottom: $euiSizeS;
+    margin-bottom: 0;
 
     > .nav-link-item-btn {
       padding: $euiSizeS;
-      margin-bottom: $euiSizeXS;
+      margin-bottom: 0;
     }
 
-    // Hide the expand / collapse button as we will use + / -
-    svg {
+    // Hide EuiSideNav's built-in caret arrow (direct child SVG of the content span)
+    // but preserve nav item icon SVGs rendered inside the label via renderName()
+    .euiSideNavItemButton__content > svg {
       display: none;
     }
 
@@ -51,6 +52,11 @@
     // Use a smaller vertical padding so that category title looks more grouped to the items
     .nav-link-item {
       padding: $euiSizeXS $euiSizeS;
+    }
+
+    // Align category header icon with regular nav link icons
+    .euiCollapsibleNavGroup__heading {
+      padding-left: 0;
     }
   }
 
@@ -143,5 +149,38 @@
     position: relative;
     top: $ouiHeaderChildSize;
     left: 0;
+  }
+
+  .collapsedNavContainer {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    padding-top: $ouiHeaderChildSize;
+    overflow: hidden;
+  }
+
+  .collapsedNavSearchIcon {
+    display: flex;
+    justify-content: center;
+    padding: $euiSizeXS 0;
+    flex-shrink: 0;
+  }
+
+  .collapsedNavStrip {
+    padding: $euiSizeS 0;
+    overflow-y: auto;
+
+    // Hide scrollbar while keeping scroll functionality
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    .collapsedNavStripIcon {
+      width: 32px;
+      height: 32px;
+    }
   }
 }

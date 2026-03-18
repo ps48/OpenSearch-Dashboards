@@ -67,4 +67,15 @@ export interface AppCategory {
    * Defaults to initials if no icon is defined
    */
   euiIconType?: EuiIconType;
+
+  /**
+   * Whether this category can be collapsed in the side nav.
+   * When set, overrides the global `categoryCollapsible` prop.
+   */
+  collapsible?: boolean;
+
+  /**
+   * Whether this category is open by default when collapsible (defaults to true).
+   */
+  defaultOpen?: boolean;
 }

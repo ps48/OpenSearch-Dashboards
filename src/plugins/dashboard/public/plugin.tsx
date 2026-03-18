@@ -461,11 +461,13 @@ export class DashboardPlugin
 
     core.application.register(app);
 
+    const enableIconSideNav = core.uiSettings.get('home:enableIconSideNav', false);
     core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, [
       {
         id: app.id,
-        order: 400,
+        order: enableIconSideNav ? 100 : 400,
         category: undefined,
+        ...(enableIconSideNav ? { euiIconType: 'dashboardApp' } : {}),
       },
     ]);
     core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS['security-analytics'], [

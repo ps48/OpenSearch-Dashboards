@@ -44,7 +44,7 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import classnames from 'classnames';
-import React, { createRef, useCallback, useMemo, useState } from 'react';
+import React, { createRef, useCallback, useEffect, useMemo, useState } from 'react';
 import useObservable from 'react-use/lib/useObservable';
 import { Observable, of } from 'rxjs';
 import { LoadingIndicator } from '../';
@@ -134,6 +134,7 @@ export interface HeaderProps {
   globalBanner$?: Observable<ChromeGlobalBanner | undefined>;
   keyboardShortcut?: KeyboardShortcutStart;
   globalSearchCommands$: Observable<GlobalSearchCommand[]>;
+  enableIconSideNav?: boolean;
 }
 
 const hasValue = (value: any) => {
@@ -160,6 +161,7 @@ export function Header({
   setCurrentNavGroup,
   useUpdatedHeader,
   keyboardShortcut,
+  enableIconSideNav,
   ...observables
 }: HeaderProps) {
   const isVisible = useObservable(observables.isVisible$, false);
@@ -169,6 +171,10 @@ export function Header({
   const sidecarConfig = useObservable(observables.sidecarConfig$, undefined);
   const breadcrumbs = useObservable(observables.breadcrumbs$, []);
   const globalBanner = useObservable(observables.globalBanner$ || of(undefined), undefined);
+
+  // Only enable icon side nav for observability workspaces
+  const currentNavGroup = useObservable(observables.currentNavGroup$, undefined);
+  const effectiveEnableIconSideNav = enableIconSideNav && currentNavGroup?.id === 'observability';
 
   const currentLeftControls = useObservableValue(application.currentLeftControls$);
   const navControlsLeft = useObservable(observables.navControlsLeft$);
@@ -194,20 +200,38 @@ export function Header({
     return getSidecarLeftNavStyle(sidecarConfig);
   }, [sidecarConfig]);
 
-  const isNavOpen = useUpdatedHeader ? isLocked : isNavOpenState;
+  const [isTempExpanded, setIsTempExpanded] = useState(false);
+
+  const isNavOpen = effectiveEnableIconSideNav
+    ? isLocked || isTempExpanded
+    : useUpdatedHeader
+    ? isLocked
+    : isNavOpenState;
+
+  // Auto-close temp expansion on app navigation
+  const currentAppId = useObservable(application.currentAppId$, '');
+  useEffect(() => {
+    if (effectiveEnableIconSideNav && !isLocked && isTempExpanded) {
+      setIsTempExpanded(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAppId]);
 
   const setIsNavOpen = useCallback(
     (value: boolean) => {
-      /**
-       * When use updated header, we will regard the lock state as source of truth
-       */
-      if (useUpdatedHeader) {
+      if (effectiveEnableIconSideNav) {
+        if (value) {
+          setIsTempExpanded(true);
+        } else {
+          setIsTempExpanded(false);
+        }
+      } else if (useUpdatedHeader) {
         onIsLockedUpdate(value);
       } else {
         setIsNavOpenState(value);
       }
     },
-    [setIsNavOpenState, onIsLockedUpdate, useUpdatedHeader]
+    [setIsNavOpenState, onIsLockedUpdate, useUpdatedHeader, effectiveEnableIconSideNav]
   );
 
   const handleToggleNavOpen = useCallback(() => {
@@ -716,6 +740,9 @@ export function Header({
             capabilities={application.capabilities}
             currentWorkspace$={observables.currentWorkspace$}
             globalSearchCommands$={observables.globalSearchCommands$}
+            enableIconSideNav={effectiveEnableIconSideNav}
+            isLocked={isLocked}
+            onIsLockedUpdate={onIsLockedUpdate}
           />
         ) : (
           <CollapsibleNav

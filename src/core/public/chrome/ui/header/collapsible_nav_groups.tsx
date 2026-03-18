@@ -4,15 +4,24 @@
  */
 
 import './collapsible_nav_group_enabled.scss';
-import { EuiFlexItem, EuiSideNavItemType, EuiSideNav, EuiText } from '@elastic/eui';
+import {
+  EuiFlexGroup,
+  EuiFlexItem,
+  EuiIcon,
+  EuiSideNavItemType,
+  EuiSideNav,
+  EuiText,
+} from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import React, { useState } from 'react';
+import { Observable } from 'rxjs';
 import classNames from 'classnames';
 import { ChromeNavLink } from '../..';
 import { InternalApplicationStart } from '../../../application/types';
 import { createEuiListItem } from './nav_link';
 import { getOrderedLinksOrCategories, LinkItem, LinkItemType } from '../../utils';
 import { CollapsibleNavGroupsLabel, getIsCategoryOpen } from './collapsible_nav_groups_label';
+import { NavLinkBadge } from './nav_link_badge';
 
 export interface NavGroupsProps {
   navLinks: ChromeNavLink[];
@@ -26,6 +35,7 @@ export interface NavGroupsProps {
   ) => void;
   categoryCollapsible?: boolean;
   currentWorkspaceId?: string;
+  enableIconSideNav?: boolean;
 }
 
 const titleForSeeAll = i18n.translate('core.ui.primaryNav.seeAllLabel', {
@@ -43,6 +53,7 @@ export function NavGroups({
   onNavItemClick,
   categoryCollapsible,
   currentWorkspaceId,
+  enableIconSideNav,
 }: NavGroupsProps) {
   const [, setRenderKey] = useState(Date.now());
   const createNavItem = ({
@@ -62,9 +73,35 @@ export function NavGroups({
       },
     });
 
+    const renderName = () => {
+      if (!enableIconSideNav) {
+        return <EuiText>{link.title}</EuiText>;
+      }
+      const linkBadge$ = (link as ChromeNavLink & {
+        badge$?: Observable<number | string | undefined>;
+      }).badge$;
+      return (
+        <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+          {link.euiIconType && (
+            <EuiFlexItem grow={false}>
+              <EuiIcon type={link.euiIconType} size="m" />
+            </EuiFlexItem>
+          )}
+          <EuiFlexItem>
+            <EuiText>{link.title}</EuiText>
+          </EuiFlexItem>
+          {linkBadge$ && (
+            <EuiFlexItem grow={false}>
+              <NavLinkBadge badge$={linkBadge$} />
+            </EuiFlexItem>
+          )}
+        </EuiFlexGroup>
+      );
+    };
+
     return {
       id: `${link.id}-${link.title}`,
-      name: <EuiText>{link.title}</EuiText>,
+      name: renderName(),
       onClick: euiListItem.onClick,
       href: euiListItem.href,
       emphasize: euiListItem.isActive,
@@ -104,6 +141,7 @@ export function NavGroups({
       const parentOpenKey = `${currentWorkspaceId ? `${currentWorkspaceId}-` : ''}${
         navLink.link.id
       }`;
+      const parentDefaultOpen = enableIconSideNav ? false : true;
       const parentItem = {
         ...props,
         forceOpen: true,
@@ -111,7 +149,7 @@ export function NavGroups({
          * The Tree component inside SideNav is not a controllable component,
          * so we need to change the id(will pass as key into the Tree component) to remount the component.
          */
-        id: `${props.id}-${!!getIsCategoryOpen(parentOpenKey)}`,
+        id: `${props.id}-${!!getIsCategoryOpen(parentOpenKey, undefined, parentDefaultOpen)}`,
         /**
          * The href and onClick should both be undefined to make parent item rendered as accordion.
          */
@@ -127,13 +165,15 @@ export function NavGroups({
             label={props.name}
             storageKey={parentOpenKey}
             collapsible
+            defaultOpen={parentDefaultOpen}
             onToggle={() => setRenderKey(Date.now())}
             data-test-subj={props['data-test-subj']}
           />
         ),
-        items: (getIsCategoryOpen(parentOpenKey) ? navLink.links : []).map((subNavLink) =>
-          createSideNavItem(subNavLink, level + 1, 'nav-nested-item')
-        ),
+        items: (getIsCategoryOpen(parentOpenKey, undefined, parentDefaultOpen)
+          ? navLink.links
+          : []
+        ).map((subNavLink) => createSideNavItem(subNavLink, level + 1, 'nav-nested-item')),
       };
       /**
        * OuiSideBar will never render items of first level as accordion,
@@ -156,23 +196,38 @@ export function NavGroups({
       const categoryOpenKey = `${currentWorkspaceId ? `${currentWorkspaceId}-` : ''}${
         navLink.category?.id
       }`;
+      const isCategoryCollapsible = navLink.category?.collapsible ?? !!categoryCollapsible;
+      const categoryDefaultOpen = navLink.category?.defaultOpen ?? true;
       return {
         id: navLink.category?.id ?? '',
         name: (
           <CollapsibleNavGroupsLabel
             label={
               <EuiText size="s">
-                <span className="euiCollapsibleNavGroup__heading nav-link-item">
-                  {navLink.category?.label ?? ''}
-                </span>
+                <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+                  {enableIconSideNav &&
+                    navLink.category?.collapsible &&
+                    navLink.category?.euiIconType && (
+                      <EuiFlexItem grow={false}>
+                        <EuiIcon type={navLink.category.euiIconType} size="m" />
+                      </EuiFlexItem>
+                    )}
+                  <EuiFlexItem>
+                    <span className="euiCollapsibleNavGroup__heading nav-link-item">
+                      {navLink.category?.label ?? ''}
+                    </span>
+                  </EuiFlexItem>
+                </EuiFlexGroup>
               </EuiText>
             }
-            collapsible={!!categoryCollapsible}
+            collapsible={isCategoryCollapsible}
             storageKey={categoryOpenKey}
+            defaultOpen={categoryDefaultOpen}
             onToggle={() => setRenderKey(Date.now())}
           />
         ),
-        items: (!categoryCollapsible || getIsCategoryOpen(categoryOpenKey)
+        items: (!isCategoryCollapsible ||
+        getIsCategoryOpen(categoryOpenKey, undefined, categoryDefaultOpen)
           ? navLink.links
           : []
         )?.map((link) => createSideNavItem(link, level + 1)),

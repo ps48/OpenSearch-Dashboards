@@ -14,17 +14,29 @@ export interface CollapsibleNavGroupsLabelProps {
   storage?: Storage;
   label?: React.ReactNode;
   onToggle?: (isOpen: boolean) => void;
+  defaultOpen?: boolean;
   'data-test-subj'?: EuiFlexGroupProps['data-test-subj'];
 }
 
-export function getIsCategoryOpen(storageKey: string, storage: Storage = window.localStorage) {
-  return getIsCategoryOpenFromStorage(storageKey, storage);
+export function getIsCategoryOpen(
+  storageKey: string,
+  storage: Storage = window.localStorage,
+  defaultOpen: boolean = true
+) {
+  return getIsCategoryOpenFromStorage(storageKey, storage, defaultOpen);
 }
 
 export function CollapsibleNavGroupsLabel(props: CollapsibleNavGroupsLabelProps) {
-  const { collapsible, storageKey, storage = window.localStorage, label, onToggle } = props;
+  const {
+    collapsible,
+    storageKey,
+    storage = window.localStorage,
+    label,
+    onToggle,
+    defaultOpen = true,
+  } = props;
   const [, setRenderKey] = useState(Date.now());
-  const isOpen = collapsible ? getIsCategoryOpen(storageKey, storage) : true;
+  const isOpen = collapsible ? getIsCategoryOpen(storageKey, storage, defaultOpen) : true;
   return (
     <EuiFlexGroup
       alignItems="center"

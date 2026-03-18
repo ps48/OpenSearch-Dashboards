@@ -167,6 +167,8 @@ import { URL } from 'url';
 // @public
 export interface AppCategory {
     ariaLabel?: string;
+    collapsible?: boolean;
+    defaultOpen?: boolean;
     euiIconType?: string;
     id: string;
     label: string;
