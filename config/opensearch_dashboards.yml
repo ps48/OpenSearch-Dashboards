@@ -426,3 +426,36 @@
 # @experimental Set the value to true to enable context provider
 # contextProvider:
 #   enabled: true
+
+
+server.port: 5603
+
+opensearch.hosts: ["https://localhost:9200"]
+
+opensearch.username: "admin"
+opensearch.password: "My_password_123!@#"
+opensearch.ssl.verificationMode: none
+
+
+explore.enabled: true
+explore.discoverTraces.enabled: true
+explore.discoverMetrics.enabled: true
+explore.agentTraces.enabled: true
+workspace.enabled: true
+data_source.enabled: true
+data_source.ssl.verificationMode: none
+
+datasetManagement.enabled: true
+data.savedQueriesNewUI.enabled: true
+opensearchDashboards.branding.useExpandedHeader: false
+opensearchDashboards.enableIconSideNav: true
+
+uiSettings.overrides.home:useNewHomePage: true
+uiSettings.overrides.query:enhancements:enabled: true
+uiSettings.overrides.explore:experimental: true
+
+# OSD Apps Builder
+osdAppsBuilder.enabled: true
+osdAppsBuilder.provider: bedrock
+osdAppsBuilder.bedrock.region: us-west-2
+osdAppsBuilder.bedrock.modelId: us.anthropic.claude-opus-4-6-v1

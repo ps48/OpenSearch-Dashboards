@@ -1,0 +1,20 @@
+{
+  "id": "osdAppsBuilder",
+  "version": "opensearchDashboards",
+  "server": true,
+  "ui": true,
+  "configPath": ["osdAppsBuilder"],
+  "requiredPlugins": [
+    "data",
+    "navigation",
+    "savedObjects",
+    "savedObjectsManagement",
+    "opensearchDashboardsReact"
+  ],
+  "optionalPlugins": [
+    "dataSource",
+    "dataSourceManagement",
+    "queryEnhancements",
+    "workspace"
+  ]
+}

@@ -231,4 +231,7 @@
   - [TESTING](../TESTING.md)
   - [TRIAGING](../TRIAGING.md)
   - [TYPESCRIPT](../TYPESCRIPT.md)
+  - [Osd apps agentic design](../osd-apps-agentic-design.md)
+  - [Osd apps hld](../osd-apps-hld.md)
+  - [Osd apps lld](../osd-apps-lld.md)
   - [Testing_strategy](../testing_strategy.md)
