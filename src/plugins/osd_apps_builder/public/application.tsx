@@ -15,6 +15,7 @@ import { AppViewerPage } from './applications/app_viewer/app_viewer_page';
 export interface AppDeps {
   core: CoreStart;
   data: DataPublicPluginStart;
+  navigation?: any;
 }
 
 export const renderApp = (coreStart: CoreStart, params: AppMountParameters, deps?: AppDeps) => {
@@ -44,6 +45,7 @@ export const renderApp = (coreStart: CoreStart, params: AppMountParameters, deps
                 application={coreStart.application}
                 core={coreStart}
                 data={data}
+                navigation={deps?.navigation}
               />
             )}
           />

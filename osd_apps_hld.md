@@ -19,10 +19,10 @@
 8. [Existing OSD Patterns Leveraged](#8-existing-osd-patterns-leveraged)
 9. [Plugin Structure](#9-plugin-structure)
 10. [Phase 1 — Foundation (Detailed)](#10-phase-1--foundation-detailed)
-11. [Phase 2 — Iteration & Polish (High-Level)](#11-phase-2--iteration--polish-high-level)
+11. [Phase 2 — Iteration & Polish + iframe Bridge Architecture](#11-phase-2--iteration--polish-high-level)
 12. [Phase 3 — Collaboration (High-Level)](#12-phase-3--collaboration-high-level)
 13. [Open Questions & Risks](#13-open-questions--risks)
-14. [Appendix A: AWS Quick App — iframe + Bridge Approach](#appendix-a-aws-quick-app--iframe--bridge-approach)
+14. [Appendix A: Quick App — iframe + Bridge Approach](#appendix-a-quick-app--iframe--bridge-approach)
 
 ---
 
@@ -599,13 +599,103 @@ src/plugins/osd_apps_builder/
 
 ## 11. Phase 2 — Iteration & Polish (High-Level)
 
+### Existing Phase 2 Features
+
 | Feature | Description |
 |---------|-------------|
 | **Version history and rollback** | Each save creates an immutable version (stored as child saved objects with parent reference). Version history panel in the builder shows diffs and allows restore to any previous version. |
 | **Direct code editing mode** | Monaco editor (via `osd-monaco` package, already in OSD) alongside the prompt interface. Edits in the code editor sync to the live preview. Users can switch between prompt-driven and code-driven workflows. |
-| **Embed OSD Apps in dashboards** | Register an embeddable factory (`EmbeddableFactory`) so OSD Apps can be added as panels in existing dashboards, following the pattern used by visualization embeddables. |
+| **Embed Canvases in dashboards** | Register an embeddable factory (`EmbeddableFactory`) so Canvases can be added as panels in existing dashboards, following the pattern used by visualization embeddables. |
 | **Prompt suggestions gallery** | Curated example prompts with preview thumbnails. Categorized by use case (monitoring, log analysis, alerting, metrics). One-click to fork and customize. |
 | **Improved error handling** | Better AI error feedback (model-specific error messages), automatic retry with exponential backoff, fallback templates when generation fails repeatedly. |
+
+### Phase 2 Architecture: iframe + Bridge Rendering
+
+Migrate from in-process rendering (Phase 1) to an **iframe + bridge architecture** for production-grade security and JSX support.
+
+**Why migrate:**
+- Phase 1 uses AST validation (blocklist) — we keep finding new patterns to block. The iframe is an **allowlist** — only bridge calls work.
+- The AI generates much better **JSX** than `React.createElement()` — eliminates the backtick/parse errors that require repair loops.
+- The bridge pattern is **proven at scale** by QuickSight Quick Pages (see Appendix A & B).
+
+**Architecture:**
+
+```
+AI generates JSX string
+       ↓
+Parent frame: transpile JSX → JS (via Babel/SWC)
+       ↓
+Parent frame: build srcdoc HTML with JS + bridge client + OUI CSS + ECharts
+       ↓
+<iframe sandbox="allow-scripts allow-modals" srcdoc={html} />
+       ↓
+Iframe code calls bridge.query("source=my-index | head 100")
+       ↓ postMessage                    ↑ postMessage
+Parent frame: bridge host validates request
+  → calls OSD query_enhancements PPL/PromQL API
+  → posts result back to iframe
+```
+
+**Bridge API (exposed to generated code inside iframe):**
+
+```typescript
+interface CanvasBridge {
+  // Data queries — routed through OSD server
+  query(ppl: string): Promise<{ jsonData: any[]; size: number }>;
+  queryPromQL(promql: string): Promise<any>;
+
+  // Theme — synced from parent
+  getTheme(): { isDarkMode: boolean; euiTheme: object };
+  onThemeChange(callback: (theme) => void): void;
+
+  // Time range — synced from OSD time picker
+  getTimeRange(): { from: string; to: string };
+  onTimeRangeChange(callback: (range) => void): void;
+
+  // Navigation — delegated to parent
+  navigateToApp(appId: string, options?: { path?: string }): void;
+
+  // Clipboard / sharing
+  copyToClipboard(text: string): void;
+}
+```
+
+**iframe sandbox + CSP:**
+
+```
+sandbox="allow-scripts allow-modals"
+
+CSP:
+  default-src 'none';
+  script-src 'unsafe-inline';
+  style-src 'unsafe-inline';
+  img-src data: blob:;
+  media-src data: blob:;
+  navigate-to 'none';
+  form-action 'none';
+  base-uri 'none';
+```
+
+**Runtime bundle (pre-built, cached, embedded in srcdoc):**
+- React 18
+- OUI (@elastic/eui) components + CSS
+- ECharts
+- Bridge client library
+- ~2MB gzipped, loaded once and cached
+
+**What changes from Phase 1:**
+
+| Aspect | Phase 1 (current) | Phase 2 (iframe + bridge) |
+|--------|-------------------|--------------------------|
+| Rendering | In-process, same React tree | Sandboxed iframe with srcdoc |
+| Code format | `React.createElement()`, no JSX | Full JSX support |
+| Security | AST validation (blocklist) | iframe sandbox + CSP (allowlist) |
+| Data access | Scoped API in same process | Bridge via postMessage |
+| Theme | Inherited from EuiProvider | Synced via bridge.getTheme() |
+| Flyouts/modals | Render in OSD shell | Render inside iframe (contained) |
+| AI code quality | Frequent parse errors, repair loops | Clean JSX, fewer errors |
+
+**Migration path:** Phase 1 saved objects remain compatible — the `sourceCode` field stores the code regardless of rendering approach. The viewer detects the format and renders accordingly.
 
 ---
 
@@ -645,11 +735,11 @@ src/plugins/osd_apps_builder/
 
 ---
 
-## Appendix A: AWS Quick App — iframe + Bridge Approach
+## Appendix A: Quick App — iframe + Bridge Approach
 
 ### Reference Architecture
 
-AWS Quick App uses a sandboxed iframe with a `window.bridge` mechanism for external interactions:
+Quick App uses a sandboxed iframe with a `window.bridge` mechanism for external interactions:
 
 **Iframe sandbox:**
 ```
@@ -680,7 +770,7 @@ base-uri 'none';
 | Navigation (redirects) | ❌ Blocked |
 | External links | ✅ Intercepted via bridge, opened in new tab |
 
-**Bridge API:** Instead of direct network access, apps use `window.bridge` and `@amzn/quick-pages-runtime-lib` to interact with Quick Actions (API connectors), Quick Spaces (documents), Quick Dashboards (embedded visuals), AI Inference, App Storage, and File Downloads.
+**Bridge API:** Instead of direct network access, apps use `window.bridge` and `quick-pages-runtime-lib` to interact with Quick Actions (API connectors), Quick Spaces (documents), Quick Dashboards (embedded visuals), AI Inference, App Storage, and File Downloads.
 
 ### Analysis: Is This a Good Approach for OSD Apps?
 
@@ -708,3 +798,87 @@ However, for OSD Apps specifically, the tradeoffs still favor in-process renderi
 - The **blocked-by-default posture** — Quick App blocks everything and allowlists specific capabilities. Our AST validator follows the same philosophy: reject everything, allowlist specific imports and patterns.
 
 **Conclusion:** Quick App's iframe+bridge is the right choice for Quick App (standalone HTML pages, different ecosystem). OSD Apps' in-process+validation is the right choice for OSD (React/OUI components, deep framework integration needed). Both share the same security philosophy — minimal capability, controlled API surface, blocked-by-default — but implement it at different layers.
+
+---
+
+## Appendix B: Quick Pages — Bridge Architecture
+
+### How It Works: The Bridge
+
+Quick Pages apps communicate with the outside world through `window.bridge` — a secure messaging layer between the sandboxed iframe and the parent Quick page. The `quick-pages-runtime-lib` package wraps it into easy-to-use API clients.
+
+### Data Flow
+
+```
+┌─────────────────────────────────┐
+│       Your React App            │
+│   (inside sandboxed iframe)     │
+│                                 │
+│  import { quickSuiteClient,     │
+│    aiClient, getCurrentUser,    │
+│    putSharedItem, ... }         │
+│  from 'quick-pages-       │
+│        runtime-lib'             │
+│              │                  │
+│              ▼                  │
+│        window.bridge            │
+│    (postMessage under           │
+│         the hood)               │
+└────────────┬────────────────────┘
+             │ (secure message)
+             ▼
+┌─────────────────────────────────┐
+│   QuickSight Parent Frame       │
+│  (handles auth, API calls,      │
+│   enforces permissions)         │
+│              │                  │
+│              ▼                  │
+│    External Services / APIs     │
+│  (Connectors, Spaces, Bedrock,  │
+│   Storage, Dashboards, etc.)    │
+└─────────────────────────────────┘
+```
+
+### Available Clients
+
+| Client | What It Fetches | Example |
+|--------|----------------|---------|
+| `quickSuiteClient` | Data from Action Connectors (APIs) & Spaces | Fetch emails, list documents |
+| `aiClient` | AI responses from Claude models | Summarize text, classify data |
+| `getCurrentUser()` | User identity (name, email) | Personalize the app |
+| `putSharedItem` / `getSharedItem` | Persistent storage (shared or private) | Save/load app data |
+| `DashboardPlaceholder` | Embedded dashboard visuals | Display charts |
+
+### Example Usage
+
+```javascript
+import { getCurrentUser, getSharedItem } from 'quick-pages-runtime-lib';
+
+const [user, setUser] = useState(null);
+
+useEffect(() => {
+  // Fetches live data through the bridge
+  getCurrentUser().then(u => setUser(u));
+}, []);
+```
+
+### Key Takeaways
+
+- ✅ Apps don't call external APIs directly — the bridge + parent frame handle auth and networking securely
+- ✅ The runtime lib abstracts everything — just import and call functions like normal async code
+- ✅ All data is live — fetched at runtime when the user opens the app, not baked in at build time
+- 🔒 Permissions are enforced — integrations must be registered and approved before they work at runtime
+
+### Comparison with OSD Canvas
+
+| Aspect | QuickSight Quick Pages | OSD Canvas |
+|--------|----------------------|------------|
+| **Rendering** | Sandboxed iframe | In-process (same React tree) |
+| **Data access** | `window.bridge` → parent frame → APIs | `props.api.search()` → PPL/PromQL → OpenSearch |
+| **Auth** | Parent frame handles auth | OSD session cookies (automatic) |
+| **Component library** | Custom runtime lib | `@elastic/eui` (OUI) + ECharts |
+| **AI integration** | `aiClient` → Bedrock | Agentic builder with Bedrock Converse API |
+| **Storage** | `putSharedItem`/`getSharedItem` | Saved objects (`.kibana` index) |
+| **Isolation** | iframe sandbox | AST validation + scoped API |
+
+Both share the same philosophy: **apps don't access external services directly** — they go through a controlled API layer that handles auth, permissions, and routing. Quick Pages uses the bridge pattern; OSD Canvas uses the scoped API pattern. The security boundary is different (iframe vs AST validation) but the principle of minimal capability is the same.

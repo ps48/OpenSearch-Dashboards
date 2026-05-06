@@ -4,8 +4,8 @@
  */
 
 export const PLUGIN_ID = 'osdAppsBuilder';
-export const PLUGIN_NAME = 'OSD Apps';
-export const SAVED_OBJECT_TYPE = 'osd-app';
+export const PLUGIN_NAME = 'Canvas';
+export const SAVED_OBJECT_TYPE = 'canvas';
 
 export const APP_ID = 'osd-apps';
 export const BUILDER_APP_ID = 'osd-apps-builder';

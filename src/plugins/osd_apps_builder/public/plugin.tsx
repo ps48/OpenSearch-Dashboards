@@ -32,14 +32,15 @@ export class OsdAppsBuilderPublicPlugin implements Plugin<{}, {}> {
         const { renderApp } = await import('./application');
         const [coreStart, depsStart] = await core.getStartServices();
         const data = (depsStart as { data: DataPublicPluginStart }).data;
+        const navigation = (depsStart as any).navigation;
         params.element.style.height = '100%';
-        return renderApp(coreStart, params, { core: coreStart, data });
+        return renderApp(coreStart, params, { core: coreStart, data, navigation });
       },
     });
 
     core.application.register({
       id: BUILDER_APP_ID,
-      title: 'App Builder',
+      title: 'Canvas Studio',
       order: 2601,
       workspaceAvailability: WorkspaceAvailability.insideWorkspace,
       euiIconType: 'editorCodeBlock',
@@ -48,12 +49,16 @@ export class OsdAppsBuilderPublicPlugin implements Plugin<{}, {}> {
         const [coreStart, depsStart] = await core.getStartServices();
         const data = (depsStart as { data: DataPublicPluginStart }).data;
         params.element.style.height = '100%';
+        // Parse ?id= from URL for editing existing canvases
+        const urlParams = new URLSearchParams(window.location.search);
+        const appId = urlParams.get('id') || undefined;
         ReactDOM.render(
           <OpenSearchDashboardsContextProvider services={{ ...coreStart }}>
             <AppBuilderPage
               core={coreStart}
               data={data}
               savedObjectsClient={coreStart.savedObjects.client}
+              appId={appId}
             />
           </OpenSearchDashboardsContextProvider>,
           params.element

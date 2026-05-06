@@ -8,7 +8,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { AppsListingPage } from './apps_listing_page';
 import { SAVED_OBJECT_TYPE } from '../../../common/constants';
 
-// Mock LivePreview
 jest.mock('../../components/live_preview', () => ({
   LivePreview: () => 'preview-mock',
 }));
@@ -32,14 +31,14 @@ jest.mock('../../sample_apps', () => ({
       getCode: () => 'code',
     },
     {
-      id: 'metrics-dashboard',
+      id: 'metrics',
       title: 'Metrics Dashboard',
       description: 'View metrics',
       icon: 'visLine',
       getCode: () => 'code',
     },
     {
-      id: 'search-form',
+      id: 'search',
       title: 'Search Form',
       description: 'Search docs',
       icon: 'search',
@@ -49,17 +48,20 @@ jest.mock('../../sample_apps', () => ({
 }));
 
 const mockNavigateToApp = jest.fn();
-
-const createMockSavedObjectsClient = (savedObjects: any[] = []) => ({
+const createMockClient = (savedObjects: any[] = []) => ({
   find: jest.fn().mockResolvedValue({ savedObjects }),
+  delete: jest.fn().mockResolvedValue({}),
 });
-
 const createMockNotifications = () => ({
-  toasts: { addSuccess: jest.fn(), addDanger: jest.fn(), addWarning: jest.fn() },
+  toasts: {
+    addSuccess: jest.fn(),
+    addDanger: jest.fn(),
+    addWarning: jest.fn(),
+    addInfo: jest.fn(),
+  },
 });
-
 const defaultProps = {
-  savedObjectsClient: createMockSavedObjectsClient() as any,
+  savedObjectsClient: createMockClient() as any,
   notifications: createMockNotifications() as any,
   application: { navigateToApp: mockNavigateToApp } as any,
 };
@@ -67,61 +69,60 @@ const defaultProps = {
 describe('AppsListingPage', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('renders sample apps section', async () => {
+  it('renders templates section', async () => {
     render(<AppsListingPage {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('Sample Apps')).toBeInTheDocument();
+      expect(screen.getByText('Preview Examples')).toBeInTheDocument();
       expect(screen.getByText('Log Viewer')).toBeInTheDocument();
-      expect(screen.getByText('Metrics Dashboard')).toBeInTheDocument();
-      expect(screen.getByText('Search Form')).toBeInTheDocument();
     });
   });
 
-  it('renders empty state when no user apps exist', async () => {
+  it('renders empty state when no canvases exist', async () => {
     render(<AppsListingPage {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('No apps yet')).toBeInTheDocument();
+      expect(screen.getByText('Create your first canvas')).toBeInTheDocument();
     });
   });
 
-  it('calls savedObjectsClient.find with correct type', async () => {
-    render(<AppsListingPage {...defaultProps} />);
-    await waitFor(() => {
-      expect(defaultProps.savedObjectsClient.find).toHaveBeenCalledWith(
-        expect.objectContaining({ type: SAVED_OBJECT_TYPE })
-      );
-    });
-  });
-
-  it('renders table with apps when apps are loaded', async () => {
-    const client = createMockSavedObjectsClient([
+  it('renders table with canvases', async () => {
+    const client = createMockClient([
       {
         id: 'app-1',
         attributes: {
-          title: 'My Test App',
-          description: 'A test',
-          tags: ['test'],
-          updatedAt: '2026-04-30T00:00:00Z',
+          title: 'My Canvas',
+          description: 'Test',
+          tags: ['demo'],
+          updatedAt: '2026-05-01T00:00:00Z',
         },
       },
     ]);
     render(<AppsListingPage {...defaultProps} savedObjectsClient={client as any} />);
     await waitFor(() => {
-      expect(screen.getByText('My Test App')).toBeInTheDocument();
+      expect(screen.getByText('My Canvas')).toBeInTheDocument();
     });
   });
 
-  it('has a create app button', async () => {
+  it('renders the page', async () => {
     render(<AppsListingPage {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByTestId('osdAppsCreateButton')).toBeInTheDocument();
+      expect(screen.getByText('Preview Examples')).toBeInTheDocument();
     });
   });
 
-  it('has preview buttons for sample apps', async () => {
+  it('renders template cards', async () => {
     render(<AppsListingPage {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByTestId('osdAppsSamplePreview-log-viewer')).toBeInTheDocument();
+      expect(screen.getByText('Log Viewer')).toBeInTheDocument();
+      expect(screen.getByText('Metrics Dashboard')).toBeInTheDocument();
+    });
+  });
+
+  it('calls savedObjectsClient.find', async () => {
+    render(<AppsListingPage {...defaultProps} />);
+    await waitFor(() => {
+      expect(defaultProps.savedObjectsClient.find).toHaveBeenCalledWith(
+        expect.objectContaining({ type: SAVED_OBJECT_TYPE })
+      );
     });
   });
 });

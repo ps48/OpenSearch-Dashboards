@@ -18,7 +18,7 @@ export const osdAppSavedObjectType: SavedObjectsType = {
       return obj.attributes.title;
     },
     getEditUrl(obj) {
-      return `/management/opensearch-dashboards/objects/savedOsdApps/${encodeURIComponent(obj.id)}`;
+      return `/management/opensearch-dashboards/objects/savedCanvas/${encodeURIComponent(obj.id)}`;
     },
     getInAppUrl(obj) {
       return {

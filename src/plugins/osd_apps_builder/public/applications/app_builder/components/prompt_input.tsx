@@ -11,12 +11,14 @@ interface PromptInputProps {
   onSubmit: (prompt: string) => void;
   isGenerating: boolean;
   initialValue?: string;
+  hasCode?: boolean;
 }
 
 export const PromptInput: React.FC<PromptInputProps> = ({
   onSubmit,
   isGenerating,
   initialValue,
+  hasCode,
 }) => {
   const [value, setValue] = useState('');
 
@@ -49,9 +51,11 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={i18n.translate('osdAppsBuilder.prompt.placeholder', {
-            defaultMessage: 'Describe the app you want to build...',
-          })}
+          placeholder={
+            hasCode
+              ? 'Refine your canvas... (e.g., "add a pie chart", "change colors")'
+              : 'Describe the canvas you want to build...'
+          }
           rows={3}
           disabled={isGenerating}
           data-test-subj="osdAppsPromptInput"
@@ -65,7 +69,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           disabled={!value.trim() || isGenerating}
           data-test-subj="osdAppsPromptSubmit"
         >
-          {i18n.translate('osdAppsBuilder.prompt.send', { defaultMessage: 'Generate' })}
+          {hasCode
+            ? i18n.translate('osdAppsBuilder.prompt.refine', { defaultMessage: 'Refine' })
+            : i18n.translate('osdAppsBuilder.prompt.generate', { defaultMessage: 'Generate' })}
         </EuiButton>
       </EuiFlexItem>
     </EuiFlexGroup>

@@ -7,14 +7,14 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { AppBuilderPage } from './app_builder_page';
 
-// Mock LivePreview to avoid transpiler/renderer complexity in tests
 jest.mock('../../components/live_preview', () => ({
   LivePreview: ({ code }: { code: string }) => (
     <div data-test-subj="osdAppsPreviewMock">{code ? 'Preview active' : 'No preview'}</div>
   ),
 }));
-
-// Mock scoped_api
+jest.mock('../../components/canvas_empty_animation', () => ({
+  CanvasEmptyAnimation: () => <div data-test-subj="osdAppsAnimation">animation</div>,
+}));
 jest.mock('../../services/scoped_api', () => ({
   createScopedApi: () => ({
     search: jest.fn(),
@@ -24,63 +24,69 @@ jest.mock('../../services/scoped_api', () => ({
   }),
 }));
 
-const mockSavedObjectsClient = {
-  find: jest.fn().mockResolvedValue({ savedObjects: [] }),
-} as any;
-
 const mockCore = {
   http: {},
-  notifications: { toasts: { addDanger: jest.fn(), addSuccess: jest.fn() } },
-  savedObjects: { client: mockSavedObjectsClient },
+  notifications: { toasts: { addDanger: jest.fn(), addSuccess: jest.fn(), addWarning: jest.fn() } },
+  savedObjects: { client: { find: jest.fn().mockResolvedValue({ savedObjects: [] }) } },
   uiSettings: { get: jest.fn().mockReturnValue(false) },
   application: { navigateToApp: jest.fn() },
 } as any;
-
 const mockData = {
   search: { search: jest.fn() },
-  query: {
-    timefilter: { timefilter: { getTime: () => ({ from: 'now-15m', to: 'now' }) } },
-  },
+  query: { timefilter: { timefilter: { getTime: () => ({ from: 'now-15m', to: 'now' }) } } },
 } as any;
 
 describe('AppBuilderPage', () => {
-  it('renders prompt suggestions when history is empty', async () => {
+  it('renders landing view with prompt input', async () => {
     render(
-      <AppBuilderPage core={mockCore} data={mockData} savedObjectsClient={mockSavedObjectsClient} />
+      <AppBuilderPage
+        core={mockCore}
+        data={mockData}
+        savedObjectsClient={mockCore.savedObjects.client}
+      />
     );
-
     await waitFor(() => {
-      expect(screen.getByTestId('osdAppsPromptSuggestions')).toBeInTheDocument();
-    });
-  });
-
-  it('renders the prompt input', async () => {
-    render(
-      <AppBuilderPage core={mockCore} data={mockData} savedObjectsClient={mockSavedObjectsClient} />
-    );
-
-    await waitFor(() => {
+      expect(screen.getByText('What do you want to build?')).toBeInTheDocument();
       expect(screen.getByTestId('osdAppsPromptInput')).toBeInTheDocument();
     });
   });
 
-  it('renders the resizable container', async () => {
+  it('renders the animation on landing', async () => {
     render(
-      <AppBuilderPage core={mockCore} data={mockData} savedObjectsClient={mockSavedObjectsClient} />
+      <AppBuilderPage
+        core={mockCore}
+        data={mockData}
+        savedObjectsClient={mockCore.savedObjects.client}
+      />
     );
-
     await waitFor(() => {
-      expect(screen.getByTestId('osdAppsBuilderContainer')).toBeInTheDocument();
+      expect(screen.getByTestId('osdAppsAnimation')).toBeInTheDocument();
     });
   });
 
-  it('renders the preview pane', async () => {
+  it('renders suggestion chips', async () => {
     render(
-      <AppBuilderPage core={mockCore} data={mockData} savedObjectsClient={mockSavedObjectsClient} />
+      <AppBuilderPage
+        core={mockCore}
+        data={mockData}
+        savedObjectsClient={mockCore.savedObjects.client}
+      />
     );
-
     await waitFor(() => {
-      expect(screen.getByTestId('osdAppsPreviewMock')).toBeInTheDocument();
+      expect(screen.getByText(/log explorer/i)).toBeInTheDocument();
+    });
+  });
+
+  it('renders generate button', async () => {
+    render(
+      <AppBuilderPage
+        core={mockCore}
+        data={mockData}
+        savedObjectsClient={mockCore.savedObjects.client}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Generate')).toBeInTheDocument();
     });
   });
 });

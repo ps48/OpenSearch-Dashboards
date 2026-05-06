@@ -42,6 +42,7 @@
     "opensearch_dashboards_utils": "plugins/opensearch_dashboards_utils",
     "opensearchUi": "plugins/opensearch_ui_shared",
     "osd": "legacy/core_plugins/opensearch-dashboards",
+    "osdAppsBuilder": "plugins/osd_apps_builder",
     "osdDocViews": "legacy/core_plugins/osd_doc_views",
     "osdDocViewsLinks": "legacy/core_plugins/osd_doc_views_links",
     "queryEnhancements": "plugins/query_enhancements",

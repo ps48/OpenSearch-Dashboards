@@ -85,7 +85,7 @@ describe('AppViewerPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('osdAppsPreviewMock')).toBeInTheDocument();
       expect(mockCore.chrome.setBreadcrumbs).toHaveBeenCalledWith([
-        { text: 'Apps', href: '/app/osd-apps' },
+        { text: 'Canvas', onClick: expect.any(Function) },
         { text: 'My App' },
       ]);
     });

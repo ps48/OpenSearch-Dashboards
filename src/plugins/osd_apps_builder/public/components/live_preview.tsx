@@ -56,7 +56,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ code, scopedApi, onRen
         data-test-subj="osdAppsPreviewEmpty"
         style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       >
-        <p>Preview will appear here once you generate an app.</p>
+        <p>Preview will appear here once you generate a canvas.</p>
       </EuiPanel>
     );
   }

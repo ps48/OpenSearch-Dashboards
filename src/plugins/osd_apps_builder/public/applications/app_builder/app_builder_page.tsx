@@ -5,49 +5,30 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  EuiPage,
-  EuiPageBody,
   EuiTitle,
   EuiResizableContainer,
-  EuiPanel,
   EuiSpacer,
   EuiButton,
   EuiFlexGroup,
   EuiFlexItem,
-  EuiCallOut,
   EuiText,
-  EuiIcon,
-  EuiButtonEmpty,
-  EuiBottomBar,
+  EuiTextArea,
+  EuiPanel,
+  EuiFieldText,
 } from '@elastic/eui';
-import { i18n } from '@osd/i18n';
 import { CoreStart, SavedObjectsClientContract } from '../../../../../core/public';
 import { DataPublicPluginStart } from '../../../../data/public';
-import { PromptInput } from './components/prompt_input';
 import { ChatHistory } from './components/chat_history';
-import { PromptSuggestions } from './components/prompt_suggestions';
 import { DataSourcePicker } from './components/data_source_picker';
 import { SaveAppModal } from './components/save_app_modal';
 import { LivePreview } from '../../components/live_preview';
+import { CanvasEmptyAnimation } from '../../components/canvas_empty_animation';
 import { AIClient } from '../../services/ai_client';
 import { AppSavedObjectClient } from '../../services/app_saved_object_client';
 import { createScopedApi, OsdAppApi } from '../../services/scoped_api';
-import { PromptEntry, DataSourceRef } from '../../../../common/types';
 import { fetchIndexMetadata, IndexMetadata } from '../../services/index_metadata';
+import { PromptEntry, DataSourceRef } from '../../../../common/types';
 import { SAMPLE_APPS } from '../../sample_apps';
-
-const ACTIVITY_ICON_MAP: Record<string, string> = {
-  info: 'clock',
-  warning: 'alert',
-  error: 'crossInACircleFilled',
-  success: 'check',
-};
-const ACTIVITY_COLOR_MAP: Record<string, string> = {
-  info: 'subdued',
-  warning: 'warning',
-  error: 'danger',
-  success: 'secondary',
-};
 
 interface AppBuilderPageProps {
   core: CoreStart;
@@ -61,6 +42,12 @@ interface ActivityEntry {
   type: 'info' | 'warning' | 'error' | 'success';
   message: string;
 }
+
+const SUGGESTIONS = [
+  'Build a log explorer for OTel logs with severity filtering and service breakdown',
+  'Create a metrics dashboard with stat cards and charts for nginx access logs',
+  'Build a trace viewer with a Gantt chart flyout for span analysis',
+];
 
 export const AppBuilderPage: React.FC<AppBuilderPageProps> = ({
   core,
@@ -77,11 +64,13 @@ export const AppBuilderPage: React.FC<AppBuilderPageProps> = ({
   const [appTitle, setAppTitle] = useState('');
   const [appDescription, setAppDescription] = useState('');
   const [appTags, setAppTags] = useState<string[]>([]);
-  const [suggestedPrompt, setSuggestedPrompt] = useState('');
+  const [inputValue, setInputValue] = useState('');
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [indexMetadataList, setIndexMetadataList] = useState<IndexMetadata[]>([]);
   const renderRepairCount = React.useRef(0);
-  const MAX_RENDER_REPAIRS = 2;
+  const [transitioning, setTransitioning] = useState(false);
+
+  const hasStarted = promptHistory.length > 0 || isGenerating || !!code;
 
   const addActivity = useCallback((type: ActivityEntry['type'], message: string) => {
     setActivityLog((prev) => [
@@ -96,30 +85,21 @@ export const AppBuilderPage: React.FC<AppBuilderPageProps> = ({
   ]);
   const scopedApi: OsdAppApi = React.useMemo(() => createScopedApi({ core, data }), [core, data]);
 
-  // Fetch index metadata when data sources change
   useEffect(() => {
     if (dataSourceRefs.length === 0) {
       setIndexMetadataList([]);
       return;
     }
     const fetchAll = async () => {
-      addActivity('info', 'Fetching index metadata for ' + dataSourceRefs.length + ' source(s)...');
+      addActivity('info', 'Fetching index metadata...');
       const results: IndexMetadata[] = [];
-      for (let i = 0; i < dataSourceRefs.length; i++) {
+      for (const ref of dataSourceRefs) {
         try {
-          const meta = await fetchIndexMetadata(core.http, dataSourceRefs[i].title);
+          const meta = await fetchIndexMetadata(core.http, ref.title);
           results.push(meta);
-          addActivity(
-            'success',
-            meta.indexName +
-              ': ' +
-              meta.totalFields +
-              ' fields, ' +
-              meta.sampleDocs.length +
-              ' sample docs'
-          );
-        } catch (err) {
-          addActivity('warning', 'Failed to fetch metadata for ' + dataSourceRefs[i].title);
+          addActivity('success', meta.indexName + ': ' + meta.totalFields + ' fields');
+        } catch {
+          addActivity('warning', 'Failed to fetch metadata');
         }
       }
       setIndexMetadataList(results);
@@ -127,88 +107,67 @@ export const AppBuilderPage: React.FC<AppBuilderPageProps> = ({
     fetchAll();
   }, [dataSourceRefs, core.http, addActivity]);
 
-  // Load existing app if appId is provided
   useEffect(() => {
     if (!appId) return;
-    const loadApp = async () => {
-      try {
-        const attrs = await appClient.load(appId);
+    appClient
+      .load(appId)
+      .then((attrs) => {
         setCode(attrs.sourceCode || '');
         setAppTitle(attrs.title || '');
         setAppDescription(attrs.description || '');
         setAppTags(attrs.tags || []);
         if (attrs.promptHistory) setPromptHistory(JSON.parse(attrs.promptHistory));
         if (attrs.dataSourceRefs) setDataSourceRefs(JSON.parse(attrs.dataSourceRefs));
-        addActivity('success', 'Loaded app: ' + attrs.title);
-      } catch (err) {
-        core.notifications.toasts.addDanger('Failed to load app: ' + err);
-      }
-    };
-    loadApp();
+        addActivity('success', 'Loaded: ' + attrs.title);
+      })
+      .catch((err) => core.notifications.toasts.addDanger('Failed to load: ' + err));
   }, [appId, appClient, core.notifications.toasts, addActivity]);
 
   const handleGenerate = useCallback(
     async (prompt: string) => {
-      const timestamp = new Date().toISOString();
-      setPromptHistory((prev) => [...prev, { role: 'user', content: prompt, timestamp }]);
+      setPromptHistory((prev) => [
+        ...prev,
+        { role: 'user', content: prompt, timestamp: new Date().toISOString() },
+      ]);
       setIsGenerating(true);
       renderRepairCount.current = 0;
-      addActivity('info', 'Sending prompt to AI...');
-
+      addActivity('info', 'Sending to AI...');
       let accumulated = '';
       try {
         const context: any = {};
         if (dataSourceRefs.length) context.dataSourceRefs = dataSourceRefs;
         if (indexMetadataList.length) {
-          context.indexMetadata = indexMetadataList.map(function (m) {
-            return {
-              title: m.indexName,
-              fields: m.fields,
-              sampleDocs: m.sampleDocs.slice(0, 5), // Send top 5 docs
-            };
-          });
+          context.indexMetadata = indexMetadataList.map((m) => ({
+            title: m.indexName,
+            fields: m.fields,
+            sampleDocs: m.sampleDocs.slice(0, 5),
+          }));
         }
-        // Include a matching sample app as a few-shot example if available
-        const matchingSample = SAMPLE_APPS.find(function (s) {
-          return dataSourceRefs.some(function (r) {
-            return s.prompt.indexOf(r.title) >= 0;
-          });
-        });
-        if (matchingSample) {
-          context.exampleCode = matchingSample.getCode();
-        }
-
+        const matchingSample = SAMPLE_APPS.find((s) =>
+          dataSourceRefs.some((r) => s.prompt.indexOf(r.title) >= 0)
+        );
+        if (matchingSample) context.exampleCode = matchingSample.getCode();
         const options = {
           onStatus: (msg: string) => addActivity('info', msg),
-          onWarning: (msg: string) => {
-            addActivity('warning', msg);
-            core.notifications.toasts.addWarning(msg);
-          },
-          onToolCall: (name: string, input: any) => {
-            let inputStr = typeof input === 'object' ? JSON.stringify(input) : String(input);
-            if (inputStr.length > 80) inputStr = inputStr.substring(0, 80) + '...';
-            addActivity('info', '\uD83D\uDD27 ' + name + '(' + inputStr + ')');
-          },
-          onToolResult: (name: string, summary: string) => {
-            addActivity('success', '\u2192 ' + name + ': ' + summary);
-          },
+          onWarning: (msg: string) => addActivity('warning', msg),
+          onToolCall: (name: string) => addActivity('info', '\uD83D\uDD27 ' + name),
+          onToolResult: (name: string, summary: string) =>
+            addActivity('success', '\u2192 ' + name + ': ' + summary),
         };
-        const generator = code
+        const gen = code
           ? aiClient.refine(prompt, code, context, options)
           : aiClient.generate(prompt, context, options);
-
-        for await (const chunk of generator) {
+        for await (const chunk of gen) {
           accumulated += chunk;
           setCode(accumulated);
         }
-
-        addActivity('success', 'Code generated (' + accumulated.length + ' chars)');
+        addActivity('success', 'Canvas ready!');
         setPromptHistory((prev) => [
           ...prev,
           { role: 'assistant', content: accumulated, timestamp: new Date().toISOString() },
         ]);
       } catch (err) {
-        addActivity('error', 'Generation failed: ' + err);
+        addActivity('error', 'Failed: ' + err);
         core.notifications.toasts.addDanger('Generation failed: ' + err);
       } finally {
         setIsGenerating(false);
@@ -219,59 +178,33 @@ export const AppBuilderPage: React.FC<AppBuilderPageProps> = ({
 
   const handleRenderError = useCallback(
     async (error: string) => {
-      if (isGenerating || !code) return;
-      if (renderRepairCount.current >= MAX_RENDER_REPAIRS) {
-        addActivity('error', 'Auto-fix failed after ' + MAX_RENDER_REPAIRS + ' attempts');
-        core.notifications.toasts.addDanger(
-          'Auto-fix failed after ' + MAX_RENDER_REPAIRS + ' attempts. Try editing your prompt.'
-        );
-        return;
-      }
+      if (isGenerating || !code || renderRepairCount.current >= 2) return;
       renderRepairCount.current += 1;
       setIsGenerating(true);
-      addActivity('warning', 'Render error: ' + error.split('\n')[0]);
-      addActivity('info', 'Auto-fixing (attempt ' + renderRepairCount.current + ')...');
-
+      addActivity('warning', 'Auto-fixing render error...');
       let accumulated = '';
       try {
-        const fixPrompt =
-          'The code you generated has a runtime error. Fix it and return ONLY the corrected code.\n\nError: ' +
-          error;
-        const options = {
-          onStatus: (msg: string) => addActivity('info', msg),
-          onWarning: (msg: string) => addActivity('warning', msg),
-        };
-        const generator = aiClient.refine(fixPrompt, code, undefined, options);
-
-        for await (const chunk of generator) {
+        const gen = aiClient.refine('Fix: ' + error, code, undefined, {
+          onStatus: (m) => addActivity('info', m),
+        });
+        for await (const chunk of gen) {
           accumulated += chunk;
           setCode(accumulated);
         }
-
-        addActivity('success', 'Auto-fix complete');
-        setPromptHistory((prev) => [
-          ...prev,
-          {
-            role: 'user',
-            content: 'Auto-fix: ' + error.split('\n')[0],
-            timestamp: new Date().toISOString(),
-          },
-          { role: 'assistant', content: accumulated, timestamp: new Date().toISOString() },
-        ]);
-      } catch (err) {
-        addActivity('error', 'Auto-fix failed: ' + err);
-        core.notifications.toasts.addDanger('Auto-fix failed: ' + err);
+        addActivity('success', 'Fixed');
+      } catch {
+        addActivity('error', 'Auto-fix failed');
       } finally {
         setIsGenerating(false);
       }
     },
-    [aiClient, code, isGenerating, core.notifications.toasts, addActivity]
+    [aiClient, code, isGenerating, addActivity]
   );
 
   const handleSave = useCallback(
     async (title: string, description: string, tags: string[]) => {
       try {
-        const savedId = await appClient.save(
+        const id = await appClient.save(
           {
             title,
             description,
@@ -283,170 +216,271 @@ export const AppBuilderPage: React.FC<AppBuilderPageProps> = ({
           },
           appId
         );
-        setAppId(savedId);
+        setAppId(id);
         setAppTitle(title);
         setAppDescription(description);
         setAppTags(tags);
         setShowSaveModal(false);
-        addActivity('success', 'App saved: ' + title);
-        core.notifications.toasts.addSuccess('App saved successfully');
+        core.notifications.toasts.addSuccess('Canvas saved');
       } catch (err) {
         core.notifications.toasts.addDanger('Save failed: ' + err);
       }
     },
-    [appClient, appId, code, promptHistory, dataSourceRefs, core.notifications.toasts, addActivity]
+    [appClient, appId, code, promptHistory, dataSourceRefs, core.notifications.toasts]
   );
 
-  // Memoize panel contents to prevent EuiResizableContainer rerender storms
-  // (EuiResizableContainer triggers rerender on every mouseover)
-  const leftPanelContent = React.useMemo(
-    () => (
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '12px', flexShrink: 0 }}>
+  const handleSubmit = () => {
+    const trimmed = inputValue.trim();
+    if (trimmed) {
+      if (!hasStarted) {
+        setTransitioning(true);
+        setTimeout(() => {
+          handleGenerate(trimmed);
+        }, 300);
+      } else {
+        handleGenerate(trimmed);
+      }
+      setInputValue('');
+    }
+  };
+
+  /* ==================== LANDING VIEW ==================== */
+  if (!hasStarted) {
+    return (
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 40,
+          opacity: transitioning ? 0 : 1,
+          transition: 'opacity 0.3s ease-out',
+        }}
+      >
+        <CanvasEmptyAnimation />
+        <EuiSpacer size="l" />
+        <EuiTitle size="l">
+          <h1>What do you want to build?</h1>
+        </EuiTitle>
+        <EuiSpacer size="s" />
+        <EuiText color="subdued" textAlign="center">
+          <p>Describe your app in plain English. Canvas generates it with real OpenSearch data.</p>
+        </EuiText>
+        <EuiSpacer size="l" />
+        <div style={{ width: '100%', maxWidth: 680 }}>
           <DataSourcePicker
             onSelect={setDataSourceRefs}
             selectedRefs={dataSourceRefs}
             savedObjectsClient={savedObjectsClient}
           />
           <EuiSpacer size="s" />
-          <PromptInput
-            onSubmit={handleGenerate}
-            isGenerating={isGenerating}
-            initialValue={suggestedPrompt}
-          />
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px' }}>
-          {promptHistory.length === 0 && !isGenerating ? (
-            <PromptSuggestions onSelect={setSuggestedPrompt} />
-          ) : (
-            <ChatHistory entries={promptHistory} />
-          )}
-        </div>
-        <div
-          style={{
-            maxHeight: '200px',
-            overflowY: 'auto',
-            padding: '8px 12px',
-            borderTop: '1px solid #D3DAE6',
-            flexShrink: 0,
-          }}
-        >
-          <EuiText size="xs" color="subdued">
-            <strong>Activity</strong>
-          </EuiText>
-          <EuiSpacer size="xs" />
-          {activityLog.length === 0 ? (
-            <EuiText size="xs" color="subdued">
-              <p>Activity will appear here during generation.</p>
-            </EuiText>
-          ) : (
-            activityLog.map((entry, idx) => (
-              <div
-                key={idx}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '6px',
-                  marginBottom: '4px',
-                }}
-              >
-                <EuiIcon
-                  type={ACTIVITY_ICON_MAP[entry.type]}
-                  color={ACTIVITY_COLOR_MAP[entry.type]}
-                  size="s"
-                  style={{ marginTop: '2px', flexShrink: 0 }}
+          <EuiPanel paddingSize="s" hasBorder style={{ borderRadius: 12 }}>
+            <EuiFlexGroup gutterSize="s" responsive={false} alignItems="flexEnd">
+              <EuiFlexItem>
+                <EuiTextArea
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  placeholder="Build a log explorer with severity filtering and charts..."
+                  rows={3}
+                  style={{ border: 'none', boxShadow: 'none', resize: 'none' }}
+                  data-test-subj="osdAppsPromptInput"
                 />
-                <EuiText size="xs">
-                  <span style={{ color: '#98A2B3' }}>{entry.timestamp}</span> {entry.message}
-                </EuiText>
-              </div>
-            ))
-          )}
+              </EuiFlexItem>
+              <EuiFlexItem grow={false} style={{ paddingBottom: 4 }}>
+                <EuiButton
+                  fill
+                  iconType="arrowRight"
+                  onClick={handleSubmit}
+                  disabled={!inputValue.trim()}
+                >
+                  Generate
+                </EuiButton>
+              </EuiFlexItem>
+            </EuiFlexGroup>
+          </EuiPanel>
         </div>
+        <EuiSpacer size="l" />
+        <EuiFlexGroup gutterSize="s" wrap justifyContent="center">
+          {SUGGESTIONS.map((s, i) => (
+            <EuiFlexItem key={i} grow={false}>
+              <EuiPanel
+                paddingSize="s"
+                hasBorder
+                style={{ cursor: 'pointer', borderRadius: 20 }}
+                onClick={() => setInputValue(s)}
+              >
+                <EuiText size="xs" color="subdued">
+                  {s}
+                </EuiText>
+              </EuiPanel>
+            </EuiFlexItem>
+          ))}
+        </EuiFlexGroup>
       </div>
-    ),
-    [
-      dataSourceRefs,
-      savedObjectsClient,
-      handleGenerate,
-      isGenerating,
-      suggestedPrompt,
-      promptHistory,
-      activityLog,
-      setDataSourceRefs,
-      setSuggestedPrompt,
-    ]
-  );
+    );
+  }
 
-  const rightPanelContent = React.useMemo(
-    () => (
-      <div style={{ height: '100%', padding: '12px' }}>
-        <LivePreview code={code} scopedApi={scopedApi} onRenderError={handleRenderError} />
-      </div>
-    ),
-    [code, scopedApi, handleRenderError]
-  );
-
+  /* ==================== BUILDING VIEW ==================== */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Header */}
-      <EuiFlexGroup
-        alignItems="center"
-        justifyContent="spaceBetween"
-        style={{ padding: '8px 16px', flexShrink: 0 }}
-        responsive={false}
-        gutterSize="none"
+    <>
+      <style>
+        {
+          '@keyframes fadeSlideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }'
+        }
+      </style>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          overflow: 'hidden',
+          animation: 'fadeSlideIn 0.4s ease-out',
+        }}
       >
-        <EuiFlexItem grow={false}>
-          <EuiTitle size="s">
-            <h1>
-              {appTitle ||
-                i18n.translate('osdAppsBuilder.builder.title', { defaultMessage: 'App Builder' })}
-            </h1>
-          </EuiTitle>
-        </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiButton
-            size="s"
-            onClick={() => setShowSaveModal(true)}
-            disabled={!code}
-            data-test-subj="osdAppsSaveButton"
+        <EuiFlexGroup
+          alignItems="center"
+          justifyContent="spaceBetween"
+          style={{ padding: '6px 16px', flexShrink: 0 }}
+          responsive={false}
+          gutterSize="none"
+        >
+          <EuiFlexItem grow={false}>
+            <EuiTitle size="xs">
+              <h1>{appTitle || 'Canvas Studio'}</h1>
+            </EuiTitle>
+          </EuiFlexItem>
+          <EuiFlexItem grow={false}>
+            <EuiButton
+              size="s"
+              onClick={() => setShowSaveModal(true)}
+              disabled={!code}
+              data-test-subj="osdAppsSaveButton"
+            >
+              Save
+            </EuiButton>
+          </EuiFlexItem>
+        </EuiFlexGroup>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <EuiResizableContainer
+            style={{ height: '100%' }}
+            data-test-subj="osdAppsBuilderContainer"
           >
-            Save
-          </EuiButton>
-        </EuiFlexItem>
-      </EuiFlexGroup>
-
-      {/* Main content */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        <EuiResizableContainer style={{ height: '100%' }} data-test-subj="osdAppsBuilderContainer">
-          {(EuiResizablePanel, EuiResizableButton) => (
-            <>
-              {/* Left panel: prompt + activity */}
-              <EuiResizablePanel initialSize={35} minSize="280px" paddingSize="none">
-                {leftPanelContent}
-              </EuiResizablePanel>
-
-              <EuiResizableButton />
-
-              {/* Right panel: preview */}
-              <EuiResizablePanel initialSize={65} minSize="400px" paddingSize="none">
-                {rightPanelContent}
-              </EuiResizablePanel>
-            </>
-          )}
-        </EuiResizableContainer>
+            {(EuiResizablePanel, EuiResizableButton) => (
+              <>
+                <EuiResizablePanel
+                  initialSize={30}
+                  minSize="250px"
+                  paddingSize="none"
+                  scrollable={false}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <div style={{ height: '100%', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <div
+                        style={{
+                          flex: '1 1 auto',
+                          overflowY: 'auto',
+                          minHeight: 0,
+                          padding: '8px 12px',
+                        }}
+                      >
+                        <ChatHistory
+                          entries={promptHistory}
+                          activityLog={activityLog}
+                          isGenerating={isGenerating}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          flex: '0 0 auto',
+                          padding: '8px 12px',
+                          borderTop: '1px solid #D3DAE6',
+                        }}
+                      >
+                        <EuiFlexGroup gutterSize="xs" responsive={false}>
+                          <EuiFlexItem>
+                            <EuiFieldText
+                              value={inputValue}
+                              onChange={(e) => setInputValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSubmit();
+                                }
+                              }}
+                              placeholder={code ? 'Refine your canvas...' : 'Describe...'}
+                              disabled={isGenerating}
+                              fullWidth
+                              compressed
+                              data-test-subj="osdAppsPromptInput"
+                            />
+                          </EuiFlexItem>
+                          <EuiFlexItem grow={false}>
+                            {isGenerating ? (
+                              <EuiButton
+                                size="s"
+                                color="danger"
+                                onClick={() => {
+                                  setIsGenerating(false);
+                                  addActivity('warning', 'Cancelled');
+                                }}
+                              >
+                                Cancel
+                              </EuiButton>
+                            ) : (
+                              <EuiButton
+                                size="s"
+                                fill
+                                onClick={handleSubmit}
+                                disabled={!inputValue.trim()}
+                              >
+                                {code ? '\u2191' : 'Go'}
+                              </EuiButton>
+                            )}
+                          </EuiFlexItem>
+                        </EuiFlexGroup>
+                      </div>
+                    </div>
+                  </div>
+                </EuiResizablePanel>
+                <EuiResizableButton />
+                <EuiResizablePanel
+                  initialSize={70}
+                  minSize="400px"
+                  paddingSize="none"
+                  scrollable={false}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <div style={{ height: '100%', overflow: 'auto', padding: '12px' }}>
+                    <LivePreview
+                      code={code}
+                      scopedApi={scopedApi}
+                      onRenderError={handleRenderError}
+                    />
+                  </div>
+                </EuiResizablePanel>
+              </>
+            )}
+          </EuiResizableContainer>
+        </div>
+        {showSaveModal && (
+          <SaveAppModal
+            onSave={handleSave}
+            onClose={() => setShowSaveModal(false)}
+            initialTitle={appTitle}
+            initialDescription={appDescription}
+            initialTags={appTags}
+          />
+        )}
       </div>
-
-      {showSaveModal && (
-        <SaveAppModal
-          onSave={handleSave}
-          onClose={() => setShowSaveModal(false)}
-          initialTitle={appTitle}
-          initialDescription={appDescription}
-          initialTags={appTags}
-        />
-      )}
-    </div>
+    </>
   );
 };

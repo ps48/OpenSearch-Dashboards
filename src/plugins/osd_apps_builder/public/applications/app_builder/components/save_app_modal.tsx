@@ -53,7 +53,7 @@ export const SaveAppModal: React.FC<SaveAppModalProps> = ({
     <EuiModal onClose={onClose} data-test-subj="osdAppsSaveModal">
       <EuiModalHeader>
         <EuiModalHeaderTitle>
-          {i18n.translate('osdAppsBuilder.save.title', { defaultMessage: 'Save app' })}
+          {i18n.translate('osdAppsBuilder.save.title', { defaultMessage: 'Save canvas' })}
         </EuiModalHeaderTitle>
       </EuiModalHeader>
       <EuiModalBody>

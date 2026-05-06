@@ -21,7 +21,7 @@ import { LivePreview } from '../../components/live_preview';
 import { AppSavedObjectClient } from '../../services/app_saved_object_client';
 import { createScopedApi } from '../../services/scoped_api';
 import { OsdAppAttributes } from '../../../common/types';
-import { BUILDER_APP_ID } from '../../../common/constants';
+import { APP_ID, BUILDER_APP_ID } from '../../../common/constants';
 
 interface AppViewerPageProps {
   appId: string;
@@ -45,17 +45,20 @@ export const AppViewerPage: React.FC<AppViewerPageProps> = ({ appId, core, data 
         const attrs = await appClient.load(appId);
         setApp(attrs);
         core.chrome.setBreadcrumbs([
-          { text: 'Apps', href: '/app/osd-apps' },
+          {
+            text: 'Canvas',
+            onClick: () => core.application.navigateToApp(APP_ID),
+          },
           { text: attrs.title },
         ]);
       } catch (err) {
-        setError(`App not found: ${err}`);
+        setError(`Canvas not found: ${err}`);
       } finally {
         setLoading(false);
       }
     };
     loadApp();
-  }, [appId, appClient, core.chrome]);
+  }, [appId, appClient, core.chrome, core.application]);
 
   if (loading) {
     return (
@@ -79,7 +82,7 @@ export const AppViewerPage: React.FC<AppViewerPageProps> = ({ appId, core, data 
             title={
               <h2>
                 {i18n.translate('osdAppsBuilder.viewer.notFound', {
-                  defaultMessage: 'App not found',
+                  defaultMessage: 'Canvas not found',
                 })}
               </h2>
             }
