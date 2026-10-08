@@ -35,6 +35,18 @@ import { Observable, BehaviorSubject } from 'rxjs';
 import { CoreSetup } from 'opensearch-dashboards/public';
 import { DARK_THEME, LIGHT_THEME, PartialTheme, Theme } from '@elastic/charts';
 import { EUI_CHARTS_THEME_DARK, EUI_CHARTS_THEME_LIGHT } from '@elastic/eui/dist/eui_charts_theme';
+import { tag as themeTag, euiDarkVars, euiLightVars } from '@osd/ui-shared-deps/theme';
+
+/**
+ * The AMOLED theme puts panels on near-black, but @elastic/charts' DARK_THEME
+ * paints its own blue-grey background. Match the chart background to the OUI
+ * panel color for AMOLED only; classic themes keep the stock chart themes.
+ */
+const withAmoledBackground = (base: Theme, darkMode: boolean): Theme => {
+  if (!themeTag?.startsWith('amoled')) return base;
+  const vars = darkMode ? euiDarkVars : euiLightVars;
+  return { ...base, background: { ...base.background, color: vars.euiColorEmptyShade } };
+};
 
 export class ThemeService {
   /** Returns default charts theme */
@@ -103,7 +115,9 @@ export class ThemeService {
       this._chartsTheme$.next(
         darkMode ? EUI_CHARTS_THEME_DARK.theme : EUI_CHARTS_THEME_LIGHT.theme
       );
-      this._chartsBaseTheme$.next(darkMode ? DARK_THEME : LIGHT_THEME);
+      this._chartsBaseTheme$.next(
+        withAmoledBackground(darkMode ? DARK_THEME : LIGHT_THEME, darkMode)
+      );
     });
   }
 }
