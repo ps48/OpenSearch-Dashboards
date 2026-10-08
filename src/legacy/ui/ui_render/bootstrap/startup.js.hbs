@@ -62,6 +62,9 @@ if (nonce) {
 themedStylesDom.innerHTML = `
   :root {
     color-scheme: ${darkMode};
+    ${themeDefinition.ouiThemePaletteColorBlind
+      ? '--ouiPaletteColorBlind: ' + themeDefinition.ouiThemePaletteColorBlind + ';'
+      : ''}
   }
   .${darkMode}Only {
     display: unset;

@@ -230,6 +230,10 @@ export function uiRenderMixin(osdServer, server, config) {
         'euiColorLightestShade',
         'euiColorPrimary',
         'euiHeaderBackgroundColor',
+        // Optional: a theme's categorical chart palette. Set as a CSS
+        // property before any plugin runs, because theme CSS loads after the
+        // bundles start and chart services read the palette during setup.
+        'ouiThemePaletteColorBlind',
       ];
       const getLoadingVars = (allThemeVars) => {
         const filteredVars = {};
