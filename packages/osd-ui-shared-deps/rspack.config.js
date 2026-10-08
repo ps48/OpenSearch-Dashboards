@@ -52,6 +52,8 @@ exports.getRspackConfig = ({ dev = false } = {}) => ({
     'osd-ui-shared-deps.v8.light': ['@elastic/eui/dist/eui_theme_next_light.css'],
     'osd-ui-shared-deps.v9.dark': ['@elastic/eui/dist/eui_theme_v9_dark.css'],
     'osd-ui-shared-deps.v9.light': ['@elastic/eui/dist/eui_theme_v9_light.css'],
+    'osd-ui-shared-deps.amoled.dark': ['@elastic/eui/dist/eui_theme_amoled_dark.css'],
+    'osd-ui-shared-deps.amoled.light': ['@elastic/eui/dist/eui_theme_amoled_light.css'],
   },
   context: __dirname,
   devtool: dev ? 'cheap-module-source-map' : false,

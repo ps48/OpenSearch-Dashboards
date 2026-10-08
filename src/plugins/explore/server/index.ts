@@ -36,9 +36,13 @@ export const config: PluginConfigDescriptor<ConfigSchema> = {
         settings.opensearchDashboards.branding.useExpandedHeader = false;
 
         settings.uiSettings = settings.uiSettings || {};
+        const existingOverrides = settings.uiSettings.overrides || {};
         settings.uiSettings.overrides = {
-          ...(settings.uiSettings.overrides || {}),
-          'theme:version': 'v9',
+          ...existingOverrides,
+          // Explore needs a v9-generation theme; keep an explicitly configured
+          // theme (e.g. AMOLED, which builds on the same tokens) instead of
+          // silently replacing it.
+          'theme:version': existingOverrides['theme:version'] ?? 'v9',
           'home:useNewHomePage': true,
           'query:enhancements:enabled': true,
         };

@@ -1,0 +1,11 @@
+// amoledlight global scope
+// ---
+// prepended to all .scss imports (from JS, when amoledlight theme selected).
+// Same order as OUI's theme_amoled_light.scss entrypoint: token overrides
+// before the globals, mixin/viz overrides after.
+@import "@elastic/eui/src/themes/oui-amoled/oui_amoled_colors_light";
+@import "@elastic/eui/src/themes/oui-amoled/oui_amoled_shape";
+@import "@elastic/eui/src/themes/oui-amoled/oui_amoled_globals";
+@import "@elastic/eui/src/themes/oui-amoled/oui_amoled_viz";
+@import "@elastic/eui/src/themes/oui-amoled/oui_amoled_elevation";
+@import "./mixins";

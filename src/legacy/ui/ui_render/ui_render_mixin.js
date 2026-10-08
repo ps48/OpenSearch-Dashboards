@@ -37,6 +37,8 @@ import * as v8light from '@elastic/eui/dist/eui_theme_next_light.json';
 import * as v8dark from '@elastic/eui/dist/eui_theme_next_dark.json';
 import * as v9light from '@elastic/eui/dist/eui_theme_v9_light.json';
 import * as v9dark from '@elastic/eui/dist/eui_theme_v9_dark.json';
+import * as amoledlight from '@elastic/eui/dist/eui_theme_amoled_light.json';
+import * as amoleddark from '@elastic/eui/dist/eui_theme_amoled_dark.json';
 import * as UiSharedDeps from '@osd/ui-shared-deps';
 import { OpenSearchDashboardsRequest } from '../../../core/server';
 import { AppBootstrap } from './bootstrap';
@@ -247,6 +249,10 @@ export function uiRenderMixin(osdServer, server, config) {
           light: getLoadingVars(v9light),
           dark: getLoadingVars(v9dark),
         },
+        amoled: {
+          light: getLoadingVars(amoledlight),
+          dark: getLoadingVars(amoleddark),
+        },
       });
 
       /*
@@ -257,12 +263,15 @@ export function uiRenderMixin(osdServer, server, config) {
         v7: 'Inter UI',
         v8: 'Source Sans 3',
         v9: 'Rubik',
+        // AMOLED builds on the classic OUI token set, including its typeface.
+        amoled: 'Inter UI',
       });
 
       const fontCode = JSON.stringify({
         v7: 'Roboto Mono',
         v8: 'Source Code Pro',
         v9: 'Source Code Pro',
+        amoled: 'Roboto Mono',
       });
 
       const startup = new AppBootstrap(
