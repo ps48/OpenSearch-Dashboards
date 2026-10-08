@@ -93,3 +93,34 @@
 .conApp__tabsExtension {
   border-bottom: $euiBorderThin;
 }
+
+// AMOLED theme only: the ace "sense-dark" editor theme hardcodes classic dark
+// grays, so remap its surfaces to the AMOLED panel tokens. Classic themes never
+// set $osdAmoledTheme, so their output is unchanged.
+$osdAmoledTheme: false !default;
+
+@if $osdAmoledTheme {
+  // Response pane uses core's .ace-tm overrides (lifted shade); match the
+  // request pane so both editors sit on the same AMOLED panel surface.
+  #consoleRoot .ace-tm {
+    background-color: $euiColorEmptyShade;
+
+    .ace_gutter {
+      background-color: $euiColorLightestShade;
+    }
+  }
+
+  #consoleRoot .ace-sense-dark {
+    .ace_scroller {
+      background-color: $euiColorEmptyShade;
+    }
+
+    .ace_gutter {
+      background: $euiColorLightestShade;
+    }
+
+    .ace_print-margin {
+      background: $euiColorLightShade;
+    }
+  }
+}

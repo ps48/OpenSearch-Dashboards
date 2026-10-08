@@ -8,4 +8,8 @@
 @import "@elastic/eui/src/themes/oui-amoled/oui_amoled_globals";
 @import "@elastic/eui/src/themes/oui-amoled/oui_amoled_viz";
 @import "@elastic/eui/src/themes/oui-amoled/oui_amoled_elevation";
+
+// Lets plugin Sass opt into AMOLED-only overrides without touching classic themes.
+$osdAmoledTheme: true;
+
 @import "./mixins";
