@@ -185,7 +185,7 @@ export const CompareRuns: React.FC<{
     {
       field: 'change',
       name: i18n.translate('agentTraces.evalsPage.colChange', { defaultMessage: 'Change' }),
-      width: '110px',
+      width: '130px',
       render: (change: ChangeKind) => (
         <EuiBadge color={CHANGE_COLOR[change]} iconType={CHANGE_ICON[change]}>
           {CHANGE_TEXT[change]}

@@ -31,6 +31,7 @@ import { AppMountParameters } from '../../../../../core/public';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import { createOsdUrlStateStorage } from '../../../../opensearch_dashboards_utils/public';
 import { syncQueryStateWithUrl } from '../../../../data/public';
+import { TimeRange } from '../../../../data/common';
 import { EvalResult } from './eval_data';
 import { TimeBoundsMs } from './eval_aggregations';
 import {
@@ -67,6 +68,10 @@ const PAGE_TITLE = i18n.translate('agentTraces.evalsPage.title', {
   defaultMessage: 'Agent Evaluations',
 });
 
+/** State update keeping the previous object for an equal range, so it does not refetch. */
+const sameTime = (next: TimeRange) => (prev: TimeRange) =>
+  prev.from === next.from && prev.to === next.to ? prev : next;
+
 /** Page state synced with `_a` in the URL hash (replace, so filters do not flood history). */
 const useAppState = (params: AppMountParameters, services: EvaluationsServices) => {
   const storage = useMemo(
@@ -77,6 +82,10 @@ const useAppState = (params: AppMountParameters, services: EvaluationsServices) 
       }),
     [params.history, services.uiSettings]
   );
+  // The global `_g` state (time range, refresh interval) is shared with the other apps. Start
+  // syncing on the first render, so the time range is read from the URL before the first fetch.
+  const sync = useRef<{ stop: () => void }>();
+  if (!sync.current) sync.current = syncQueryStateWithUrl(services.data.query, storage);
   const [state, setState] = useState<EvalAppState>(() =>
     normalizeAppState(storage.get(APP_STATE_KEY))
   );
@@ -84,15 +93,15 @@ const useAppState = (params: AppMountParameters, services: EvaluationsServices) 
   stateRef.current = state;
 
   useEffect(() => {
-    // The global `_g` state (time range, refresh interval) is shared with the other apps.
-    const { stop } = syncQueryStateWithUrl(services.data.query, storage);
+    if (!sync.current) sync.current = syncQueryStateWithUrl(services.data.query, storage);
     const subscription = storage.change$<unknown>(APP_STATE_KEY).subscribe((raw) => {
       const next = normalizeAppState(raw);
       if (!isEqual(next, stateRef.current)) setState(next);
     });
     return () => {
       subscription.unsubscribe();
-      stop();
+      sync.current?.stop();
+      sync.current = undefined;
     };
   }, [storage, services.data.query]);
 
@@ -117,14 +126,14 @@ const useTimeRange = (services: EvaluationsServices) => {
 
   useEffect(() => {
     const subscriptions = [
-      timefilter.getTimeUpdate$().subscribe(() => setTime(timefilter.getTime())),
+      timefilter.getTimeUpdate$().subscribe(() => setTime(sameTime(timefilter.getTime()))),
       timefilter
         .getRefreshIntervalUpdate$()
         .subscribe(() => setRefreshInterval(timefilter.getRefreshInterval())),
       timefilter.getAutoRefreshFetch$().subscribe(() => setRefreshKey((k) => k + 1)),
     ];
-    // The URL sync may have set the time before these subscriptions existed.
-    setTime(timefilter.getTime());
+    // The time may have changed before these subscriptions existed.
+    setTime(sameTime(timefilter.getTime()));
     setRefreshInterval(timefilter.getRefreshInterval());
     return () => subscriptions.forEach((s) => s.unsubscribe());
   }, [timefilter]);

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Subject } from 'rxjs';
-import { createMemoryHistory } from 'history';
+import { createBrowserHistory } from 'history';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dashboards_react/public';
@@ -67,7 +67,8 @@ const makeServices = () => {
 };
 
 const renderApp = (hash = '') => {
-  const history = createMemoryHistory({ initialEntries: [`/${hash}`] });
+  window.history.replaceState({}, '', `/app/agentTraces/evaluations${hash}`);
+  const history = createBrowserHistory();
   const params = { history } as unknown as AppMountParameters;
   render(
     <I18nProvider>
@@ -99,7 +100,7 @@ describe('EvaluationsApp', () => {
     renderApp();
     expect(screen.getByRole('heading', { name: 'Agent Evaluations' })).toBeInTheDocument();
     expect(screen.getByText(/Scores and judgments on your agents/)).toBeInTheDocument();
-    expect(screen.getByTestId('agtEvlDatePicker')).toBeInTheDocument();
+    expect(document.querySelector('.euiSuperDatePicker')).not.toBeNull();
     expect(screen.getByTestId('agtEvlOverview')).toBeInTheDocument();
     expect(screen.getAllByTestId('agtEvlEvaluatorCard')).toHaveLength(2);
   });

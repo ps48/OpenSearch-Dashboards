@@ -162,7 +162,9 @@ export const outcomeOf = (r: Omit<EvalResult, 'outcome' | 'id'>): EvalOutcome =>
   const min = r.scoreMin ?? (r.value > 1 ? 1 : 0);
   if (max <= min) return 'neutral';
   const normalized = (r.value - min) / (max - min);
-  const good = r.direction === 'minimize' ? normalized <= 0.5 : normalized >= 0.5;
+  // The exact midpoint (3 on a 1..5 scale) is neither good nor bad.
+  if (normalized === 0.5) return 'neutral';
+  const good = r.direction === 'minimize' ? normalized < 0.5 : normalized > 0.5;
   return good ? 'pass' : 'fail';
 };
 

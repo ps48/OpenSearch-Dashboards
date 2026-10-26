@@ -20,6 +20,7 @@ import {
   EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
+import moment from 'moment-timezone';
 import {
   EvalResult,
   LEVEL_LABEL,
@@ -37,6 +38,12 @@ const OUTCOME_TEXT = {
 };
 const HEALTH_COLOR = { pass: 'success', fail: 'danger', neutral: 'subdued' } as const;
 const BADGE_COLOR = { pass: 'secondary', fail: 'danger', neutral: 'hollow' } as const;
+
+/** PPL timestamps are UTC without a zone ("2026-10-26 09:38:26.94"); show them in local time. */
+const formatTime = (time: string) => {
+  const parsed = moment.utc(time.replace(' ', 'T'));
+  return parsed.isValid() ? parsed.local().format('MMM D, YYYY HH:mm:ss') : time;
+};
 
 const truncate = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
@@ -169,7 +176,7 @@ export const EvalResultItem: React.FC<{
       {r.evaluator}
       {r.evaluatorVersion ? ` ${r.evaluatorVersion}` : ''} · {SOURCE_LABEL[r.source] ?? r.source}
       {r.onlineConfig ? ` · ${r.onlineConfig}` : ''}
-      {r.errorType ? ` · error: ${r.errorType}` : ''} · {r.time}
+      {r.errorType ? ` · error: ${r.errorType}` : ''} · {formatTime(r.time)}
     </EuiText>
   </EuiPanel>
 );

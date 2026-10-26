@@ -9,6 +9,8 @@ import {
   fetchJudgedTarget,
   pickAgentSpan,
   pickSessionTraces,
+  recordToTargetSpan,
+  unwrapJsonString,
 } from './eval_target';
 import { makeResult } from './eval_test_fixtures';
 
@@ -60,6 +62,21 @@ describe('pickAgentSpan', () => {
     const { span: picked, root: r } = pickAgentSpan([root]);
     expect(picked?.spanId).toBe('root');
     expect(r).toBeUndefined();
+  });
+});
+
+describe('recordToTargetSpan', () => {
+  it('names the status code and unwraps JSON-encoded string messages', () => {
+    const s = recordToTargetSpan(
+      span({
+        status: { code: 0 },
+        attributes: { 'gen_ai.output.messages': '"line one\\nline two"' },
+      })
+    );
+    expect(s.status).toBe('unset');
+    expect(s.output).toBe('line one\nline two');
+    expect(unwrapJsonString('{"message":"hi"}')).toBe('{"message":"hi"}');
+    expect(unwrapJsonString('"broken')).toBe('"broken');
   });
 });
 

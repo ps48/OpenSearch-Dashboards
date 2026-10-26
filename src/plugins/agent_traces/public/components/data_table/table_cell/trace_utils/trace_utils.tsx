@@ -564,7 +564,7 @@ export const AgentTracesVirtualCell: React.FC<AgentTracesVirtualCellProps> = ({
     !(colName === 'kind' && Array.isArray(filterValue) && filterValue.length === 0);
 
   const tdClassName =
-    colName === 'input' || colName === 'output'
+    colName === 'input' || colName === 'output' || colName === 'evaluations'
       ? 'agentTracesDocTableCell agentTracesDocTableCell--wideText'
       : 'agentTracesDocTableCell';
 

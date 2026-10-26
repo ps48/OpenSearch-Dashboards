@@ -85,6 +85,20 @@ export const buildSessionSpansQuery = (sessionId: string, limit = SESSION_SPANS_
 const str = (v: unknown): string | undefined =>
   v === null || v === undefined || v === '' ? undefined : String(v);
 
+/** OTel status codes: 0 unset, 1 ok, 2 error. */
+const STATUS_TEXT: Record<string, string> = { '0': 'unset', '1': 'ok', '2': 'error' };
+
+/** A message attribute that holds a JSON-encoded string (`"text"`) shown as the text itself. */
+export const unwrapJsonString = (value: unknown): unknown => {
+  if (typeof value !== 'string' || !value.trim().startsWith('"')) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === 'string' ? parsed : value;
+  } catch {
+    return value;
+  }
+};
+
 export const recordToTargetSpan = (row: PplRecord): TargetSpan => {
   const attr = (key: string) => readAttribute(row, key);
   const status = row.status as Record<string, unknown> | undefined;
@@ -103,9 +117,9 @@ export const recordToTargetSpan = (row: PplRecord): TargetSpan => {
     startTime,
     startMs: parseEvalTime(startTime),
     durationMs: Number.isFinite(duration) ? duration / 1e6 : undefined,
-    status: statusCode === '2' ? 'error' : statusCode === '1' ? 'ok' : statusCode,
-    input: attr('gen_ai.input.messages'),
-    output: attr('gen_ai.output.messages'),
+    status: STATUS_TEXT[statusCode ?? ''] ?? statusCode,
+    input: unwrapJsonString(attr('gen_ai.input.messages')),
+    output: unwrapJsonString(attr('gen_ai.output.messages')),
     toolArguments: attr('gen_ai.tool.call.arguments'),
     toolResult: attr('gen_ai.tool.call.result'),
     conversationId: str(attr(AGENT_TRACES_SESSION_ID_FIELD.replace(/^attributes\./, ''))),
