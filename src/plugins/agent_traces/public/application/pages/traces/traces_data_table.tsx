@@ -10,6 +10,7 @@ import { AGENT_TRACES_DEFAULT_COLUMNS } from '../../../../common';
 import { DocViewFilterFn, OpenSearchSearchHit } from '../../../types/doc_views_types';
 import { TraceExpansionProvider, RowMeta } from './trace_expansion_context';
 import { useTraceFlyout } from './flyout/trace_flyout_context';
+import { RowEvaluationsProvider } from './row_evaluations_context';
 import { BaseRow, LoadingState, buildFullSpanTree, hitsToAgentSpans } from './hooks/tree_utils';
 import { transformPPLDataToTraceHits } from './trace_details/traces/ppl_to_trace_hits';
 import { usePPLQueryDeps } from './hooks/use_ppl_query_deps';
@@ -74,6 +75,15 @@ export const TracesDataTable: React.FC = () => {
     });
     return map;
   }, [hits, formatTs]);
+
+  // Trace ids of the listed rows, for the Evaluations column.
+  const evalTraceIds = useMemo(
+    () =>
+      hits
+        .map((hit) => String((hit._source as Record<string, unknown> | undefined)?.traceId ?? ''))
+        .filter(Boolean),
+    [hits]
+  );
 
   // Tree expansion state
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -332,6 +342,54 @@ export const TracesDataTable: React.FC = () => {
     [getRowMeta, openFlyout, updateFlyoutFullTree, expandTrace]
   );
 
+  // Deep link (Agent Evaluations "Open trace"): `openTraceId=<id>` in the hash query opens that
+  // trace's flyout once, from its row when listed, else from the trace id alone.
+  const openedFromLinkRef = useRef(false);
+  useEffect(() => {
+    if (openedFromLinkRef.current || !isInitialized || isQueryLoading) return;
+    const [path, query = ''] = window.location.hash.split('?');
+    const params = new URLSearchParams(query);
+    const linkedTraceId = params.get('openTraceId');
+    if (!linkedTraceId) return;
+    openedFromLinkRef.current = true;
+    params.delete('openTraceId');
+    const rest = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${window.location.search}${path}${rest ? `?${rest}` : ''}`
+    );
+    const hit = hits.find(
+      (h) => (h._source as Record<string, unknown> | undefined)?.traceId === linkedTraceId
+    );
+    if (hit) {
+      handleRowClick(getHitId(hit));
+      return;
+    }
+    const row: TraceRow = {
+      id: linkedTraceId,
+      spanId: '',
+      traceId: linkedTraceId,
+      parentSpanId: null,
+      status: 'success',
+      kind: '—',
+      name: linkedTraceId,
+      input: '—',
+      output: '—',
+      startTime: '',
+      endTime: '',
+      latency: '—',
+      durationNanos: 0,
+      totalTokens: '—',
+      inputTokens: null,
+      outputTokens: null,
+      totalCost: '—',
+    };
+    flyoutTraceIdRef.current = linkedTraceId;
+    openFlyout(row);
+    expandTrace(linkedTraceId);
+  }, [isInitialized, isQueryLoading, hits, handleRowClick, openFlyout, expandTrace]);
+
   const expansionContextValue = useMemo(
     () => ({
       expandedRows,
@@ -376,38 +434,40 @@ export const TracesDataTable: React.FC = () => {
 
   return (
     <TraceExpansionProvider value={expansionContextValue}>
-      <div className="agentTracesTable__container">
-        <DataTableInfoBar
-          hasHead={hasHead}
-          hitsCount={hits.length}
-          totalCount={traceMetrics?.filteredTraces ?? hits.length}
-          elapsedMs={results?.elapsedMs}
-          entityName="trace"
-          wrapCellText={wrapCellText}
-          onWrapCellTextChange={setWrapCellText}
-        />
-        <div
-          ref={scrollContainerRef}
-          className="agentTracesTable__scrollContainer eui-xScrollWithShadows"
-        >
-          <DataTable
-            columns={displayedColumns}
-            rows={visibleRows}
-            dataset={dataset}
-            hits={results?.hits?.total}
-            sampleSize={sampleSize}
-            isShortDots={false}
-            showPagination={false}
-            docViewsRegistry={docViewsRegistry}
-            onRemoveColumn={onRemoveColumn}
-            onAddColumn={onAddColumn}
-            onFilter={onAddFilter as DocViewFilterFn}
+      <RowEvaluationsProvider traceIds={evalTraceIds} mode="trace">
+        <div className="agentTracesTable__container">
+          <DataTableInfoBar
+            hasHead={hasHead}
+            hitsCount={hits.length}
+            totalCount={traceMetrics?.filteredTraces ?? hits.length}
+            elapsedMs={results?.elapsedMs}
+            entityName="trace"
             wrapCellText={wrapCellText}
-            sortOrder={sortOrder}
-            onChangeSortOrder={handleSortChange}
+            onWrapCellTextChange={setWrapCellText}
           />
+          <div
+            ref={scrollContainerRef}
+            className="agentTracesTable__scrollContainer eui-xScrollWithShadows"
+          >
+            <DataTable
+              columns={displayedColumns}
+              rows={visibleRows}
+              dataset={dataset}
+              hits={results?.hits?.total}
+              sampleSize={sampleSize}
+              isShortDots={false}
+              showPagination={false}
+              docViewsRegistry={docViewsRegistry}
+              onRemoveColumn={onRemoveColumn}
+              onAddColumn={onAddColumn}
+              onFilter={onAddFilter as DocViewFilterFn}
+              wrapCellText={wrapCellText}
+              sortOrder={sortOrder}
+              onChangeSortOrder={handleSortChange}
+            />
+          </div>
         </div>
-      </div>
+      </RowEvaluationsProvider>
     </TraceExpansionProvider>
   );
 };

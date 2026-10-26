@@ -1,0 +1,233 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React from 'react';
+import moment from 'moment';
+import { EuiBadge, EuiCallOut, EuiCode, EuiEmptyPrompt, EuiText, EuiToolTip } from '@elastic/eui';
+import { i18n } from '@osd/i18n';
+import { FormattedMessage } from '@osd/i18n/react';
+import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
+import { EvalOutcome, EvalResult, LEVEL_LABEL, SOURCE_LABEL, formatScore } from './eval_data';
+import { EvaluatorAggregate, parseEvalTime } from './eval_aggregations';
+
+export const OUTCOME_TEXT: Record<EvalOutcome, string> = {
+  pass: i18n.translate('agentTraces.evalsPage.outcomePass', { defaultMessage: 'Pass' }),
+  fail: i18n.translate('agentTraces.evalsPage.outcomeFail', { defaultMessage: 'Fail' }),
+  neutral: i18n.translate('agentTraces.evalsPage.outcomeNeutral', { defaultMessage: 'Scored' }),
+};
+
+/** Badge colors matching the trace flyout's evaluation badges. */
+export const OUTCOME_BADGE_COLOR: Record<EvalOutcome, string> = {
+  pass: 'secondary',
+  fail: 'danger',
+  neutral: 'hollow',
+};
+
+/** Chart colors (EUI vis palette) for pass, fail and neutral series. */
+export const OUTCOME_CHART_COLOR: Record<EvalOutcome, string> = {
+  pass: '#54B399',
+  fail: '#E7664C',
+  neutral: '#98A2B3',
+};
+
+const LEVEL_COLOR: Record<string, string> = {
+  session: '#6092C0',
+  trace: '#D36086',
+  span: '#54B399',
+  tool_call: '#D6BF57',
+};
+
+export const levelLabel = (level: string) => LEVEL_LABEL[level] ?? level;
+export const sourceLabel = (source: string) => SOURCE_LABEL[source] ?? source;
+
+/** Short display of an id: first 8 characters. */
+export const shortId = (id: string | undefined, length = 8) =>
+  id ? (id.length > length + 1 ? id.slice(0, length) : id) : '';
+
+export const formatEvalTime = (time: string | number, format = 'MMM D, HH:mm:ss') => {
+  const ms = typeof time === 'number' ? time : parseEvalTime(time);
+  return Number.isFinite(ms) ? moment(ms).format(format) : String(time);
+};
+
+export const formatPercent = (rate: number | undefined, digits = 0) =>
+  rate === undefined ? '-' : `${(rate * 100).toFixed(digits)}%`;
+
+/** An aggregate as shown in tables: mean score when numeric, else the pass rate. */
+export const formatAggregate = (agg?: EvaluatorAggregate): string => {
+  if (!agg) return '-';
+  if (agg.mean !== undefined) return agg.mean.toFixed(2);
+  if (agg.passRate !== undefined) return formatPercent(agg.passRate);
+  return agg.topLabel ?? '-';
+};
+
+/** The result: outcome word, colored, with the label and score. Never color-only. */
+export const OutcomeBadge: React.FC<{
+  result: Pick<EvalResult, 'outcome' | 'value' | 'label'>;
+}> = ({ result }) => {
+  const score = formatScore(result);
+  return (
+    <EuiBadge
+      color={OUTCOME_BADGE_COLOR[result.outcome]}
+      iconType={
+        result.outcome === 'fail' ? 'alert' : result.outcome === 'pass' ? 'check' : undefined
+      }
+      data-test-subj="agtEvlOutcomeBadge"
+    >
+      {OUTCOME_TEXT[result.outcome]}
+      {score !== '-' ? `: ${score}` : ''}
+    </EuiBadge>
+  );
+};
+
+export const LevelBadge: React.FC<{ level: string }> = ({ level }) => (
+  <EuiBadge color={LEVEL_COLOR[level] ?? 'hollow'} data-test-subj="agtEvlLevelBadge">
+    {levelLabel(level)}
+  </EuiBadge>
+);
+
+export const SourceBadge: React.FC<{ source: string }> = ({ source }) => (
+  <EuiBadge color="hollow" data-test-subj="agtEvlSourceBadge">
+    {sourceLabel(source)}
+  </EuiBadge>
+);
+
+/** What a result judged, as a short label: `Session abcd1234`, `Trace ...`, `Span ...`. */
+export const targetLabelOf = (r: EvalResult): string => {
+  if (r.level === 'session' && r.sessionId) {
+    return i18n.translate('agentTraces.evalsPage.targetSession', {
+      defaultMessage: 'Session {id}',
+      values: { id: shortId(r.sessionId, 12) },
+    });
+  }
+  if ((r.level === 'span' || r.level === 'tool_call') && r.spanId) {
+    return i18n.translate('agentTraces.evalsPage.targetSpan', {
+      defaultMessage: 'Span {id}',
+      values: { id: shortId(r.spanId) },
+    });
+  }
+  if (r.traceId) {
+    return i18n.translate('agentTraces.evalsPage.targetTrace', {
+      defaultMessage: 'Trace {id}',
+      values: { id: shortId(r.traceId) },
+    });
+  }
+  return '-';
+};
+
+export const TargetText: React.FC<{ result: EvalResult }> = ({ result }) => {
+  const label = targetLabelOf(result);
+  const full = [
+    result.sessionId && `session ${result.sessionId}`,
+    result.traceId && `trace ${result.traceId}`,
+    result.spanId && `span ${result.spanId}`,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  return full ? (
+    <EuiToolTip content={full}>
+      <EuiText size="xs">
+        <span className="agtEvlMono">{label}</span>
+      </EuiText>
+    </EuiToolTip>
+  ) : (
+    <EuiText size="xs">{label}</EuiText>
+  );
+};
+
+/** No evaluation index in the cluster yet: how results get here. */
+export const NoEvalIndexPrompt: React.FC = () => (
+  <EuiEmptyPrompt
+    iconType="visGauge"
+    data-test-subj="agtEvlNoIndex"
+    title={
+      <h2>
+        <FormattedMessage
+          id="agentTraces.evalsPage.noIndexTitle"
+          defaultMessage="No evaluation results yet"
+        />
+      </h2>
+    }
+    body={
+      <EuiText size="s" textAlign="left">
+        <p>
+          <FormattedMessage
+            id="agentTraces.evalsPage.noIndexBody"
+            defaultMessage="Agent Evaluations reads OpenTelemetry {event} events from the {index} indices. Emit them with:"
+            values={{
+              event: <EuiCode>gen_ai.evaluation.result</EuiCode>,
+              index: <EuiCode>{AGENT_EVALS_INDEX_PATTERN}</EuiCode>,
+            }}
+          />
+        </p>
+        <ul>
+          <li>
+            <FormattedMessage
+              id="agentTraces.evalsPage.noIndexSdk"
+              defaultMessage="the OpenSearch GenAI SDK {fn} (Python or TypeScript), inline or after the fact;"
+              values={{ fn: <EuiCode>score()</EuiCode> }}
+            />
+          </li>
+          <li>
+            <FormattedMessage
+              id="agentTraces.evalsPage.noIndexAgentCore"
+              defaultMessage="Bedrock AgentCore online evaluations, imported from their results log group;"
+            />
+          </li>
+          <li>
+            <FormattedMessage
+              id="agentTraces.evalsPage.noIndexOtel"
+              defaultMessage="any OpenTelemetry evaluator that emits the event with the evaluated span as context."
+            />
+          </li>
+        </ul>
+        <p>
+          <FormattedMessage
+            id="agentTraces.evalsPage.noIndexPipeline"
+            defaultMessage="Send them over OTLP logs like your traces. Data Prepper routes evaluation events to {index}."
+            values={{ index: <EuiCode>otel-v1-genai-evaluation</EuiCode> }}
+          />
+        </p>
+      </EuiText>
+    }
+  />
+);
+
+export const QueryErrorCallout: React.FC<{ message: string; title?: string }> = ({
+  message,
+  title,
+}) => (
+  <EuiCallOut
+    color="danger"
+    iconType="alert"
+    size="s"
+    data-test-subj="agtEvlQueryError"
+    title={
+      title ??
+      i18n.translate('agentTraces.evalsPage.queryError', {
+        defaultMessage: 'Could not load evaluation results',
+      })
+    }
+  >
+    <p className="agtEvlMono">{message}</p>
+  </EuiCallOut>
+);
+
+/** Aggregates use the latest results only: say so. */
+export const TruncationNotice: React.FC<{ shown: number; total?: number }> = ({ shown, total }) => (
+  <EuiCallOut
+    size="s"
+    color="warning"
+    iconType="iInCircle"
+    data-test-subj="agtEvlTruncated"
+    title={i18n.translate('agentTraces.evalsPage.truncated', {
+      defaultMessage:
+        'Showing the latest {shown} of {total} results. Narrow the time range or filters for exact numbers.',
+      values: {
+        shown: shown.toLocaleString(),
+        total: total !== undefined ? total.toLocaleString() : `${shown.toLocaleString()}+`,
+      },
+    })}
+  />
+);

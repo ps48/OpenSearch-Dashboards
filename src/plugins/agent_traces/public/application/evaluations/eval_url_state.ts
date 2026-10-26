@@ -1,0 +1,90 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { EvalFilters } from './eval_data';
+
+/**
+ * Page state kept in the URL (`_a` in the hash, rison encoded, next to the global `_g` time)
+ * so tabs, filters, an open result and a run comparison are shareable links.
+ */
+
+export type EvalTab = 'overview' | 'results' | 'runs';
+export const EVAL_TABS: EvalTab[] = ['overview', 'results', 'runs'];
+
+export interface EvalAppState {
+  tab: EvalTab;
+  names: string[];
+  levels: string[];
+  sources: string[];
+  /** Only failing results. */
+  failing: boolean;
+  /** Free-text search. */
+  q: string;
+  /** Id of the result open in the flyout. */
+  result?: string;
+  /** Runs compared: [baseline, candidate]. */
+  compare?: [string, string];
+}
+
+export const DEFAULT_APP_STATE: EvalAppState = {
+  tab: 'overview',
+  names: [],
+  levels: [],
+  sources: [],
+  failing: false,
+  q: '',
+};
+
+export const APP_STATE_KEY = '_a';
+
+const strings = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
+
+/** A valid state from whatever the URL held (missing, partial or hand-edited). */
+export const normalizeAppState = (raw: unknown): EvalAppState => {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_APP_STATE };
+  const r = raw as Record<string, unknown>;
+  const tab = EVAL_TABS.includes(r.tab as EvalTab) ? (r.tab as EvalTab) : 'overview';
+  const compare = strings(r.compare);
+  return {
+    tab,
+    names: strings(r.names),
+    levels: strings(r.levels),
+    sources: strings(r.sources),
+    failing: r.failing === true || r.failing === 'true',
+    q: typeof r.q === 'string' ? r.q : '',
+    ...(typeof r.result === 'string' && r.result ? { result: r.result } : {}),
+    ...(compare.length === 2 ? { compare: [compare[0], compare[1]] as [string, string] } : {}),
+  };
+};
+
+/** Only the non-default keys, to keep URLs short. */
+export const compactAppState = (state: EvalAppState): Partial<EvalAppState> => {
+  const out: Partial<EvalAppState> = {};
+  if (state.tab !== 'overview') out.tab = state.tab;
+  if (state.names.length) out.names = state.names;
+  if (state.levels.length) out.levels = state.levels;
+  if (state.sources.length) out.sources = state.sources;
+  if (state.failing) out.failing = true;
+  if (state.q) out.q = state.q;
+  if (state.result) out.result = state.result;
+  if (state.compare) out.compare = state.compare;
+  return out;
+};
+
+export const filtersOf = (state: EvalAppState): EvalFilters => ({
+  names: state.names,
+  levels: state.levels,
+  sources: state.sources,
+  search: state.q,
+  failingOnly: state.failing,
+});
+
+export const hasActiveFilters = (state: EvalAppState): boolean =>
+  state.names.length > 0 ||
+  state.levels.length > 0 ||
+  state.sources.length > 0 ||
+  state.failing ||
+  state.q.trim() !== '';

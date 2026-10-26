@@ -36,6 +36,8 @@ import { GenAiAttributes } from './genai_attributes';
 import { SpanLogsTab } from '../../../../../../explore/public';
 import { TraceLogs, useSpanLogs } from './use_trace_logs';
 import { TraceLogsNotices } from './trace_logs_notices';
+import { EvalResultItem } from './trace_evaluations';
+import { EvalResult } from '../../../evaluations/eval_data';
 
 export const formatJsonOrString = (value: string | undefined): string => {
   if (!value || value === '—')
@@ -65,6 +67,8 @@ interface FlyoutDetailPanelProps {
   onSelectNode: (nodeId: string) => void;
   /** The trace's correlated logs; the selected span's logs are listed when present. */
   traceLogs?: TraceLogs;
+  /** Evaluation results that judged the selected span. */
+  spanEvaluations?: EvalResult[];
 }
 
 export const FlyoutDetailPanel: React.FC<FlyoutDetailPanelProps> = ({
@@ -72,6 +76,7 @@ export const FlyoutDetailPanel: React.FC<FlyoutDetailPanelProps> = ({
   selectedTraceRow,
   onSelectNode,
   traceLogs,
+  spanEvaluations,
 }) => {
   const [ioMode, setIoMode] = useState<MessageViewMode>('formatted');
   const spanDatasetLogs = useSpanLogs(
@@ -120,6 +125,37 @@ export const FlyoutDetailPanel: React.FC<FlyoutDetailPanelProps> = ({
       </EuiFlexGroup>
 
       <EuiSpacer size="m" />
+
+      {spanEvaluations && spanEvaluations.length > 0 && (
+        <>
+          <EuiAccordion
+            id="spanEvaluationsAccordion"
+            initialIsOpen
+            buttonContent={
+              <strong>
+                {i18n.translate('agentTraces.detailPanel.evaluations', {
+                  defaultMessage: 'Evaluations',
+                })}
+              </strong>
+            }
+            extraAction={
+              <EuiBadge
+                color={spanEvaluations.some((r) => r.outcome === 'fail') ? 'danger' : 'hollow'}
+                data-test-subj="agentTracesSpanEvalsCount"
+              >
+                {spanEvaluations.length}
+              </EuiBadge>
+            }
+            paddingSize="s"
+            data-test-subj="agentTracesSpanEvalsAccordion"
+          >
+            {spanEvaluations.map((r) => (
+              <EvalResultItem key={r.id} result={r} />
+            ))}
+          </EuiAccordion>
+          <EuiSpacer size="s" />
+        </>
+      )}
 
       <EuiAccordion
         id="metadata-accordion"

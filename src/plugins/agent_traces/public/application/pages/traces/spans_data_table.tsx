@@ -19,6 +19,7 @@ import {
 } from './table_shared';
 import { getHitId } from '../../../components/data_table/table_cell/trace_utils/trace_utils';
 import { useTraceFlyout } from './flyout/trace_flyout_context';
+import { RowEvaluationsProvider } from './row_evaluations_context';
 import { TraceRow } from './hooks/tree_utils';
 import { usePPLQueryDeps } from './hooks/use_ppl_query_deps';
 import { transformPPLDataToTraceHits } from './trace_details/traces/ppl_to_trace_hits';
@@ -71,6 +72,15 @@ export const SpansDataTable: React.FC = () => {
     });
     return map;
   }, [hits, formatTs]);
+
+  // Trace ids of the listed rows, for the Evaluations column.
+  const evalTraceIds = useMemo(
+    () =>
+      hits
+        .map((hit) => String((hit._source as Record<string, unknown> | undefined)?.traceId ?? ''))
+        .filter(Boolean),
+    [hits]
+  );
 
   const getRowMeta = useCallback(
     (hitId: string): RowMeta | null => {
@@ -162,35 +172,37 @@ export const SpansDataTable: React.FC = () => {
 
   return (
     <TraceExpansionProvider value={expansionContextValue}>
-      <div className="agentTracesTable__container">
-        <DataTableInfoBar
-          hasHead={hasHead}
-          hitsCount={hits.length}
-          totalCount={traceMetrics?.filteredSpans ?? hits.length}
-          elapsedMs={results?.elapsedMs}
-          entityName="span"
-          wrapCellText={wrapCellText}
-          onWrapCellTextChange={setWrapCellText}
-        />
-        <div className="agentTracesTable__scrollContainer eui-xScrollWithShadows">
-          <DataTable
-            columns={displayedColumns}
-            rows={hits}
-            dataset={dataset}
-            hits={results?.hits?.total}
-            sampleSize={sampleSize}
-            isShortDots={false}
-            showPagination={false}
-            docViewsRegistry={docViewsRegistry}
-            onRemoveColumn={onRemoveColumn}
-            onAddColumn={onAddColumn}
-            onFilter={onAddFilter as DocViewFilterFn}
+      <RowEvaluationsProvider traceIds={evalTraceIds} mode="span">
+        <div className="agentTracesTable__container">
+          <DataTableInfoBar
+            hasHead={hasHead}
+            hitsCount={hits.length}
+            totalCount={traceMetrics?.filteredSpans ?? hits.length}
+            elapsedMs={results?.elapsedMs}
+            entityName="span"
             wrapCellText={wrapCellText}
-            sortOrder={sortOrder}
-            onChangeSortOrder={handleSortChange}
+            onWrapCellTextChange={setWrapCellText}
           />
+          <div className="agentTracesTable__scrollContainer eui-xScrollWithShadows">
+            <DataTable
+              columns={displayedColumns}
+              rows={hits}
+              dataset={dataset}
+              hits={results?.hits?.total}
+              sampleSize={sampleSize}
+              isShortDots={false}
+              showPagination={false}
+              docViewsRegistry={docViewsRegistry}
+              onRemoveColumn={onRemoveColumn}
+              onAddColumn={onAddColumn}
+              onFilter={onAddFilter as DocViewFilterFn}
+              wrapCellText={wrapCellText}
+              sortOrder={sortOrder}
+              onChangeSortOrder={handleSortChange}
+            />
+          </div>
         </div>
-      </div>
+      </RowEvaluationsProvider>
     </TraceExpansionProvider>
   );
 };

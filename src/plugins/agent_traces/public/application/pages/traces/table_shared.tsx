@@ -285,6 +285,12 @@ export const useDataTableCore = ({ defaultColumns }: DataTableCoreOptions) => {
       !hasTraceVirtualColumns
     ) {
       dispatch(setColumns(defaultColumns));
+    } else if (defaultColumns.includes('evaluations') && !columns.includes('evaluations')) {
+      // Saved column state from before the Evaluations column existed.
+      const at = columns.indexOf('totalTokens');
+      const next = [...columns];
+      next.splice(at >= 0 ? at + 1 : next.length, 0, 'evaluations');
+      dispatch(setColumns(next));
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

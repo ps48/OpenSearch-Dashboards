@@ -33,6 +33,7 @@ import {
   PLUGIN_NAME,
   AGENT_TRACES_NAV_ID,
   AGENT_SPANS_NAV_ID,
+  AGENT_EVALS_NAV_ID,
 } from '../common';
 import {
   setDocViewsRegistry,
@@ -64,6 +65,7 @@ import { abortAllActiveQueries } from './application/utils/state_management/acti
 import { setServices } from './services/services';
 import { AgentTracesIcon } from './assets/agent_traces_icon';
 import { AgentSpansIcon } from './assets/agent_spans_icon';
+import { AgentEvalsIcon } from './assets/agent_evals_icon';
 import { agentTracesNavPopover, agentSpansNavPopover } from './nav_popover';
 import { SlotRegistryService } from './services/slot_registry';
 
@@ -308,6 +310,34 @@ export class AgentTracesPlugin implements Plugin<
         })
       );
 
+      // Evaluations: a read-only view of GenAI evaluation results, joined to agent traces.
+      if (!this.stateUpdaterByApp[AGENT_EVALS_NAV_ID]) {
+        this.stateUpdaterByApp[AGENT_EVALS_NAV_ID] = new BehaviorSubject<AppUpdater>(() => ({}));
+      }
+      core.application.register({
+        id: AGENT_EVALS_NAV_ID,
+        title: i18n.translate('agentTraces.evaluations.appTitle', {
+          defaultMessage: 'Agent Evaluations',
+        }),
+        updater$: this.stateUpdaterByApp[AGENT_EVALS_NAV_ID].asObservable(),
+        order: 1000,
+        workspaceAvailability: WorkspaceAvailability.insideWorkspace,
+        euiIconType: 'inputOutput',
+        category: DEFAULT_APP_CATEGORIES.opensearchDashboards,
+        mount: async (params: AppMountParameters) => {
+          if (!this.initializeServices) {
+            throw Error('Agent Traces plugin method initializeServices is undefined');
+          }
+          const { core: coreStart, plugins: pluginsStart } = await this.initializeServices();
+          if (!(await this.getIsAgentTracesEnabledWorkspace(coreStart))) {
+            coreStart.application.navigateToApp('discover', { replace: true });
+            return () => {};
+          }
+          const { renderEvaluationsApp } = await import('./application/evaluations');
+          return renderEvaluationsApp(params, coreStart, pluginsStart);
+        },
+      });
+
       core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, [
         {
           id: AGENT_TRACES_NAV_ID,
@@ -324,6 +354,15 @@ export class AgentTracesPlugin implements Plugin<
           order: 200,
           euiIconType: AgentSpansIcon,
           navPopover: agentSpansNavPopover,
+        },
+        {
+          id: AGENT_EVALS_NAV_ID,
+          title: i18n.translate('agentTraces.evaluations.navTitle', {
+            defaultMessage: 'Evaluations',
+          }),
+          category: DEFAULT_APP_CATEGORIES.agentMonitoring,
+          order: 300,
+          euiIconType: AgentEvalsIcon,
         },
       ]);
     }
@@ -377,7 +416,8 @@ export class AgentTracesPlugin implements Plugin<
         if (
           app.id === PLUGIN_ID ||
           app.id === AGENT_TRACES_NAV_ID ||
-          app.id === AGENT_SPANS_NAV_ID
+          app.id === AGENT_SPANS_NAV_ID ||
+          app.id === AGENT_EVALS_NAV_ID
         ) {
           return { navLinkStatus: agentTracesNavStatus };
         }

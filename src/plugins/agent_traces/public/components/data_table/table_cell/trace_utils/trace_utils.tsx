@@ -35,6 +35,23 @@ import {
   previewSpanOutput,
 } from '../../../../application/pages/traces/hooks/genai_message_preview';
 import { useTraceExpansion } from '../../../../application/pages/traces/trace_expansion_context';
+import { useRowEvaluations } from '../../../../application/pages/traces/row_evaluations_context';
+import { BaseRow } from '../../../../application/pages/traces/hooks/tree_utils';
+import { EvalBadgeGroup } from '../../../../application/pages/traces/flyout/trace_evaluations';
+/** A row's evaluation results: a trace row shows its trace, session and span results, a span
+ *  row its own. Failures first. */
+const AgentTracesEvaluationsCell: React.FC<{ traceRow: BaseRow; isRoot: boolean }> = ({
+  traceRow,
+  isRoot,
+}) => {
+  const { byTraceId, bySpanId, mode } = useRowEvaluations();
+  const results =
+    isRoot && mode === 'trace'
+      ? (byTraceId.get(traceRow.traceId) ?? [])
+      : (bySpanId.get(traceRow.spanId) ?? []);
+  if (results.length === 0) return <>—</>;
+  return <EvalBadgeGroup results={results} max={2} />;
+};
 
 export const isOnTracesPage = (): boolean => {
   return window.location.pathname.includes('/agentTraces');
@@ -379,6 +396,8 @@ export const VIRTUAL_COL_SOURCE_FIELD: Record<string, string> = {
   totalTokens: 'attributes.gen_ai.usage.total_tokens',
   input: 'attributes.gen_ai.input.messages',
   output: 'attributes.gen_ai.output.messages',
+  /** Joined from the evaluations index; not a span field, so no filter buttons. */
+  evaluations: 'evaluations',
 };
 
 const AGENT_TRACES_VIRTUAL_COLUMNS = new Set(Object.keys(VIRTUAL_COL_SOURCE_FIELD));
@@ -514,6 +533,11 @@ export const AgentTracesVirtualCell: React.FC<AgentTracesVirtualCellProps> = ({
       if (preview) truncationTooltipText = preview;
       break;
     }
+    case 'evaluations':
+      content = (
+        <AgentTracesEvaluationsCell traceRow={traceRow} isRoot={(meta?.level ?? 0) === 0} />
+      );
+      break;
     default:
       content = null;
   }
@@ -536,6 +560,7 @@ export const AgentTracesVirtualCell: React.FC<AgentTracesVirtualCellProps> = ({
   // No filter buttons for totalTokens (composite value) or "Other" kind (no mapped operations)
   const showFilter =
     colName !== 'totalTokens' &&
+    colName !== 'evaluations' &&
     !(colName === 'kind' && Array.isArray(filterValue) && filterValue.length === 0);
 
   const tdClassName =

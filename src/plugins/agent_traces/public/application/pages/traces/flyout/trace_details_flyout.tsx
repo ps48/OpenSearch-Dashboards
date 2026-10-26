@@ -43,6 +43,8 @@ import { FlyoutHistoryNav } from './flyout_history_nav';
 import { FlyoutNavigation } from './trace_flyout_state';
 import { TraceLogsTab } from '../../../../../../explore/public';
 import { useTraceLogs } from './use_trace_logs';
+import { useTraceEvaluations } from './use_trace_evaluations';
+import { EvalBadgeGroup, TraceEvaluationsTab } from './trace_evaluations';
 import { TraceLogsNotices } from './trace_logs_notices';
 import { readAttribute } from '../hooks/genai_message_preview';
 import { SessionRow } from '../../sessions/session_utils';
@@ -125,6 +127,20 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
   const sessionId = useMemo(
     () => sessionIdOf([trace, ...flatNodes.map((node) => node.traceRow)]),
     [trace, flatNodes]
+  );
+  // Evaluation results that judged this trace, its spans or its session.
+  const traceEvals = useTraceEvaluations(rootTrace.traceId, sessionId);
+  const [leftTabId, setLeftTabId] = useState('trace-tree');
+  const spanLabelOf = useCallback(
+    (spanId: string) => flatNodes.find((node) => node.traceRow?.spanId === spanId)?.label,
+    [flatNodes]
+  );
+  const headerEvals = useMemo(
+    () =>
+      traceEvals.sessionResults.length + traceEvals.traceResults.length > 0
+        ? [...traceEvals.traceResults, ...traceEvals.sessionResults]
+        : traceEvals.results,
+    [traceEvals]
   );
 
   const initialIndex = flatNodes.findIndex((node) => node.id === trace.id);
@@ -359,6 +375,17 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
             </EuiText>
           </div>
 
+          {headerEvals.length > 0 && (
+            <div className="agentTracesFlyout__metaItem" data-test-subj="agentTracesFlyoutEvals">
+              <EuiText size="xs" className="agentTracesFlyout__metaLabel">
+                {i18n.translate('agentTraces.flyout.evaluations', {
+                  defaultMessage: 'EVALUATIONS',
+                })}
+              </EuiText>
+              <EvalBadgeGroup results={headerEvals} onClick={() => setLeftTabId('evaluations')} />
+            </div>
+          )}
+
           <div className="agentTracesFlyout__metaItem">
             <EuiText size="xs" className="agentTracesFlyout__metaLabel">
               {i18n.translate('agentTraces.flyout.tokens', {
@@ -469,11 +496,42 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
                         </>
                       ),
                     },
+                    {
+                      id: 'evaluations',
+                      name: (
+                        <span data-test-subj="agentTracesFlyoutEvalsTab">
+                          {!traceEvals.isLoading && traceEvals.results.length > 0 && (
+                            <>
+                              <EuiBadge
+                                color={
+                                  traceEvals.results.some((r) => r.outcome === 'fail')
+                                    ? 'danger'
+                                    : 'hollow'
+                                }
+                              >
+                                {traceEvals.results.length}
+                              </EuiBadge>{' '}
+                            </>
+                          )}
+                          {i18n.translate('agentTraces.flyout.tabEvaluations', {
+                            defaultMessage: 'Evaluations',
+                          })}
+                        </span>
+                      ),
+                      content: (
+                        <TraceEvaluationsTab
+                          evals={traceEvals}
+                          spanLabelOf={spanLabelOf}
+                          onSelectSpan={selectNode}
+                        />
+                      ),
+                    },
                   ];
                   return (
                     <EuiTabbedContent
                       tabs={leftTabs}
-                      initialSelectedTab={leftTabs[0]}
+                      selectedTab={leftTabs.find((tab) => tab.id === leftTabId) ?? leftTabs[0]}
+                      onTabClick={(tab) => setLeftTabId(tab.id)}
                       size="s"
                       className="agentTracesFlyout__tabbedContent"
                     />
@@ -489,6 +547,11 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
                   selectedTraceRow={selectedTraceRow}
                   onSelectNode={selectNode}
                   traceLogs={traceLogs}
+                  spanEvaluations={
+                    selectedTraceRow?.spanId
+                      ? traceEvals.bySpanId[selectedTraceRow.spanId]
+                      : undefined
+                  }
                 />
               </EuiResizablePanel>
             </>

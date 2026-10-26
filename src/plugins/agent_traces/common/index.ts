@@ -7,6 +7,10 @@ export const PLUGIN_ID = 'agentTraces';
 export const PLUGIN_NAME = 'Agent Traces';
 export const AGENT_TRACES_NAV_ID = 'agentTraces/traces';
 export const AGENT_SPANS_NAV_ID = 'agentTraces/spans';
+export const AGENT_EVALS_NAV_ID = 'agentTraces/evaluations';
+/** Index pattern of GenAI evaluation results (`gen_ai.evaluation.result` events), one doc per
+ *  result. Data Prepper routes the events here from the OTLP logs path. */
+export const AGENT_EVALS_INDEX_PATTERN = 'otel-v1-genai-evaluation-*';
 export const DEFAULT_COLUMNS_SETTING = 'defaultColumns';
 export const SAMPLE_SIZE_SETTING = 'discover:sampleSize';
 export const SORT_DEFAULT_ORDER_SETTING = 'discover:sort:defaultOrder';
@@ -36,6 +40,7 @@ export const AGENT_TRACES_DEFAULT_COLUMNS: readonly string[] = [
   'status',
   'latency',
   'totalTokens',
+  'evaluations',
   'input',
   'output',
 ];
@@ -49,6 +54,7 @@ export const AGENT_TRACES_COLUMN_DISPLAY_NAMES: Record<string, string> = {
   totalTokens: 'Tokens',
   input: 'Input',
   output: 'Output',
+  evaluations: 'Evaluations',
 };
 
 /** Virtual columns that support sorting in the DataTable. */

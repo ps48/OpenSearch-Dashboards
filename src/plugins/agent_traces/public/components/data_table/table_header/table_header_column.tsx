@@ -48,6 +48,8 @@ const getColumnFieldMappings = (
       return [{ label: 'Input', field: 'attributes.gen_ai.input.messages' }];
     case 'output':
       return [{ label: 'Output', field: 'attributes.gen_ai.output.messages' }];
+    case 'evaluations':
+      return [{ label: 'Evaluations', field: 'gen_ai.evaluation.result events' }];
     default:
       return null;
   }

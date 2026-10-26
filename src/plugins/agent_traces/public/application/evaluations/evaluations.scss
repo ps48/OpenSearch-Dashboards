@@ -1,0 +1,66 @@
+.agtEvlPage {
+  min-height: 100%;
+
+  &__tabBody {
+    position: relative;
+  }
+}
+
+.agtEvlCard {
+  height: 100%;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $euiColorPrimary;
+  }
+}
+
+.agtEvlLabels {
+  &__bar {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: $euiSizeXS;
+    background: $euiColorLightShade;
+  }
+
+  &__seg {
+    display: inline-block;
+    height: 100%;
+  }
+
+  &__dot {
+    display: inline-block;
+    width: $euiSizeS;
+    height: $euiSizeS;
+    border-radius: 50%;
+    margin-right: $euiSizeXS;
+  }
+}
+
+.agtEvlFailures,
+.agtEvlOthers,
+.agtEvlSessionTraces {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  &__item {
+    padding: $euiSizeXS 0;
+    border-bottom: $euiBorderThin;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+}
+
+.agtEvlTable__row {
+  cursor: pointer;
+}
+
+.agtEvlExplanation {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
