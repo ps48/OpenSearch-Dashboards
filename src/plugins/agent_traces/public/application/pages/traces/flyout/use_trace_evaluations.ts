@@ -63,7 +63,13 @@ export const groupTraceEvaluations = (
       traceResults.push(r);
     }
   });
-  return { results: ordered, bySpanId, traceResults, sessionResults };
+  // Only what the flyout shows: results of the session's other traces stay with those traces.
+  const shown = failuresFirst([
+    ...sessionResults,
+    ...traceResults,
+    ...Object.values(bySpanId).flat(),
+  ]);
+  return { results: shown, bySpanId, traceResults, sessionResults };
 };
 
 /**

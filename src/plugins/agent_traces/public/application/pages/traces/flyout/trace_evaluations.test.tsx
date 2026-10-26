@@ -54,6 +54,14 @@ describe('groupTraceEvaluations', () => {
     expect(grouped.bySpanId.s1.map((r) => r.name)).toEqual(['bad_span', 'ok_span']);
     expect(grouped.traceResults.map((r) => r.name)).toEqual(['trace_eval']);
     expect(grouped.sessionResults.map((r) => r.name)).toEqual(['goal']);
+    // A span result of another trace in the session is not this trace's.
+    const withOther = groupTraceEvaluations(
+      [...results, result({ name: 'elsewhere', traceId: 't2', spanId: 's7' })],
+      't1',
+      'sess'
+    );
+    expect(withOther.results.map((r) => r.name)).not.toContain('elsewhere');
+    expect(withOther.results).toHaveLength(4);
   });
 
   it('treats a trace-level result that names a span as trace level', () => {
