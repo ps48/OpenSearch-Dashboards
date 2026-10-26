@@ -8,7 +8,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { EvalResult, outcomeOf } from '../../../evaluations/eval_data';
 import { EvalBadgeGroup, EvalResultItem, TraceEvaluationsTab } from './trace_evaluations';
 import { groupTraceEvaluations } from './use_trace_evaluations';
-import { indexRowEvaluations } from '../row_evaluations_context';
+import { indexRowEvaluations, rowResults } from '../row_evaluations_context';
 
 const result = (overrides: Partial<EvalResult>): EvalResult => {
   const base = {
@@ -88,6 +88,28 @@ describe('indexRowEvaluations', () => {
     expect(index.byTraceId.get('t1')?.map((r) => r.name)).toEqual(['a', 'b', 'c']);
     expect(index.bySpanId.get('s1')?.map((r) => r.name)).toEqual(['a']);
     expect(index.bySpanId.get('s2')?.map((r) => r.name)).toEqual(['b']);
+  });
+});
+
+describe('rowResults', () => {
+  const results = [
+    result({ name: 'case_a', spanId: 'caseA' }),
+    result({ name: 'case_b', spanId: 'caseB' }),
+    result({ name: 'whole_run', level: 'trace', spanId: undefined }),
+  ];
+  it('shows all of a trace with one agent run', () => {
+    const value = { ...indexRowEvaluations(results), rowsByTraceId: new Map([['t1', 1]]) };
+    expect(
+      rowResults(value, { traceId: 't1', spanId: 'agentA', parentSpanId: 'caseA' })
+    ).toHaveLength(3);
+  });
+  it('shows only its own run when a trace holds several', () => {
+    const value = { ...indexRowEvaluations(results), rowsByTraceId: new Map([['t1', 2]]) };
+    expect(
+      rowResults(value, { traceId: 't1', spanId: 'agentA', parentSpanId: 'caseA' }).map(
+        (r) => r.name
+      )
+    ).toEqual(['case_a', 'whole_run']);
   });
 });
 

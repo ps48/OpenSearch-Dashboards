@@ -19,9 +19,32 @@ export interface RowEvaluations {
   bySpanId: Map<string, EvalResult[]>;
   /** `trace`: top-level rows are traces (agent runs). `span`: every row is a span. */
   mode: 'trace' | 'span';
+  /** Listed rows per trace id: above 1, a trace holds several agent runs (an offline run). */
+  rowsByTraceId: Map<string, number>;
 }
 
-const EMPTY: RowEvaluations = { byTraceId: new Map(), bySpanId: new Map(), mode: 'trace' };
+const EMPTY: RowEvaluations = {
+  byTraceId: new Map(),
+  bySpanId: new Map(),
+  mode: 'trace',
+  rowsByTraceId: new Map(),
+};
+
+/**
+ * Results to show on a top-level row. When the trace holds one agent run, all of the trace's
+ * results. When it holds several (an offline evaluation run is one trace), only the results
+ * of this run: on its span or on its parent (the test case), plus results without a span.
+ */
+export const rowResults = (
+  value: RowEvaluations,
+  row: { traceId: string; spanId: string; parentSpanId: string | null }
+): EvalResult[] => {
+  const results = value.byTraceId.get(row.traceId) ?? [];
+  if ((value.rowsByTraceId.get(row.traceId) ?? 1) <= 1) return results;
+  return results.filter(
+    (r) => !r.spanId || r.spanId === row.spanId || r.spanId === row.parentSpanId
+  );
+};
 const RowEvaluationsContext = createContext<RowEvaluations>(EMPTY);
 
 export const useRowEvaluations = () => useContext(RowEvaluationsContext);
@@ -41,7 +64,7 @@ export const indexRowEvaluations = (
       bySpanId.set(r.spanId, [...(bySpanId.get(r.spanId) ?? []), r]);
     }
   });
-  return { byTraceId, bySpanId, mode };
+  return { byTraceId, bySpanId, mode, rowsByTraceId: new Map() };
 };
 
 /**
@@ -58,6 +81,11 @@ export const RowEvaluationsProvider: React.FC<{
     () => Array.from(new Set(traceIds)).slice(0, MAX_TRACE_IDS).sort().join(','),
     [traceIds]
   );
+  const rowsByTraceId = useMemo(() => {
+    const counts = new Map<string, number>();
+    traceIds.forEach((id) => counts.set(id, (counts.get(id) ?? 0) + 1));
+    return counts;
+  }, [traceIds]);
 
   useEffect(() => {
     if (!key || !services?.data) {
@@ -77,5 +105,8 @@ export const RowEvaluationsProvider: React.FC<{
     return () => controller.abort();
   }, [key, mode, services?.data]);
 
-  return <RowEvaluationsContext.Provider value={value}>{children}</RowEvaluationsContext.Provider>;
+  const withRows = useMemo(() => ({ ...value, rowsByTraceId }), [value, rowsByTraceId]);
+  return (
+    <RowEvaluationsContext.Provider value={withRows}>{children}</RowEvaluationsContext.Provider>
+  );
 };
