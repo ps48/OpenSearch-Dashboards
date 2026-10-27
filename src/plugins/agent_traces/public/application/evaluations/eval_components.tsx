@@ -51,6 +51,16 @@ export const formatEvalTime = (time: string | number, format = 'MMM D, HH:mm:ss'
   return Number.isFinite(ms) ? moment(ms).format(format) : String(time);
 };
 
+/** `850 ms`, `2.40 s`, `3m 05s`; `-` when unknown. */
+export const formatDuration = (ms?: number): string => {
+  if (ms === undefined || !Number.isFinite(ms)) return '-';
+  if (ms < 1000) return `${ms.toFixed(0)} ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(2)} s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+};
+
 export const formatPercent = (rate: number | undefined, digits = 0) =>
   rate === undefined ? '-' : `${(rate * 100).toFixed(digits)}%`;
 

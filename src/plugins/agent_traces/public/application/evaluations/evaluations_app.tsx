@@ -211,6 +211,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
           {runs.truncated && <TruncationNotice shown={runs.results.length} />}
           <RunsTab
             results={runs.results}
+            events={runs.events}
             compare={state.compare}
             onCompareChange={(compare) => setState({ compare })}
             onOpenTrace={(traceId, aroundMs) =>

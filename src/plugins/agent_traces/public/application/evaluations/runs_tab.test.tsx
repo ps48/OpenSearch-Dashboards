@@ -8,7 +8,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import { RunsTab } from './runs_tab';
 import { formatDelta } from './compare_runs';
-import { twoRunFixture } from './eval_test_fixtures';
+import { twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
 
 const renderRuns = (props: Partial<React.ComponentProps<typeof RunsTab>> = {}) => {
   const onCompareChange = jest.fn();
@@ -87,6 +87,78 @@ describe('RunsTab', () => {
   it('warns when a compared run is outside the time range', () => {
     renderRuns({ compare: ['run-1', 'gone'] });
     expect(screen.getByTestId('agtEvlCompareMissing')).toBeInTheDocument();
+  });
+});
+
+describe('RunsTab with test case and run events', () => {
+  const rows = () => within(screen.getByTestId('agtEvlRunsTable')).getAllByRole('row').slice(1);
+  const caseRow = (name: string) => {
+    const row = within(screen.getByTestId('agtEvlCompareCases'))
+      .getAllByRole('row')
+      .find((r) => within(r).queryByText(name));
+    if (!row) throw new Error(`no row ${name}`);
+    return row;
+  };
+
+  it('shows counts, errored cases and duration from the events', () => {
+    renderRuns({ events: twoRunEventsFixture() });
+    const [latest, first] = rows();
+    expect(within(latest).getByText('run-2')).toBeInTheDocument();
+    expect(within(latest).getByTestId('agtEvlRunErrored')).toHaveTextContent('Errored');
+    expect(within(latest).getByTestId('agtEvlRunErroredCount')).toHaveTextContent('1');
+    expect(latest).toHaveTextContent('8.00 s');
+    expect(within(first).queryByTestId('agtEvlRunErrored')).not.toBeInTheDocument();
+    expect(first).toHaveTextContent('6.00 s');
+  });
+
+  it('shows no errored cases and no duration for runs without events', () => {
+    renderRuns();
+    expect(within(rows()[0]).getByTestId('agtEvlRunErroredCount')).toHaveTextContent('0');
+    expect(within(rows()[0]).queryByTestId('agtEvlRunErrored')).not.toBeInTheDocument();
+  });
+
+  it('compares case status from the events, with the error badge and missing cases', () => {
+    renderRuns({ events: twoRunEventsFixture(), compare: ['run-1', 'run-2'] });
+    const d = caseRow('Case d');
+    expect(d).toHaveTextContent('Regressed');
+    expect(within(d).getByTestId('agtEvlCaseErrorBadge')).toHaveTextContent(
+      'Errored: TimeoutError'
+    );
+    expect(screen.getByTestId('agtEvlCaseFilter-missing')).toBeInTheDocument();
+  });
+
+  it('opens a case side by side with links to both agent traces', () => {
+    const { onOpenTrace } = renderRuns({
+      events: twoRunEventsFixture(),
+      compare: ['run-1', 'run-2'],
+    });
+    fireEvent.click(within(caseRow('Case a')).getByTestId('agtEvlCompareCaseOpen'));
+    const flyout = screen.getByTestId('agtEvlCaseFlyout');
+    expect(within(flyout).getByTestId('agtEvlCaseInput')).toHaveTextContent('Plan a trip a');
+    expect(within(flyout).getByTestId('agtEvlCaseExpected')).toHaveTextContent('Itinerary a');
+    expect(within(flyout).getByTestId('agtEvlCaseOutput-baseline')).toHaveTextContent('old a');
+    expect(within(flyout).getByTestId('agtEvlCaseOutput-candidate')).toHaveTextContent('new a');
+    expect(within(flyout).getByTestId('agtEvlCaseScores')).toHaveTextContent('accuracy');
+    fireEvent.click(within(flyout).getByTestId('agtEvlCaseTrace-candidate'));
+    expect(onOpenTrace).toHaveBeenCalledWith(
+      'run-2-trace-a',
+      Date.parse('2026-10-26T10:00:00.000Z')
+    );
+    fireEvent.click(within(flyout).getByTestId('agtEvlCaseTrace-baseline'));
+    expect(onOpenTrace).toHaveBeenCalledWith(
+      'run-1-trace-a',
+      Date.parse('2026-10-25T10:00:00.000Z')
+    );
+  });
+
+  it('opens a grades-only case with a note that content was not recorded', () => {
+    const { onOpenTrace } = renderRuns({ compare: ['run-1', 'run-2'] });
+    fireEvent.click(within(caseRow('Case a')).getByTestId('agtEvlCompareCaseOpen'));
+    const flyout = screen.getByTestId('agtEvlCaseFlyout');
+    expect(within(flyout).getByTestId('agtEvlCaseNoContent')).toBeInTheDocument();
+    expect(within(flyout).getByTestId('agtEvlCaseInput')).toHaveTextContent('Not recorded');
+    fireEvent.click(within(flyout).getByTestId('agtEvlCaseTrace-candidate'));
+    expect(onOpenTrace).toHaveBeenCalledTimes(1);
   });
 });
 

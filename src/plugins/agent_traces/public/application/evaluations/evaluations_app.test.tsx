@@ -13,6 +13,7 @@ import { AppMountParameters } from '../../../../../core/public';
 import { EvaluationsApp } from './evaluations_app';
 import { makeResult, twoRunFixture } from './eval_test_fixtures';
 import { EvalData, RunData } from './use_eval_data';
+import { EMPTY_RUN_EVENTS } from './eval_data';
 
 jest.mock('../../../../data/public', () => ({
   syncQueryStateWithUrl: () => ({ stop: jest.fn() }),
@@ -90,7 +91,13 @@ beforeEach(() => {
     facets: [{ name: 'tool_diversity', level: 'span', source: 'opensearch-sdk', count: 1 }],
     truncated: false,
   };
-  runData = { loading: false, indexMissing: false, results: twoRunFixture(), truncated: false };
+  runData = {
+    loading: false,
+    indexMissing: false,
+    results: twoRunFixture(),
+    events: EMPTY_RUN_EVENTS,
+    truncated: false,
+  };
   mockUseEvalData.mockClear();
   mockUseRunResults.mockClear();
 });

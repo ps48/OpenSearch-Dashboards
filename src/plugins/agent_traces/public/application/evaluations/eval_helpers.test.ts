@@ -3,14 +3,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { buildEvalFacetsQuery, buildEvalResultsQuery, recordToEvalResult } from './eval_data';
+import {
+  buildEvalFacetsQuery,
+  buildEvalResultsQuery,
+  buildRunEventsQuery,
+  buildTraceEvalsQuery,
+  buildTracesEvalsQuery,
+  recordToEvalResult,
+  recordsToRunEvents,
+} from './eval_data';
 import { compactAppState, filtersOf, hasActiveFilters, normalizeAppState } from './eval_url_state';
 import { traceDeepLinkPath, traceToOpen } from './eval_links';
 import { errorMessage, isIndexMissing } from './use_eval_data';
 import { buildSameTargetQuery, sameTarget } from './result_flyout';
 import { makeResult } from './eval_test_fixtures';
 
+const GRADES_ONLY = "where `eventName` = 'gen_ai.evaluation.result'";
+
 describe('eval queries', () => {
+  it('reads grades only, never test case or run events', () => {
+    expect(buildEvalResultsQuery()).toContain(GRADES_ONLY);
+    expect(buildEvalResultsQuery({ runsOnly: true })).toContain(GRADES_ONLY);
+    expect(buildEvalFacetsQuery()).toContain(GRADES_ONLY);
+    expect(buildTraceEvalsQuery('t1', 's1')).toContain(GRADES_ONLY);
+    expect(buildTracesEvalsQuery(['t1', 't2'])).toContain(GRADES_ONLY);
+    expect(buildSameTargetQuery(makeResult({ traceId: 't' }))).toContain(GRADES_ONLY);
+  });
+  it('reads test case and run events', () => {
+    expect(buildRunEventsQuery(50)).toBe(
+      "source = otel-v1-genai-evaluation-* | where `eventName` = 'opensearch.test_case.result' or `eventName` = 'opensearch.test_suite_run.result' | sort - `@timestamp` | head 50"
+    );
+  });
   it('searches name, label and explanation', () => {
     const q = buildEvalResultsQuery({ search: "it's" });
     expect(q).toContain("like(`attributes.gen_ai.evaluation.explanation`, '%it\\'s%')");
@@ -53,6 +76,101 @@ describe('recordToEvalResult (AgentCore)', () => {
     expect(r.ratingScale).toBe('Categorical');
     expect(r.evaluator).toBe('Builtin.Helpfulness');
     expect(traceToOpen(r)).toBe('t-end');
+  });
+});
+
+describe('recordsToRunEvents', () => {
+  const testIds = {
+    suite: { name: 'travel-planner-golden', run: { id: 'run-9', status: 'failure' } },
+    case: { id: 'c1', name: 'Paris', result: { status: 'error' } },
+  };
+  it('parses test case and run events and ignores grades', () => {
+    const events = recordsToRunEvents([
+      {
+        eventName: 'opensearch.test_case.result',
+        '@timestamp': '2026-10-27 10:00:00',
+        traceId: 'abc123',
+        attributes: {
+          test: testIds,
+          error: { type: 'TimeoutError' },
+          opensearch: {
+            test_case: { input: 'in', expected: 'exp', output: 'out', duration_ms: 1234.5 },
+          },
+          gen_ai: { agent: { name: 'planner' } },
+        },
+        resource: { attributes: { 'service.name': 'travel-agent' } },
+      },
+      {
+        eventName: 'opensearch.test_suite_run.result',
+        '@timestamp': '2026-10-27 10:00:09',
+        traceId: '',
+        attributes: {
+          test: testIds,
+          opensearch: {
+            test_suite_run: {
+              case_count: 3,
+              pass_count: 1,
+              fail_count: 1,
+              error_count: 1,
+              duration_ms: 9000,
+            },
+          },
+        },
+      },
+      { eventName: 'gen_ai.evaluation.result', attributes: { test: testIds } },
+    ]);
+    expect(events.cases).toEqual([
+      {
+        time: '2026-10-27 10:00:00',
+        runId: 'run-9',
+        suiteName: 'travel-planner-golden',
+        caseId: 'c1',
+        caseName: 'Paris',
+        status: 'error',
+        errorType: 'TimeoutError',
+        input: 'in',
+        expected: 'exp',
+        output: 'out',
+        durationMs: 1234.5,
+        traceId: 'abc123',
+        agentName: 'planner',
+        serviceName: 'travel-agent',
+      },
+    ]);
+    expect(events.runs).toEqual([
+      {
+        time: '2026-10-27 10:00:09',
+        runId: 'run-9',
+        suiteName: 'travel-planner-golden',
+        status: 'failure',
+        caseCount: 3,
+        passCount: 1,
+        failCount: 1,
+        errorCount: 1,
+        durationMs: 9000,
+      },
+    ]);
+  });
+  it('falls back to the derived target trace, reads dotted keys, drops events without a run id', () => {
+    const events = recordsToRunEvents([
+      {
+        eventName: 'opensearch.test_case.result',
+        '@timestamp': '2026-10-27 10:00:00',
+        traceId: '',
+        attributes: {
+          'test.suite.run.id': 'run-1',
+          'test.case.id': 'c2',
+          'test.case.result.status': 'PASS',
+          'derived.evaluation.target_trace_id': 'fallback',
+        },
+      },
+      {
+        eventName: 'opensearch.test_case.result',
+        attributes: { 'test.case.id': 'orphan', 'test.case.result.status': 'skipped' },
+      },
+    ]);
+    expect(events.cases).toHaveLength(1);
+    expect(events.cases[0]).toMatchObject({ caseId: 'c2', status: 'pass', traceId: 'fallback' });
   });
 });
 

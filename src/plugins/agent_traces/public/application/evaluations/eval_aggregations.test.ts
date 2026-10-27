@@ -16,7 +16,12 @@ import {
   scoreTrend,
   summarizeRuns,
 } from './eval_aggregations';
-import { makeResult, twoRunFixture } from './eval_test_fixtures';
+import {
+  makeCaseEvent,
+  makeResult,
+  twoRunEventsFixture,
+  twoRunFixture,
+} from './eval_test_fixtures';
 
 describe('parseEvalTime', () => {
   it('reads PPL timestamps as UTC and truncates nanoseconds', () => {
@@ -143,7 +148,7 @@ describe('compareRuns', () => {
       improved: 1,
       regressed: 1,
       new: 1,
-      removed: 0,
+      missing: 0,
       unchanged: 0,
     });
     // regressed cases first
@@ -154,8 +159,96 @@ describe('compareRuns', () => {
     expect(accuracy.regressed).toBe(1);
     expect(accuracy.change).toBe('regressed');
   });
-  it('reports removed cases when the candidate lacks them', () => {
+  it('reports missing cases when the candidate lacks them', () => {
     const comparison = compareRuns(twoRunFixture(), 'run-2', 'run-1');
-    expect(comparison.cases.find((c) => c.caseId === 'c')?.change).toBe('removed');
+    expect(comparison.cases.find((c) => c.caseId === 'c')?.change).toBe('missing');
+  });
+});
+
+describe('summarizeRuns with case and run events', () => {
+  it('takes cases, counts, timing and status from the events', () => {
+    const [latest, first] = summarizeRuns(twoRunFixture(), twoRunEventsFixture());
+    expect(latest.runId).toBe('run-2');
+    expect(latest.fromCaseEvents).toBe(true);
+    expect(latest.status).toBe('failure');
+    expect(latest.cases).toBe(4);
+    expect(latest.casesPassed).toBe(2);
+    expect(latest.casesFailed).toBe(1);
+    expect(latest.casesErrored).toBe(1);
+    expect(latest.durationMs).toBe(8000);
+    expect(latest.ended).toBe(Date.parse('2026-10-26T10:00:05.000Z'));
+    expect(latest.started).toBe(Date.parse('2026-10-26T09:59:57.000Z'));
+    expect(latest.evaluators.accuracy.count).toBe(3);
+    expect(first.casesErrored).toBe(0);
+    expect(first.status).toBe('success');
+  });
+
+  it('counts from case events when the run event is missing', () => {
+    const events = twoRunEventsFixture();
+    const [latest] = summarizeRuns(twoRunFixture(), { cases: events.cases, runs: [] });
+    expect(latest.cases).toBe(4);
+    expect(latest.casesErrored).toBe(1);
+    expect(latest.status).toBeUndefined();
+    // first case start (10:00:00 - 1.5 s) to last case end (10:00:03)
+    expect(latest.durationMs).toBe(4500);
+  });
+
+  it('lists runs that only have events (every case errored, no grades)', () => {
+    const runs = summarizeRuns([], {
+      cases: [makeCaseEvent({ runId: 'run-x', caseId: 'a', status: 'error' })],
+      runs: [],
+    });
+    expect(runs).toHaveLength(1);
+    expect(runs[0].casesErrored).toBe(1);
+    expect(runs[0].suiteName).toBe('travel-suite');
+  });
+
+  it('keeps the latest event of a repeated case', () => {
+    const runs = summarizeRuns([], {
+      cases: [
+        makeCaseEvent({ caseId: 'a', status: 'fail', time: '2026-10-26 10:00:00' }),
+        makeCaseEvent({ caseId: 'a', status: 'pass', time: '2026-10-26 10:00:09' }),
+      ],
+      runs: [],
+    });
+    expect(runs[0].cases).toBe(1);
+    expect(runs[0].casesPassed).toBe(1);
+  });
+
+  it('falls back to grades for runs without events', () => {
+    const [latest] = summarizeRuns(twoRunFixture(), { cases: [], runs: [] });
+    expect(latest.fromCaseEvents).toBe(false);
+    expect(latest.durationMs).toBeUndefined();
+    expect(latest.casesErrored).toBe(0);
+    expect(latest.cases).toBe(3);
+  });
+});
+
+describe('compareRuns with case events', () => {
+  it('uses case status, traces and content from the events, scores from grades', () => {
+    const comparison = compareRuns(twoRunFixture(), 'run-1', 'run-2', twoRunEventsFixture());
+    const byId = Object.fromEntries(comparison.cases.map((c) => [c.caseId, c]));
+    expect(Object.keys(byId).sort()).toEqual(['a', 'b', 'c', 'd']);
+    expect(byId.d.baselineStatus).toBe('pass');
+    expect(byId.d.candidateStatus).toBe('error');
+    expect(byId.d.change).toBe('regressed');
+    expect(byId.d.candidateCase?.errorType).toBe('TimeoutError');
+    expect(byId.a.candidateTraceId).toBe('run-2-trace-a');
+    expect(byId.a.baselineCase?.output).toBe('old a');
+    expect(byId.a.evaluators.accuracy.delta).toBeCloseTo(0.4);
+    expect(byId.c.change).toBe('new');
+    expect(comparison.counts.regressed).toBe(2);
+  });
+
+  it('reports a case missing from the candidate by its case event', () => {
+    const events = twoRunEventsFixture();
+    const comparison = compareRuns([], 'run-2', 'run-1', events);
+    const byId = Object.fromEntries(comparison.cases.map((c) => [c.caseId, c]));
+    expect(byId.c.change).toBe('missing');
+    expect(byId.d.change).toBe('improved');
+  });
+
+  it('treats a reported error status on grades as errored', () => {
+    expect(caseStatusOf([makeResult({ caseStatus: 'error' })])).toBe('error');
   });
 });

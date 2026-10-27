@@ -14,7 +14,6 @@ import {
   EuiFlexGrid,
   EuiFlexGroup,
   EuiFlexItem,
-  EuiHealth,
   EuiInMemoryTable,
   EuiLink,
   EuiPanel,
@@ -25,7 +24,7 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { EvalResult } from './eval_data';
+import { EMPTY_RUN_EVENTS, EvalResult, RunEvents } from './eval_data';
 import {
   CaseComparison,
   CaseStatus,
@@ -33,8 +32,10 @@ import {
   RunSummary,
   ValueComparison,
   compareRuns,
+  parseEvalTime,
 } from './eval_aggregations';
-import { formatAggregate, formatEvalTime, shortId } from './eval_components';
+import { formatAggregate, formatDuration, formatEvalTime, shortId } from './eval_components';
+import { CaseCompareFlyout, CaseStatusView } from './case_compare_flyout';
 
 const CHANGE_TEXT: Record<ChangeKind, string> = {
   improved: i18n.translate('agentTraces.evalsPage.changeImproved', { defaultMessage: 'Improved' }),
@@ -45,7 +46,7 @@ const CHANGE_TEXT: Record<ChangeKind, string> = {
     defaultMessage: 'Unchanged',
   }),
   new: i18n.translate('agentTraces.evalsPage.changeNew', { defaultMessage: 'New' }),
-  removed: i18n.translate('agentTraces.evalsPage.changeRemoved', { defaultMessage: 'Removed' }),
+  missing: i18n.translate('agentTraces.evalsPage.changeMissing', { defaultMessage: 'Missing' }),
 };
 
 const CHANGE_COLOR: Record<ChangeKind, string> = {
@@ -53,7 +54,7 @@ const CHANGE_COLOR: Record<ChangeKind, string> = {
   regressed: 'danger',
   unchanged: 'hollow',
   new: 'primary',
-  removed: 'default',
+  missing: 'default',
 };
 
 const CHANGE_ICON: Partial<Record<ChangeKind, string>> = {
@@ -95,27 +96,14 @@ export const DeltaChip: React.FC<{ value: ValueComparison }> = ({ value }) => {
   );
 };
 
-const STATUS_COLOR: Record<CaseStatus, string> = {
-  pass: 'success',
-  fail: 'danger',
-  unknown: 'subdued',
-};
-const STATUS_TEXT: Record<CaseStatus, string> = {
-  pass: i18n.translate('agentTraces.evalsPage.casePassed', { defaultMessage: 'Passed' }),
-  fail: i18n.translate('agentTraces.evalsPage.caseFailed', { defaultMessage: 'Failed' }),
-  unknown: i18n.translate('agentTraces.evalsPage.caseUnknown', { defaultMessage: 'Scored' }),
+/** Time to center a trace link on: the case event's time, else the run start. */
+const timeOf = (eventTime: string | undefined, runStarted: number | undefined): number => {
+  const t = parseEvalTime(eventTime);
+  if (Number.isFinite(t)) return t;
+  return runStarted !== undefined && Number.isFinite(runStarted) ? runStarted : Date.now();
 };
 
-const StatusHealth: React.FC<{ status?: CaseStatus }> = ({ status }) =>
-  status ? (
-    <EuiHealth color={STATUS_COLOR[status]}>{STATUS_TEXT[status]}</EuiHealth>
-  ) : (
-    <EuiText size="xs" color="subdued">
-      -
-    </EuiText>
-  );
-
-type CaseFilter = 'all' | 'improved' | 'regressed' | 'new';
+type CaseFilter = 'all' | 'improved' | 'regressed' | 'new' | 'missing';
 
 const RunHeader: React.FC<{ title: string; id: string; run?: RunSummary }> = ({
   title,
@@ -137,6 +125,17 @@ const RunHeader: React.FC<{ title: string; id: string; run?: RunSummary }> = ({
           defaultMessage="{passed} of {cases} test cases passed"
           values={{ passed: run.casesPassed, cases: run.cases }}
         />
+        {run.casesErrored > 0 && (
+          <>
+            {' · '}
+            <FormattedMessage
+              id="agentTraces.evalsPage.runCasesErrored"
+              defaultMessage="{errored} errored"
+              values={{ errored: run.casesErrored }}
+            />
+          </>
+        )}
+        {run.durationMs !== undefined && <> · {formatDuration(run.durationMs)}</>}
       </EuiText>
     )}
   </EuiPanel>
@@ -144,6 +143,8 @@ const RunHeader: React.FC<{ title: string; id: string; run?: RunSummary }> = ({
 
 export const CompareRuns: React.FC<{
   results: EvalResult[];
+  /** Test case events of the runs, when they emitted them. */
+  events?: RunEvents;
   baselineId: string;
   candidateId: string;
   baseline?: RunSummary;
@@ -151,11 +152,23 @@ export const CompareRuns: React.FC<{
   onBack: () => void;
   onSwap: () => void;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
-}> = ({ results, baselineId, candidateId, baseline, candidate, onBack, onSwap, onOpenTrace }) => {
+}> = ({
+  results,
+  events = EMPTY_RUN_EVENTS,
+  baselineId,
+  candidateId,
+  baseline,
+  candidate,
+  onBack,
+  onSwap,
+  onOpenTrace,
+}) => {
   const comparison = useMemo(
-    () => compareRuns(results, baselineId, candidateId),
-    [results, baselineId, candidateId]
+    () => compareRuns(results, baselineId, candidateId, events),
+    [results, baselineId, candidateId, events]
   );
+  const [openCaseId, setOpenCaseId] = useState<string | undefined>();
+  const openCase = comparison.cases.find((c) => c.caseId === openCaseId);
   const [filter, setFilter] = useState<CaseFilter>('all');
   const cases = useMemo(
     () =>
@@ -172,7 +185,9 @@ export const CompareRuns: React.FC<{
       render: (caseId: string, c: CaseComparison) => (
         <div>
           <EuiText size="xs">
-            <strong>{c.caseName ?? caseId}</strong>
+            <EuiLink onClick={() => setOpenCaseId(caseId)} data-test-subj="agtEvlCompareCaseOpen">
+              <strong>{c.caseName ?? caseId}</strong>
+            </EuiLink>
           </EuiText>
           {c.caseName && (
             <EuiText size="xs" color="subdued" className="agtEvlMono">
@@ -198,9 +213,9 @@ export const CompareRuns: React.FC<{
         defaultMessage: 'Baseline, candidate',
       }),
       render: (_s: CaseStatus | undefined, c: CaseComparison) => (
-        <div>
-          <StatusHealth status={c.baselineStatus} />
-          <StatusHealth status={c.candidateStatus} />
+        <div data-test-subj="agtEvlCompareCaseStatus">
+          <CaseStatusView status={c.baselineStatus} errorType={c.baselineCase?.errorType} />
+          <CaseStatusView status={c.candidateStatus} errorType={c.candidateCase?.errorType} />
         </div>
       ),
     },
@@ -237,7 +252,10 @@ export const CompareRuns: React.FC<{
             <EuiFlexItem grow={false}>
               <EuiLink
                 onClick={() =>
-                  onOpenTrace(c.baselineTraceId as string, baseline?.started ?? Date.now())
+                  onOpenTrace(
+                    c.baselineTraceId as string,
+                    timeOf(c.baselineCase?.time, baseline?.started)
+                  )
                 }
                 data-test-subj="agtEvlCompareBaselineTrace"
               >
@@ -251,7 +269,10 @@ export const CompareRuns: React.FC<{
             <EuiFlexItem grow={false}>
               <EuiLink
                 onClick={() =>
-                  onOpenTrace(c.candidateTraceId as string, candidate?.started ?? Date.now())
+                  onOpenTrace(
+                    c.candidateTraceId as string,
+                    timeOf(c.candidateCase?.time, candidate?.started)
+                  )
                 }
                 data-test-subj="agtEvlCompareCandidateTrace"
               >
@@ -275,6 +296,7 @@ export const CompareRuns: React.FC<{
     { id: 'improved', label: CHANGE_TEXT.improved, count: comparison.counts.improved },
     { id: 'regressed', label: CHANGE_TEXT.regressed, count: comparison.counts.regressed },
     { id: 'new', label: CHANGE_TEXT.new, count: comparison.counts.new },
+    { id: 'missing', label: CHANGE_TEXT.missing, count: comparison.counts.missing },
   ];
 
   return (
@@ -413,6 +435,15 @@ export const CompareRuns: React.FC<{
         })}
         data-test-subj="agtEvlCompareCases"
       />
+      {openCase && (
+        <CaseCompareFlyout
+          comparison={openCase}
+          baselineStartedMs={baseline?.started ?? Date.now()}
+          candidateStartedMs={candidate?.started ?? Date.now()}
+          onClose={() => setOpenCaseId(undefined)}
+          onOpenTrace={onOpenTrace}
+        />
+      )}
     </div>
   );
 };

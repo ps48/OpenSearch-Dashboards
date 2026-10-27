@@ -34,6 +34,7 @@ import {
 import { pplResponseToRecords, withoutTimeRange } from '../pages/sessions/session_utils';
 import {
   EVALS_DATASET,
+  EVAL_EVENT_WHERE,
   EVAL_FIELDS,
   EvalResult,
   createEvalsPplService,
@@ -47,6 +48,7 @@ import {
   LevelBadge,
   OutcomeBadge,
   SourceBadge,
+  formatDuration,
   formatEvalTime,
   levelLabel,
   shortId,
@@ -65,7 +67,7 @@ export const buildSameTargetQuery = (r: EvalResult, limit = 200): string | undef
         ? `\`${EVAL_FIELDS.targetTraceId}\` = ${quote(r.traceId)}`
         : undefined;
   if (!where) return undefined;
-  return `source = ${EVALS_DATASET.title} | where ${where} | sort - \`${EVAL_FIELDS.time}\` | head ${limit}`;
+  return `source = ${EVALS_DATASET.title} | where ${EVAL_EVENT_WHERE} | where ${where} | sort - \`${EVAL_FIELDS.time}\` | head ${limit}`;
 };
 
 /** Whether two results judged the same thing (same level and same span, trace or session). */
@@ -76,9 +78,6 @@ export const sameTarget = (a: EvalResult, b: EvalResult): boolean => {
   if (levelOf(a) === 'span') return !!a.spanId && a.spanId === b.spanId && a.traceId === b.traceId;
   return !!a.traceId && a.traceId === b.traceId;
 };
-
-const formatDuration = (ms?: number) =>
-  ms === undefined ? '-' : ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms.toFixed(0)} ms`;
 
 const Section: React.FC<{
   title: React.ReactNode;

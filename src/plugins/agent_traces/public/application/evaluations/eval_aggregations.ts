@@ -3,7 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EvalOutcome, EvalResult, normalizedScore } from './eval_data';
+import {
+  EMPTY_RUN_EVENTS,
+  EvalOutcome,
+  EvalResult,
+  RunEvents,
+  SuiteRunEvent,
+  TestCaseEvent,
+  normalizedScore,
+} from './eval_data';
 
 /**
  * Client-side rollups of evaluation results for the Agent Evaluations pages: KPIs, time
@@ -200,7 +208,7 @@ const groupBy = <K>(results: EvalResult[], key: (r: EvalResult) => K): Map<K, Ev
   return groups;
 };
 
-export type CaseStatus = 'pass' | 'fail' | 'unknown';
+export type CaseStatus = 'pass' | 'fail' | 'error' | 'unknown';
 
 /**
  * A test case passes when its reported status says so; without a status, when every
@@ -209,7 +217,8 @@ export type CaseStatus = 'pass' | 'fail' | 'unknown';
 export const caseStatusOf = (results: EvalResult[]): CaseStatus => {
   const reported = results.map((r) => r.caseStatus?.toLowerCase()).find((s) => !!s);
   if (reported === 'pass' || reported === 'passed') return 'pass';
-  if (reported === 'fail' || reported === 'failed' || reported === 'error') return 'fail';
+  if (reported === 'fail' || reported === 'failed') return 'fail';
+  if (reported === 'error' || reported === 'errored') return 'error';
   if (results.some((r) => r.outcome === 'fail')) return 'fail';
   if (results.some((r) => r.outcome === 'pass')) return 'pass';
   return 'unknown';
@@ -221,13 +230,20 @@ export const CHANGE_THRESHOLD = 0.05;
 export interface RunSummary {
   runId: string;
   suiteName?: string;
-  /** Earliest and latest result time (epoch millis). */
+  /** Run start and end (epoch millis): from the run event when present, else event times. */
   started: number;
   ended: number;
+  /** From the run event, else the span of the case events; unknown for grades-only runs. */
+  durationMs?: number;
+  /** `success` or `failure`, from the run event. */
+  status?: string;
   results: number;
   cases: number;
   casesPassed: number;
   casesFailed: number;
+  casesErrored: number;
+  /** Test cases come from `opensearch.test_case.result` events; else they are derived from grades. */
+  fromCaseEvents: boolean;
   agentName?: string;
   serviceName?: string;
   evaluators: Record<string, EvaluatorAggregate>;
@@ -240,35 +256,118 @@ export interface RunSummary {
 }
 
 const caseKey = (r: EvalResult) => r.caseId ?? r.caseName ?? r.traceId ?? r.id;
+const caseEventKey = (e: TestCaseEvent) => e.caseId ?? e.caseName ?? e.traceId ?? e.time;
 
-/** One row per evaluation run, newest first, with a regression check vs the previous run. */
-export const summarizeRuns = (results: EvalResult[]): RunSummary[] => {
-  const runs = Array.from(
-    groupBy(
-      results.filter((r) => !!r.runId),
-      (r) => r.runId as string
-    )
-  )
-    .map(([runId, list]) => {
-      const times = list.map((r) => parseEvalTime(r.time)).filter(Number.isFinite);
-      const cases = Array.from(groupBy(list, caseKey).values()).map(caseStatusOf);
+/** The latest case event per test case of one run. */
+const caseEventsOf = (events: RunEvents, runId: string): Map<string, TestCaseEvent> => {
+  const byCase = new Map<string, TestCaseEvent>();
+  events.cases
+    .filter((e) => e.runId === runId)
+    .forEach((e) => {
+      const key = caseEventKey(e);
+      const seen = byCase.get(key);
+      if (!seen || parseEvalTime(e.time) > parseEvalTime(seen.time)) byCase.set(key, e);
+    });
+  return byCase;
+};
+
+const runEventOf = (events: RunEvents, runId: string): SuiteRunEvent | undefined =>
+  events.runs
+    .filter((e) => e.runId === runId)
+    .sort((a, b) => parseEvalTime(b.time) - parseEvalTime(a.time))[0];
+
+/** Status of a case on one side: its case event when present, else its grades. */
+const sideStatus = (event: TestCaseEvent | undefined, grades: EvalResult[]): CaseStatus => {
+  if (event?.status) return event.status;
+  return caseStatusOf(grades);
+};
+
+/**
+ * One row per evaluation run, newest first, with a regression check vs the previous run.
+ * Runs with case and run events (current SDKs) take their cases, statuses, counts and timing
+ * from those events; runs without them (older SDKs, Agent Health) are derived from grades.
+ */
+export const summarizeRuns = (
+  results: EvalResult[],
+  events: RunEvents = EMPTY_RUN_EVENTS
+): RunSummary[] => {
+  const grades = groupBy(
+    results.filter((r) => !!r.runId),
+    (r) => r.runId as string
+  );
+  const runIds = new Set<string>([
+    ...grades.keys(),
+    ...events.cases.map((e) => e.runId),
+    ...events.runs.map((e) => e.runId),
+  ]);
+  const runs = Array.from(runIds)
+    .map((runId) => {
+      const list = grades.get(runId) ?? [];
+      const caseEvents = caseEventsOf(events, runId);
+      const runEvent = runEventOf(events, runId);
+      const fromCaseEvents = caseEvents.size > 0;
+      const gradeCases = groupBy(list, caseKey);
+      const keys = new Set([...caseEvents.keys(), ...gradeCases.keys()]);
+      const statuses = Array.from(keys).map((key) =>
+        sideStatus(caseEvents.get(key), gradeCases.get(key) ?? [])
+      );
       const evaluators: Record<string, EvaluatorAggregate> = {};
       groupBy(list, (r) => r.name).forEach((group, name) => {
         evaluators[name] = aggregateEvaluator(name, group);
       });
-      const first = <T>(pick: (r: EvalResult) => T | undefined) =>
-        list.map(pick).find((v) => v !== undefined);
+      const first = <T>(values: Array<T | undefined>) => values.find((v) => v !== undefined);
+      const caseList = Array.from(caseEvents.values());
+
+      // Start and end: the run event knows both; else case end times minus their durations.
+      const starts = [
+        ...list.map((r) => parseEvalTime(r.time)),
+        ...caseList.map((e) => parseEvalTime(e.time) - (e.durationMs ?? 0)),
+      ].filter(Number.isFinite);
+      const ends = [
+        ...list.map((r) => parseEvalTime(r.time)),
+        ...caseList.map((e) => parseEvalTime(e.time)),
+      ].filter(Number.isFinite);
+      const runEnd = runEvent ? parseEvalTime(runEvent.time) : NaN;
+      const ended = Number.isFinite(runEnd) ? runEnd : ends.length ? Math.max(...ends) : NaN;
+      const started =
+        Number.isFinite(runEnd) && runEvent?.durationMs !== undefined
+          ? runEnd - runEvent.durationMs
+          : starts.length
+            ? Math.min(...starts)
+            : ended;
+      const durationMs =
+        runEvent?.durationMs ??
+        (fromCaseEvents && Number.isFinite(ended - started) ? ended - started : undefined);
+
+      const counted = {
+        cases: statuses.length,
+        casesPassed: statuses.filter((c) => c === 'pass').length,
+        casesFailed: statuses.filter((c) => c === 'fail').length,
+        casesErrored: statuses.filter((c) => c === 'error').length,
+      };
       const summary: RunSummary = {
         runId,
-        suiteName: first((r) => r.suiteName),
-        started: times.length ? Math.min(...times) : NaN,
-        ended: times.length ? Math.max(...times) : NaN,
+        suiteName: first([
+          runEvent?.suiteName,
+          ...caseList.map((e) => e.suiteName),
+          ...list.map((r) => r.suiteName),
+        ]),
+        started,
+        ended,
+        durationMs,
+        status: runEvent?.status,
         results: list.length,
-        cases: cases.length,
-        casesPassed: cases.filter((c) => c === 'pass').length,
-        casesFailed: cases.filter((c) => c === 'fail').length,
-        agentName: first((r) => r.agentName),
-        serviceName: first((r) => r.serviceName),
+        // The run event counts every case, also those outside the time range.
+        cases: runEvent?.caseCount ?? counted.cases,
+        casesPassed: runEvent?.passCount ?? counted.casesPassed,
+        casesFailed: runEvent?.failCount ?? counted.casesFailed,
+        casesErrored: runEvent?.errorCount ?? counted.casesErrored,
+        fromCaseEvents,
+        agentName: first([...list.map((r) => r.agentName), ...caseList.map((e) => e.agentName)]),
+        serviceName: first([
+          ...list.map((r) => r.serviceName),
+          ...caseList.map((e) => e.serviceName),
+        ]),
         evaluators,
         regressedEvaluators: [],
         passRateDropped: false,
@@ -303,7 +402,7 @@ export const isRegression = (run: RunSummary) =>
 // Compare runs
 // ---------------------------------------------------------------------------------------
 
-export type ChangeKind = 'improved' | 'regressed' | 'unchanged' | 'new' | 'removed';
+export type ChangeKind = 'improved' | 'regressed' | 'unchanged' | 'new' | 'missing';
 
 export interface ValueComparison {
   baseline?: EvaluatorAggregate;
@@ -320,6 +419,9 @@ export interface CaseComparison {
   candidateStatus?: CaseStatus;
   baselineTraceId?: string;
   candidateTraceId?: string;
+  /** The case events, when the runs emitted them (input, expected, output, error, duration). */
+  baselineCase?: TestCaseEvent;
+  candidateCase?: TestCaseEvent;
   evaluators: Record<string, ValueComparison>;
   change: ChangeKind;
 }
@@ -344,7 +446,7 @@ const compareValues = (
 ): ValueComparison => {
   if (!baseline && !candidate) return { change: 'unchanged' };
   if (!baseline) return { candidate, change: 'new' };
-  if (!candidate) return { baseline, change: 'removed' };
+  if (!candidate) return { baseline, change: 'missing' };
   const b = baseline.normalizedMean;
   const c = candidate.normalizedMean;
   if (b === undefined || c === undefined) return { baseline, candidate, change: 'unchanged' };
@@ -354,6 +456,8 @@ const compareValues = (
   return { baseline, candidate, delta, change };
 };
 
+const isBad = (s: CaseStatus) => s === 'fail' || s === 'error';
+
 /** A case regressed if any evaluation (or its status) regressed, improved if any improved. */
 const caseChange = (
   values: ValueComparison[],
@@ -361,30 +465,46 @@ const caseChange = (
   candidateStatus?: CaseStatus
 ): ChangeKind => {
   if (!baselineStatus) return 'new';
-  if (!candidateStatus) return 'removed';
-  if (baselineStatus === 'pass' && candidateStatus === 'fail') return 'regressed';
+  if (!candidateStatus) return 'missing';
+  if (baselineStatus === 'pass' && isBad(candidateStatus)) return 'regressed';
   if (values.some((v) => v.change === 'regressed')) return 'regressed';
-  if (baselineStatus === 'fail' && candidateStatus === 'pass') return 'improved';
+  if (isBad(baselineStatus) && candidateStatus === 'pass') return 'improved';
   if (values.some((v) => v.change === 'improved')) return 'improved';
   return 'unchanged';
 };
 
-/** Per-evaluation and per-test-case comparison of a candidate run against a baseline run. */
+/**
+ * Per-evaluation and per-test-case comparison of a candidate run against a baseline run.
+ * Cases, their status and trace come from case events when a run has them; score deltas
+ * always come from grades.
+ */
 export const compareRuns = (
   results: EvalResult[],
   baselineRunId: string,
-  candidateRunId: string
+  candidateRunId: string,
+  events: RunEvents = EMPTY_RUN_EVENTS
 ): RunComparison => {
   const baseline = results.filter((r) => r.runId === baselineRunId);
   const candidate = results.filter((r) => r.runId === candidateRunId);
   const evaluatorNames = Array.from(new Set([...baseline, ...candidate].map((r) => r.name))).sort();
   const baselineCases = groupBy(baseline, caseKey);
   const candidateCases = groupBy(candidate, caseKey);
-  const caseIds = Array.from(new Set([...baselineCases.keys(), ...candidateCases.keys()]));
+  const baselineEvents = caseEventsOf(events, baselineRunId);
+  const candidateEvents = caseEventsOf(events, candidateRunId);
+  const caseIds = Array.from(
+    new Set([
+      ...baselineEvents.keys(),
+      ...candidateEvents.keys(),
+      ...baselineCases.keys(),
+      ...candidateCases.keys(),
+    ])
+  );
 
   const cases: CaseComparison[] = caseIds.map((caseId) => {
     const b = baselineCases.get(caseId) ?? [];
     const c = candidateCases.get(caseId) ?? [];
+    const be = baselineEvents.get(caseId);
+    const ce = candidateEvents.get(caseId);
     const evaluators: Record<string, ValueComparison> = {};
     evaluatorNames.forEach((name) => {
       const bn = b.filter((r) => r.name === name);
@@ -395,15 +515,19 @@ export const compareRuns = (
         cn.length ? aggregateEvaluator(name, cn) : undefined
       );
     });
-    const baselineStatus = b.length ? caseStatusOf(b) : undefined;
-    const candidateStatus = c.length ? caseStatusOf(c) : undefined;
+    const baselineStatus = be || b.length ? sideStatus(be, b) : undefined;
+    const candidateStatus = ce || c.length ? sideStatus(ce, c) : undefined;
     return {
       caseId,
-      caseName: [...c, ...b].map((r) => r.caseName).find((n) => !!n),
+      caseName: [ce?.caseName, be?.caseName, ...[...c, ...b].map((r) => r.caseName)].find(
+        (n) => !!n
+      ),
       baselineStatus,
       candidateStatus,
-      baselineTraceId: b.find((r) => r.traceId)?.traceId,
-      candidateTraceId: c.find((r) => r.traceId)?.traceId,
+      baselineTraceId: be?.traceId ?? b.find((r) => r.traceId)?.traceId,
+      candidateTraceId: ce?.traceId ?? c.find((r) => r.traceId)?.traceId,
+      baselineCase: be,
+      candidateCase: ce,
       evaluators,
       change: caseChange(Object.values(evaluators), baselineStatus, candidateStatus),
     };
@@ -413,7 +537,7 @@ export const compareRuns = (
     regressed: 0,
     improved: 1,
     new: 2,
-    removed: 3,
+    missing: 3,
     unchanged: 4,
   };
   cases.sort(
@@ -444,7 +568,7 @@ export const compareRuns = (
     regressed: 0,
     unchanged: 0,
     new: 0,
-    removed: 0,
+    missing: 0,
   };
   cases.forEach((c) => {
     counts[c.change] += 1;

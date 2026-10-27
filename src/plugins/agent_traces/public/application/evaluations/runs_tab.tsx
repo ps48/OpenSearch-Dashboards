@@ -20,9 +20,9 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { EvalResult } from './eval_data';
+import { EMPTY_RUN_EVENTS, EvalResult, RunEvents } from './eval_data';
 import { RunSummary, isRegression, summarizeRuns } from './eval_aggregations';
-import { formatAggregate, formatEvalTime, shortId } from './eval_components';
+import { formatAggregate, formatDuration, formatEvalTime, shortId } from './eval_components';
 import { CompareRuns } from './compare_runs';
 
 export const NoRunsPrompt: React.FC = () => (
@@ -49,10 +49,10 @@ export const NoRunsPrompt: React.FC = () => (
         <p>
           <FormattedMessage
             id="agentTraces.evalsPage.noRunsHow"
-            defaultMessage="The OpenSearch GenAI SDK benchmark helpers emit {suiteSpan} and {caseSpan} spans and evaluation events that carry {runId}, {caseId} and {suite}. Any producer that sets these attributes on its gen_ai.evaluation.result events shows up here."
+            defaultMessage="The OpenSearch GenAI SDK evaluation helpers emit one {caseEvent} event per test case, one {runEvent} event per run, and evaluation events that carry {runId}, {caseId} and {suite}. Any producer that sets these attributes on its gen_ai.evaluation.result events shows up here."
             values={{
-              suiteSpan: <EuiCode>test_suite_run</EuiCode>,
-              caseSpan: <EuiCode>test_case</EuiCode>,
+              caseEvent: <EuiCode>opensearch.test_case.result</EuiCode>,
+              runEvent: <EuiCode>opensearch.test_suite_run.result</EuiCode>,
               runId: <EuiCode>test.suite.run.id</EuiCode>,
               caseId: <EuiCode>test.case.id</EuiCode>,
               suite: <EuiCode>test.suite.name</EuiCode>,
@@ -65,12 +65,15 @@ export const NoRunsPrompt: React.FC = () => (
 );
 
 export const RunsTab: React.FC<{
+  /** Grades of the runs. */
   results: EvalResult[];
+  /** Test case and run events of the runs; empty for runs from older producers. */
+  events?: RunEvents;
   compare?: [string, string];
   onCompareChange: (compare?: [string, string]) => void;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
-}> = ({ results, compare, onCompareChange, onOpenTrace }) => {
-  const runs = useMemo(() => summarizeRuns(results), [results]);
+}> = ({ results, events = EMPTY_RUN_EVENTS, compare, onCompareChange, onOpenTrace }) => {
+  const runs = useMemo(() => summarizeRuns(results, events), [results, events]);
   const [selection, setSelection] = useState<RunSummary[]>([]);
   const evaluatorNames = useMemo(
     () => Array.from(new Set(runs.flatMap((r) => Object.keys(r.evaluators)))).sort(),
@@ -83,6 +86,7 @@ export const RunsTab: React.FC<{
     return (
       <CompareRuns
         results={results}
+        events={events}
         baseline={byId.get(baselineId)}
         candidate={byId.get(candidateId)}
         baselineId={baselineId}
@@ -124,6 +128,21 @@ export const RunsTab: React.FC<{
               </EuiText>
             </EuiToolTip>
           </EuiFlexItem>
+          {run.casesErrored > 0 && (
+            <EuiFlexItem grow={false}>
+              <EuiToolTip
+                content={i18n.translate('agentTraces.evalsPage.erroredTip', {
+                  defaultMessage:
+                    '{count, plural, one {# test case} other {# test cases}} raised an error (the task or a scorer failed)',
+                  values: { count: run.casesErrored },
+                })}
+              >
+                <EuiBadge color="warning" iconType="alert" data-test-subj="agtEvlRunErrored">
+                  {i18n.translate('agentTraces.evalsPage.errored', { defaultMessage: 'Errored' })}
+                </EuiBadge>
+              </EuiToolTip>
+            </EuiFlexItem>
+          )}
           {isRegression(run) && (
             <EuiFlexItem grow={false}>
               <EuiToolTip
@@ -162,6 +181,13 @@ export const RunsTab: React.FC<{
       render: (started: number) => formatEvalTime(started, 'MMM D, YYYY HH:mm'),
     },
     {
+      field: 'durationMs',
+      name: i18n.translate('agentTraces.evalsPage.colDuration', { defaultMessage: 'Duration' }),
+      sortable: true,
+      width: '90px',
+      render: (ms?: number) => formatDuration(ms),
+    },
+    {
       field: 'cases',
       name: i18n.translate('agentTraces.evalsPage.colCases', { defaultMessage: 'Test cases' }),
       sortable: true,
@@ -169,9 +195,19 @@ export const RunsTab: React.FC<{
     },
     {
       field: 'casesPassed',
-      name: i18n.translate('agentTraces.evalsPage.colPassFail', {
-        defaultMessage: 'Passed / failed',
-      }),
+      name: (
+        <EuiToolTip
+          content={i18n.translate('agentTraces.evalsPage.colPassFailTip', {
+            defaultMessage: 'Test cases that passed, failed, and errored',
+          })}
+        >
+          <span>
+            {i18n.translate('agentTraces.evalsPage.colPassFailError', {
+              defaultMessage: 'Passed / failed / errored',
+            })}
+          </span>
+        </EuiToolTip>
+      ),
       sortable: true,
       render: (_passed: number, run: RunSummary) => (
         <EuiFlexGroup gutterSize="s" responsive={false}>
@@ -181,6 +217,14 @@ export const RunsTab: React.FC<{
           <EuiFlexItem grow={false}>
             <EuiHealth color={run.casesFailed > 0 ? 'danger' : 'subdued'}>
               {run.casesFailed}
+            </EuiHealth>
+          </EuiFlexItem>
+          <EuiFlexItem grow={false}>
+            <EuiHealth
+              color={run.casesErrored > 0 ? 'warning' : 'subdued'}
+              data-test-subj="agtEvlRunErroredCount"
+            >
+              {run.casesErrored}
             </EuiHealth>
           </EuiFlexItem>
         </EuiFlexGroup>
