@@ -33,14 +33,16 @@ import {
 } from '../pages/traces/flyout/message_content_view';
 import { pplResponseToRecords, withoutTimeRange } from '../pages/sessions/session_utils';
 import {
-  EVALS_DATASET,
   EVAL_EVENT_WHERE,
   EVAL_FIELDS,
   EvalResult,
   createEvalsPplService,
+  evalsDataset,
   failuresFirst,
   recordToEvalResult,
 } from './eval_data';
+import { useEvalsIndexPattern } from './eval_settings';
+import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { parseEvalTime } from './eval_aggregations';
 import { JudgedTarget, TargetSpan, fetchJudgedTarget } from './eval_target';
 import { openTraceInAgentTraces, traceToOpen } from './eval_links';
@@ -59,7 +61,11 @@ import type { EvaluationsServices } from '.';
 const quote = (v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
 /** Results about the same session or trace (filtered to the same target client-side). */
-export const buildSameTargetQuery = (r: EvalResult, limit = 200): string | undefined => {
+export const buildSameTargetQuery = (
+  r: EvalResult,
+  limit = 200,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string | undefined => {
   const where =
     r.level === 'session' && r.sessionId
       ? `\`${EVAL_FIELDS.sessionId}\` = ${quote(r.sessionId)}`
@@ -67,7 +73,7 @@ export const buildSameTargetQuery = (r: EvalResult, limit = 200): string | undef
         ? `\`${EVAL_FIELDS.targetTraceId}\` = ${quote(r.traceId)}`
         : undefined;
   if (!where) return undefined;
-  return `source = ${EVALS_DATASET.title} | where ${EVAL_EVENT_WHERE} | where ${where} | sort - \`${EVAL_FIELDS.time}\` | head ${limit}`;
+  return `source = ${index} | where ${EVAL_EVENT_WHERE} | where ${where} | sort - \`${EVAL_FIELDS.time}\` | head ${limit}`;
 };
 
 /** Whether two results judged the same thing (same level and same span, trace or session). */
@@ -246,6 +252,7 @@ export const ResultFlyout: React.FC<{
   onOpenResult: (r: EvalResult) => void;
 }> = ({ result, onClose, onOpenResult }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
+  const index = useEvalsIndexPattern();
   const [target, setTarget] = useState<Loadable<JudgedTarget>>({ loading: true });
   const [others, setOthers] = useState<Loadable<EvalResult[]>>({ loading: true });
 
@@ -259,10 +266,10 @@ export const ResultFlyout: React.FC<{
       .catch(
         (e) => !controller.signal.aborted && setTarget({ loading: false, error: errorMessage(e) })
       );
-    const query = buildSameTargetQuery(result);
+    const query = buildSameTargetQuery(result, 200, index);
     if (query) {
       ppl
-        .executeQuery(withoutTimeRange(EVALS_DATASET), query)
+        .executeQuery(withoutTimeRange(evalsDataset(index)), query)
         .then((response) => {
           if (controller.signal.aborted) return;
           const list = pplResponseToRecords(response)
@@ -277,7 +284,7 @@ export const ResultFlyout: React.FC<{
       setOthers({ loading: false, value: [] });
     }
     return () => controller.abort();
-  }, [services.data, result]);
+  }, [services.data, result, index]);
 
   const traceId =
     traceToOpen(result) ?? target.value?.traces?.[target.value.traces.length - 1]?.traceId;

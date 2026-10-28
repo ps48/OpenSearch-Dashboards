@@ -177,6 +177,13 @@ export interface EvaluatorAggregate {
   passRate?: number;
   /** Most frequent label. */
   topLabel?: string;
+  /** Lowest and highest raw score value. */
+  min?: number;
+  max?: number;
+  /** `minimize` when any result says lower is better. */
+  direction?: 'maximize' | 'minimize';
+  passCount?: number;
+  failCount?: number;
 }
 
 export const aggregateEvaluator = (name: string, results: EvalResult[]): EvaluatorAggregate => {
@@ -194,6 +201,11 @@ export const aggregateEvaluator = (name: string, results: EvalResult[]): Evaluat
       : undefined,
     passRate: passRateOf(results),
     topLabel,
+    min: values.length ? Math.min(...values) : undefined,
+    max: values.length ? Math.max(...values) : undefined,
+    direction: results.some((r) => r.direction === 'minimize') ? 'minimize' : 'maximize',
+    passCount: results.filter((r) => r.outcome === 'pass').length,
+    failCount: results.filter((r) => r.outcome === 'fail').length,
   };
 };
 
@@ -246,6 +258,8 @@ export interface RunSummary {
   fromCaseEvents: boolean;
   agentName?: string;
   serviceName?: string;
+  /** Run metadata from the run event (else the first case event), e.g. `agent.version`. */
+  metadata?: Record<string, string>;
   evaluators: Record<string, EvaluatorAggregate>;
   /** The previous run of the same suite (by start time), if any. */
   previousRunId?: string;
@@ -368,6 +382,7 @@ export const summarizeRuns = (
           ...list.map((r) => r.serviceName),
           ...caseList.map((e) => e.serviceName),
         ]),
+        metadata: runEvent?.metadata ?? caseList.find((e) => e.metadata)?.metadata,
         evaluators,
         regressedEvaluators: [],
         passRateDropped: false,
@@ -574,4 +589,119 @@ export const compareRuns = (
     counts[c.change] += 1;
   });
   return { evaluatorNames, evaluators, cases, counts };
+};
+
+// ---------------------------------------------------------------------------------------
+// One run: its test cases and its suite's history
+// ---------------------------------------------------------------------------------------
+
+export interface RunCaseRow {
+  caseId: string;
+  caseName?: string;
+  status: CaseStatus;
+  errorType?: string;
+  /** The case event, when the run emitted one (input, expected, output, duration). */
+  event?: TestCaseEvent;
+  traceId?: string;
+  durationMs?: number;
+  /** Epoch millis the case finished (case event), else its first grade. */
+  timeMs: number;
+  /** Grades of the case by evaluation name. */
+  grades: Record<string, EvalResult[]>;
+  evaluators: Record<string, EvaluatorAggregate>;
+}
+
+/** The test cases of one run with their status, grades and trace, failures first. */
+export const runCases = (results: EvalResult[], events: RunEvents, runId: string): RunCaseRow[] => {
+  const grades = groupBy(
+    results.filter((r) => r.runId === runId),
+    caseKey
+  );
+  const caseEvents = caseEventsOf(events, runId);
+  const keys = Array.from(new Set([...caseEvents.keys(), ...grades.keys()]));
+  const rank: Record<CaseStatus, number> = { error: 0, fail: 1, unknown: 2, pass: 3 };
+  return keys
+    .map((caseId) => {
+      const event = caseEvents.get(caseId);
+      const list = grades.get(caseId) ?? [];
+      const byName: Record<string, EvalResult[]> = {};
+      const evaluators: Record<string, EvaluatorAggregate> = {};
+      groupBy(list, (r) => r.name).forEach((group, name) => {
+        byName[name] = group;
+        evaluators[name] = aggregateEvaluator(name, group);
+      });
+      const eventTime = parseEvalTime(event?.time);
+      const gradeTimes = list.map((r) => parseEvalTime(r.time)).filter(Number.isFinite);
+      return {
+        caseId,
+        caseName: event?.caseName ?? list.find((r) => r.caseName)?.caseName,
+        status: sideStatus(event, list),
+        errorType: event?.errorType,
+        event,
+        traceId: event?.traceId ?? list.find((r) => r.traceId)?.traceId,
+        durationMs: event?.durationMs,
+        timeMs: Number.isFinite(eventTime)
+          ? eventTime
+          : gradeTimes.length
+            ? Math.min(...gradeTimes)
+            : NaN,
+        grades: byName,
+        evaluators,
+      };
+    })
+    .sort(
+      (a, b) =>
+        rank[a.status] - rank[b.status] ||
+        (a.caseName ?? a.caseId).localeCompare(b.caseName ?? b.caseId)
+    );
+};
+
+export interface SuiteTrendPoint {
+  runId: string;
+  /** Run start, epoch millis. */
+  x: number;
+  /** Share of test cases that passed, 0..1. */
+  passRate?: number;
+  /** Normalized mean (0..1, higher is better) per evaluation. */
+  evaluators: Record<string, number>;
+}
+
+/** The runs of one suite in time order, for a trend with one point per run. */
+export const suiteTrend = (runs: RunSummary[], suiteName: string | undefined): SuiteTrendPoint[] =>
+  runs
+    .filter((r) => (r.suiteName ?? '') === (suiteName ?? '') && Number.isFinite(r.started))
+    .map((r) => {
+      const evaluators: Record<string, number> = {};
+      Object.values(r.evaluators).forEach((e) => {
+        if (e.normalizedMean !== undefined) evaluators[e.name] = e.normalizedMean;
+      });
+      return {
+        runId: r.runId,
+        x: r.started,
+        passRate: r.cases > 0 ? r.casesPassed / r.cases : undefined,
+        evaluators,
+      };
+    })
+    .sort((a, b) => a.x - b.x);
+
+/** Union of two result sets by id (the second wins), and of two event sets. */
+export const mergeRunData = (
+  a: { results: EvalResult[]; events: RunEvents },
+  b?: { results: EvalResult[]; events: RunEvents }
+): { results: EvalResult[]; events: RunEvents } => {
+  if (!b || (b.results.length === 0 && b.events.cases.length + b.events.runs.length === 0)) {
+    return a;
+  }
+  const byId = new Map(a.results.map((r) => [r.id, r]));
+  b.results.forEach((r) => byId.set(r.id, r));
+  const caseKeyOf = (e: TestCaseEvent) => `${e.runId}|${caseEventKey(e)}|${e.time}`;
+  const cases = new Map(a.events.cases.map((e) => [caseKeyOf(e), e]));
+  b.events.cases.forEach((e) => cases.set(caseKeyOf(e), e));
+  const runKeyOf = (e: SuiteRunEvent) => `${e.runId}|${e.time}`;
+  const runs = new Map(a.events.runs.map((e) => [runKeyOf(e), e]));
+  b.events.runs.forEach((e) => runs.set(runKeyOf(e), e));
+  return {
+    results: Array.from(byId.values()),
+    events: { cases: Array.from(cases.values()), runs: Array.from(runs.values()) },
+  };
 };

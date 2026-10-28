@@ -35,6 +35,10 @@
       - [Build](../src/dev/build/README.md)
       - [I18n](../src/dev/i18n/README.md)
     - plugins
+      - agent_traces
+        - public
+          - application
+            - [Evaluations](../src/plugins/agent_traces/public/application/evaluations/README.md)
       - [Application_config](../src/plugins/application_config/README.md)
       - [Backend_compatibility](../src/plugins/backend_compatibility/README.md)
       - [Banner](../src/plugins/banner/README.md)

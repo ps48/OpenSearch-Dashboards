@@ -6,13 +6,22 @@
 import {
   buildEvalFacetsQuery,
   buildEvalResultsQuery,
+  buildRunDetailQuery,
   buildRunEventsQuery,
   buildTraceEvalsQuery,
   buildTracesEvalsQuery,
+  metadataOf,
   recordToEvalResult,
+  recordsToRunDetail,
   recordsToRunEvents,
 } from './eval_data';
-import { compactAppState, filtersOf, hasActiveFilters, normalizeAppState } from './eval_url_state';
+import {
+  compactAppState,
+  filtersOf,
+  hasActiveFilters,
+  normalizeAppState,
+  runsTimeOf,
+} from './eval_url_state';
 import { traceDeepLinkPath, traceToOpen } from './eval_links';
 import { errorMessage, isIndexMissing } from './use_eval_data';
 import { buildSameTargetQuery, sameTarget } from './result_flyout';
@@ -258,5 +267,81 @@ describe('same target', () => {
     expect(
       buildSameTargetQuery(makeResult({ traceId: undefined, level: 'trace' }))
     ).toBeUndefined();
+  });
+});
+
+describe('run detail records', () => {
+  it('splits a run into grades and events, and keeps user metadata', () => {
+    const rows = [
+      {
+        eventName: 'gen_ai.evaluation.result',
+        '@timestamp': '2026-10-27 22:32:50',
+        traceId: 't1',
+        attributes: {
+          gen_ai: { evaluation: { name: 'tool_selection', score: { value: 1 } } },
+          test: { suite: { run: { id: 'run-1' } } },
+        },
+      },
+      {
+        eventName: 'opensearch.test_suite_run.result',
+        '@timestamp': '2026-10-27 22:32:51',
+        attributes: {
+          agent: { model: 'haiku', version: 'v1' },
+          test: { suite: { name: 's', run: { id: 'run-1', status: 'failure' } } },
+          opensearch: { test_suite_run: { case_count: 8 } },
+        },
+      },
+    ];
+    const detail = recordsToRunDetail(rows);
+    expect(detail.results.map((r) => r.name)).toEqual(['tool_selection']);
+    expect(detail.events.runs[0]).toMatchObject({
+      runId: 'run-1',
+      caseCount: 8,
+      metadata: { 'agent.model': 'haiku', 'agent.version': 'v1' },
+    });
+  });
+
+  it('reads every event of one run, without a time range', () => {
+    expect(buildRunDetailQuery("run'1", 50)).toBe(
+      "source = otel-v1-genai-evaluation-* | where `attributes.test.suite.run.id` = 'run\\'1' | sort - `@timestamp` | head 50"
+    );
+  });
+
+  it('flattens metadata and leaves the contract attributes out', () => {
+    expect(
+      metadataOf({ agent: { version: 'v2' }, test: { case: { id: 'x' } }, git: { sha: 'abc' } })
+    ).toEqual({ 'agent.version': 'v2', 'git.sha': 'abc' });
+    expect(metadataOf({ test: { suite: { name: 's' } } })).toBeUndefined();
+  });
+});
+
+describe('run page and runs time range in the URL', () => {
+  it('keeps the run key used by external links, and the runs time range when not default', () => {
+    const s = normalizeAppState({
+      tab: 'runs',
+      run: 'run_20261027_153137_4ed49a57',
+      runsTime: { from: 'now-30d', to: 'now' },
+      evaluation: 'answer_quality',
+    });
+    expect(s).toMatchObject({
+      tab: 'runs',
+      run: 'run_20261027_153137_4ed49a57',
+      runsTime: { from: 'now-30d', to: 'now' },
+      evaluation: 'answer_quality',
+    });
+    expect(compactAppState(s)).toEqual({
+      tab: 'runs',
+      run: 'run_20261027_153137_4ed49a57',
+      runsTime: { from: 'now-30d', to: 'now' },
+      evaluation: 'answer_quality',
+    });
+  });
+
+  it('defaults the runs time range to the last 7 days and leaves it out of the URL', () => {
+    const s = normalizeAppState({ tab: 'runs', runsTime: { from: 1 } });
+    expect(runsTimeOf(s)).toEqual({ from: 'now-7d', to: 'now' });
+    expect(compactAppState({ ...s, runsTime: { from: 'now-7d', to: 'now' } })).toEqual({
+      tab: 'runs',
+    });
   });
 });

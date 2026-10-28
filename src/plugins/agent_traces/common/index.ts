@@ -11,6 +11,9 @@ export const AGENT_EVALS_NAV_ID = 'agentTraces/evaluations';
 /** Index pattern of GenAI evaluation results (`gen_ai.evaluation.result` events), one doc per
  *  result. Data Prepper routes the events here from the OTLP logs path. */
 export const AGENT_EVALS_INDEX_PATTERN = 'otel-v1-genai-evaluation-*';
+/** Advanced setting: index pattern every evaluation query reads (Evaluations page, the
+ *  Evaluations column and the trace flyout). Defaults to `AGENT_EVALS_INDEX_PATTERN`. */
+export const EVALS_INDEX_SETTING = 'agentTraces:evaluationsIndexPattern';
 export const DEFAULT_COLUMNS_SETTING = 'defaultColumns';
 export const SAMPLE_SIZE_SETTING = 'discover:sampleSize';
 export const SORT_DEFAULT_ORDER_SETTING = 'discover:sort:defaultOrder';

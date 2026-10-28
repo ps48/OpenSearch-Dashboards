@@ -10,12 +10,16 @@ import {
   compareRuns,
   computeKpis,
   isRegression,
+  mergeRunData,
   parseEvalTime,
   pickInterval,
   previousPeriod,
+  runCases,
   scoreTrend,
+  suiteTrend,
   summarizeRuns,
 } from './eval_aggregations';
+import { EMPTY_RUN_EVENTS } from './eval_data';
 import {
   makeCaseEvent,
   makeResult,
@@ -250,5 +254,60 @@ describe('compareRuns with case events', () => {
 
   it('treats a reported error status on grades as errored', () => {
     expect(caseStatusOf([makeResult({ caseStatus: 'error' })])).toBe('error');
+  });
+});
+
+describe('one run', () => {
+  it('lists its cases errored and failed first, with grades and the case trace', () => {
+    const cases = runCases(twoRunFixture(), twoRunEventsFixture(), 'run-2');
+    expect(cases.map((c) => [c.caseId, c.status])).toEqual([
+      ['d', 'error'],
+      ['b', 'fail'],
+      ['a', 'pass'],
+      ['c', 'pass'],
+    ]);
+    expect(cases[1].traceId).toBe('run-2-trace-b');
+    expect(cases[1].grades.accuracy).toHaveLength(1);
+    expect(cases[1].evaluators.accuracy.mean).toBeCloseTo(0.2);
+    expect(cases[0].errorType).toBe('TimeoutError');
+  });
+
+  it('derives cases from grades when the run has no events', () => {
+    const cases = runCases(twoRunFixture(), EMPTY_RUN_EVENTS, 'run-1');
+    expect(cases.map((c) => c.caseId)).toEqual(['a', 'b']);
+    expect(cases[0].status).toBe('fail');
+  });
+
+  it('reports min, max and direction per evaluation', () => {
+    const [run2] = summarizeRuns(twoRunFixture());
+    expect(run2.evaluators.accuracy).toMatchObject({ min: 0.2, max: 0.8, direction: 'maximize' });
+  });
+
+  it('builds a trend with one point per run of the suite', () => {
+    const runs = summarizeRuns(twoRunFixture(), twoRunEventsFixture());
+    const trend = suiteTrend(runs, 'travel-suite');
+    expect(trend.map((p) => p.runId)).toEqual(['run-1', 'run-2']);
+    expect(trend[1].passRate).toBe(0.5);
+    expect(trend[0].evaluators.accuracy).toBeCloseTo(0.65);
+    expect(suiteTrend(runs, 'other')).toEqual([]);
+  });
+
+  it('merges a run loaded on its own into the runs of the time range', () => {
+    const all = twoRunFixture();
+    const merged = mergeRunData(
+      { results: all.slice(0, 2), events: EMPTY_RUN_EVENTS },
+      { results: all.slice(1), events: twoRunEventsFixture() }
+    );
+    expect(merged.results).toHaveLength(all.length);
+    expect(merged.events.cases).toHaveLength(twoRunEventsFixture().cases.length);
+    const unchanged = { results: all, events: EMPTY_RUN_EVENTS };
+    expect(mergeRunData(unchanged, undefined)).toBe(unchanged);
+  });
+
+  it('takes run metadata from the run event', () => {
+    const events = twoRunEventsFixture();
+    events.runs[1].metadata = { 'agent.version': 'v2' };
+    const [run2] = summarizeRuns(twoRunFixture(), events);
+    expect(run2.metadata).toEqual({ 'agent.version': 'v2' });
   });
 });

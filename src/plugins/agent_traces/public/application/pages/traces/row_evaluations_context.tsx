@@ -12,6 +12,7 @@ import {
   createEvalsPplService,
   fetchEvalResults,
 } from '../../evaluations/eval_data';
+import { getEvalsIndexPattern } from '../../evaluations/eval_settings';
 
 export interface RowEvaluations {
   /** Trace- and session-level results by trace id, plus span results of that trace. */
@@ -76,6 +77,7 @@ export const RowEvaluationsProvider: React.FC<{
   mode?: RowEvaluations['mode'];
 }> = ({ traceIds, mode = 'trace', children }) => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
+  const index = getEvalsIndexPattern(services?.uiSettings);
   const [value, setValue] = useState<RowEvaluations>(EMPTY);
   const key = useMemo(
     () => Array.from(new Set(traceIds)).slice(0, MAX_TRACE_IDS).sort().join(','),
@@ -99,11 +101,11 @@ export const RowEvaluationsProvider: React.FC<{
       { from: 'now-90d', to: 'now+1d' },
       controller.signal
     );
-    fetchEvalResults(ppl, buildTracesEvalsQuery(key.split(',')))
+    fetchEvalResults(ppl, buildTracesEvalsQuery(key.split(','), 1000, index), index)
       .then((results) => !controller.signal.aborted && setValue(indexRowEvaluations(results, mode)))
       .catch(() => !controller.signal.aborted && setValue({ ...EMPTY, mode }));
     return () => controller.abort();
-  }, [key, mode, services?.data]);
+  }, [key, mode, services?.data, index]);
 
   const withRows = useMemo(() => ({ ...value, rowsByTraceId }), [value, rowsByTraceId]);
   return (

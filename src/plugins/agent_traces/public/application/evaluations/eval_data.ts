@@ -15,12 +15,14 @@ import { pplResponseToRecords, PplRecord } from '../pages/sessions/session_utils
  * `attributes.derived.*` fields that normalize the level, the source and the session across
  * producers (the OpenSearch GenAI SDKs, Bedrock AgentCore, any OTel evaluator).
  */
-export const EVALS_DATASET: Dataset = {
+export const evalsDataset = (index: string = AGENT_EVALS_INDEX_PATTERN): Dataset => ({
   id: 'agent-evaluations',
-  title: AGENT_EVALS_INDEX_PATTERN,
+  title: index,
   type: 'INDEXES',
   timeFieldName: '@timestamp',
-};
+});
+
+export const EVALS_DATASET: Dataset = evalsDataset();
 
 /**
  * The index holds three event kinds, told apart by `eventName`: grades
@@ -299,18 +301,25 @@ export const buildEvalWhere = (filters: EvalFilters = {}): string[] => {
   return clauses;
 };
 
-export const buildEvalResultsQuery = (filters: EvalFilters = {}, limit = 500): string =>
+export const buildEvalResultsQuery = (
+  filters: EvalFilters = {},
+  limit = 500,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string =>
   [
-    `source = ${AGENT_EVALS_INDEX_PATTERN}`,
+    `source = ${index}`,
     ...buildEvalWhere(filters).map((c) => `where ${c}`),
     `sort - ${field(EVAL_FIELDS.time)}`,
     `head ${limit}`,
   ].join(' | ');
 
 /** Result counts per evaluation name, level and source: the filter options and the total. */
-export const buildEvalFacetsQuery = (filters: EvalFilters = {}): string =>
+export const buildEvalFacetsQuery = (
+  filters: EvalFilters = {},
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string =>
   [
-    `source = ${AGENT_EVALS_INDEX_PATTERN}`,
+    `source = ${index}`,
     ...buildEvalWhere(filters).map((c) => `where ${c}`),
     `stats count() as results by ${field(EVAL_FIELDS.name)}, ${field(EVAL_FIELDS.level)}, ${field(
       EVAL_FIELDS.source
@@ -318,11 +327,16 @@ export const buildEvalFacetsQuery = (filters: EvalFilters = {}): string =>
   ].join(' | ');
 
 /** Results that judged a trace, its spans, or its session. */
-export const buildTraceEvalsQuery = (traceId: string, sessionId?: string, limit = 200): string => {
+export const buildTraceEvalsQuery = (
+  traceId: string,
+  sessionId?: string,
+  limit = 200,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string => {
   const target = [`${field(EVAL_FIELDS.targetTraceId)} = ${quote(traceId)}`];
   if (sessionId) target.push(`${field(EVAL_FIELDS.sessionId)} = ${quote(sessionId)}`);
   return [
-    `source = ${AGENT_EVALS_INDEX_PATTERN}`,
+    `source = ${index}`,
     `where ${EVAL_EVENT_WHERE}`,
     `where ${target.join(' or ')}`,
     `sort - ${field(EVAL_FIELDS.time)}`,
@@ -331,9 +345,13 @@ export const buildTraceEvalsQuery = (traceId: string, sessionId?: string, limit 
 };
 
 /** Latest results for a batch of traces (Traces table column). */
-export const buildTracesEvalsQuery = (traceIds: string[], limit = 1000): string =>
+export const buildTracesEvalsQuery = (
+  traceIds: string[],
+  limit = 1000,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string =>
   [
-    `source = ${AGENT_EVALS_INDEX_PATTERN}`,
+    `source = ${index}`,
     `where ${EVAL_EVENT_WHERE}`,
     `where ${traceIds.map((id) => `${field(EVAL_FIELDS.targetTraceId)} = ${quote(id)}`).join(' or ')}`,
     `sort - ${field(EVAL_FIELDS.time)}`,
@@ -346,8 +364,12 @@ export const createEvalsPplService = (
   signal?: AbortSignal
 ) => new PPLService(data, { timeRange, signal });
 
-export const fetchEvalResults = async (ppl: PPLService, query: string): Promise<EvalResult[]> => {
-  const response = await ppl.executeQuery(EVALS_DATASET, query);
+export const fetchEvalResults = async (
+  ppl: PPLService,
+  query: string,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): Promise<EvalResult[]> => {
+  const response = await ppl.executeQuery(evalsDataset(index), query);
   return pplResponseToRecords(response).map(recordToEvalResult);
 };
 
@@ -374,6 +396,8 @@ export interface TestCaseEvent {
   traceId?: string;
   agentName?: string;
   serviceName?: string;
+  /** Metadata the producer attached to the case (flattened), e.g. the agent version. */
+  metadata?: Record<string, string>;
 }
 
 /** One `opensearch.test_suite_run.result` event: the run's totals, emitted when it ends. */
@@ -389,6 +413,8 @@ export interface SuiteRunEvent {
   failCount?: number;
   errorCount?: number;
   durationMs?: number;
+  /** Run metadata the producer attached (`agent.version`, `agent.model`, ...), flattened. */
+  metadata?: Record<string, string>;
 }
 
 /** Test case and run events of offline runs (absent for runs from older producers). */
@@ -402,6 +428,27 @@ export const EMPTY_RUN_EVENTS: RunEvents = { cases: [], runs: [] };
 const attrsOf = (row: PplRecord) => {
   const attrs = row.attributes as Record<string, unknown> | undefined;
   return (key: string) => get(attrs, key) ?? row[`attributes.${key}`];
+};
+
+/** Attribute prefixes of the contract itself, not user metadata. */
+const RESERVED_PREFIXES = ['test.', 'opensearch.', 'derived.', 'error.', 'gen_ai.'];
+
+/** User metadata of a case or run event: every attribute outside the contract, flattened. */
+export const metadataOf = (attrs: unknown): Record<string, string> | undefined => {
+  const out: Record<string, string> = {};
+  const walk = (value: unknown, path: string) => {
+    if (value === null || value === undefined || value === '') return;
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      Object.entries(value as Record<string, unknown>).forEach(([k, v]) =>
+        walk(v, path ? `${path}.${k}` : k)
+      );
+      return;
+    }
+    if (RESERVED_PREFIXES.some((p) => `${path}.`.startsWith(p))) return;
+    out[path] = Array.isArray(value) ? JSON.stringify(value) : String(value);
+  };
+  walk(attrs, '');
+  return Object.keys(out).length ? out : undefined;
 };
 
 const caseStatus = (v: string | undefined): TestCaseResultStatus | undefined => {
@@ -432,6 +479,7 @@ export const recordToTestCaseEvent = (row: PplRecord): TestCaseEvent | undefined
     traceId: str(row.traceId) ?? str(a('derived.evaluation.target_trace_id')),
     agentName: str(a('gen_ai.agent.name')),
     serviceName: str(get(get(resource, 'attributes'), 'service.name')) ?? str(row.serviceName),
+    metadata: metadataOf(row.attributes),
   };
 };
 
@@ -449,6 +497,7 @@ export const recordToSuiteRunEvent = (row: PplRecord): SuiteRunEvent | undefined
     failCount: num(a('opensearch.test_suite_run.fail_count')),
     errorCount: num(a('opensearch.test_suite_run.error_count')),
     durationMs: num(a('opensearch.test_suite_run.duration_ms')),
+    metadata: metadataOf(row.attributes),
   };
 };
 
@@ -469,9 +518,12 @@ export const recordsToRunEvents = (rows: PplRecord[]): RunEvents => {
 };
 
 /** Test case and run events in the time range, newest first. */
-export const buildRunEventsQuery = (limit = 10000): string =>
+export const buildRunEventsQuery = (
+  limit = 10000,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string =>
   [
-    `source = ${AGENT_EVALS_INDEX_PATTERN}`,
+    `source = ${index}`,
     `where ${field(EVAL_FIELDS.eventName)} = ${quote(TEST_CASE_EVENT)} or ${field(
       EVAL_FIELDS.eventName
     )} = ${quote(TEST_SUITE_RUN_EVENT)}`,
@@ -479,10 +531,41 @@ export const buildRunEventsQuery = (limit = 10000): string =>
     `head ${limit}`,
   ].join(' | ');
 
-export const fetchRunEvents = async (ppl: PPLService, query: string): Promise<RunEvents> => {
-  const response = await ppl.executeQuery(EVALS_DATASET, query);
+export const fetchRunEvents = async (
+  ppl: PPLService,
+  query: string,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): Promise<RunEvents> => {
+  const response = await ppl.executeQuery(evalsDataset(index), query);
   return recordsToRunEvents(pplResponseToRecords(response));
 };
+
+/** Every event of one run (grades, test cases and the run event), not bound to a time range. */
+export const buildRunDetailQuery = (
+  runId: string,
+  limit = 10000,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string =>
+  [
+    `source = ${index}`,
+    `where ${field(EVAL_FIELDS.runId)} = ${quote(runId)}`,
+    `sort - ${field(EVAL_FIELDS.time)}`,
+    `head ${limit}`,
+  ].join(' | ');
+
+export interface RunDetailData {
+  results: EvalResult[];
+  events: RunEvents;
+}
+
+/** Splits a run's records into grades and test case / run events. */
+export const recordsToRunDetail = (rows: PplRecord[]): RunDetailData => ({
+  results: rows
+    .filter((row) => str(row.eventName) === EVAL_EVENT)
+    .map(recordToEvalResult)
+    .filter((r) => r.name !== '(unnamed)'),
+  events: recordsToRunEvents(rows),
+});
 
 export interface EvaluatorSummary {
   name: string;

@@ -5,20 +5,24 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { DataPublicPluginStart } from '../../../../data/public';
-import { pplResponseToRecords } from '../pages/sessions/session_utils';
+import { pplResponseToRecords, withoutTimeRange } from '../pages/sessions/session_utils';
+import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import {
   EMPTY_RUN_EVENTS,
-  EVALS_DATASET,
   EVAL_FIELDS,
   EvalFilters,
   EvalResult,
+  RunDetailData,
   RunEvents,
   buildEvalFacetsQuery,
   buildEvalResultsQuery,
+  buildRunDetailQuery,
   buildRunEventsQuery,
   createEvalsPplService,
+  evalsDataset,
   fetchEvalResults,
   fetchRunEvents,
+  recordsToRunDetail,
 } from './eval_data';
 import { TimeBoundsMs, applyClientFilters, previousPeriod } from './eval_aggregations';
 
@@ -105,7 +109,8 @@ export const useEvalData = (
   data: DataPublicPluginStart,
   bounds: TimeBoundsMs,
   filters: EvalFilters,
-  refreshKey: number
+  refreshKey: number,
+  index: string = AGENT_EVALS_INDEX_PATTERN
 ): EvalData => {
   const [state, setState] = useState<EvalData>(EMPTY);
   const serverFilters = useMemo(
@@ -117,19 +122,20 @@ export const useEvalData = (
     }),
     [filters.names, filters.levels, filters.sources, filters.search]
   );
-  const key = JSON.stringify([bounds, serverFilters, refreshKey]);
+  const key = JSON.stringify([bounds, serverFilters, refreshKey, index]);
 
   useEffect(() => {
     const controller = new AbortController();
     setState((s) => ({ ...s, loading: true, error: undefined }));
     const current = createEvalsPplService(data, isoRange(bounds), controller.signal);
     const before = createEvalsPplService(data, isoRange(previousPeriod(bounds)), controller.signal);
-    const query = buildEvalResultsQuery(serverFilters, RESULTS_LIMIT);
+    const query = buildEvalResultsQuery(serverFilters, RESULTS_LIMIT, index);
+    const dataset = evalsDataset(index);
     Promise.all([
-      fetchEvalResults(current, query),
-      fetchEvalResults(before, query),
-      current.executeQuery(EVALS_DATASET, buildEvalFacetsQuery()),
-      current.executeQuery(EVALS_DATASET, buildEvalFacetsQuery(serverFilters)),
+      fetchEvalResults(current, query, index),
+      fetchEvalResults(before, query, index),
+      current.executeQuery(dataset, buildEvalFacetsQuery({}, index)),
+      current.executeQuery(dataset, buildEvalFacetsQuery(serverFilters, index)),
     ])
       .then(([results, previous, allFacets, filteredFacets]) => {
         if (controller.signal.aborted) return;
@@ -195,7 +201,8 @@ export const useRunResults = (
   filters: EvalFilters,
   refreshKey: number,
   /** Fetch only while the runs tab is shown. */
-  enabled = true
+  enabled = true,
+  index: string = AGENT_EVALS_INDEX_PATTERN
 ): RunData => {
   const [state, setState] = useState<RunData>({
     loading: true,
@@ -204,7 +211,7 @@ export const useRunResults = (
     events: EMPTY_RUN_EVENTS,
     truncated: false,
   });
-  const key = JSON.stringify([bounds, filters.names, filters.search, refreshKey]);
+  const key = JSON.stringify([bounds, filters.names, filters.search, refreshKey, index]);
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
@@ -217,12 +224,15 @@ export const useRunResults = (
         ppl,
         buildEvalResultsQuery(
           { names: filters.names, search: filters.search, runsOnly: true },
-          RUN_RESULTS_LIMIT
-        )
+          RUN_RESULTS_LIMIT,
+          index
+        ),
+        index
       ),
-      // Case and run events are optional: older producers do not emit them, and the runs
-      // still work from grades alone if this query fails.
-      fetchRunEvents(ppl, buildRunEventsQuery(RUN_EVENTS_LIMIT)).catch(() => EMPTY_RUN_EVENTS),
+      // Case and run events are optional: a run without them still works from its grades.
+      fetchRunEvents(ppl, buildRunEventsQuery(RUN_EVENTS_LIMIT, index), index).catch(
+        () => EMPTY_RUN_EVENTS
+      ),
     ])
       .then(([results, events]) => {
         if (controller.signal.aborted) return;
@@ -250,5 +260,95 @@ export const useRunResults = (
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, key, enabled]);
+  return state;
+};
+
+export interface RunDetailState extends RunDetailData {
+  loading: boolean;
+  error?: string;
+}
+
+const EMPTY_DETAIL: RunDetailState = { loading: false, results: [], events: EMPTY_RUN_EVENTS };
+
+/**
+ * Every grade, test case event and run event of one run, whatever its time: a run page
+ * opened from a link (a CI job) shows the run even when it is older than the runs' range.
+ */
+export const useRunDetail = (
+  data: DataPublicPluginStart,
+  runId: string | undefined,
+  refreshKey: number,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): RunDetailState => {
+  const [state, setState] = useState<RunDetailState>(EMPTY_DETAIL);
+  useEffect(() => {
+    if (!runId) {
+      setState(EMPTY_DETAIL);
+      return;
+    }
+    const controller = new AbortController();
+    setState((s) => ({ ...s, loading: true, error: undefined }));
+    const ppl = createEvalsPplService(data, undefined, controller.signal);
+    ppl
+      .executeQuery(
+        withoutTimeRange(evalsDataset(index)),
+        buildRunDetailQuery(runId, RUN_RESULTS_LIMIT, index)
+      )
+      .then((response) => {
+        if (controller.signal.aborted) return;
+        setState({ loading: false, ...recordsToRunDetail(pplResponseToRecords(response)) });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setState({ ...EMPTY_DETAIL, error: errorMessage(error) });
+      });
+    return () => controller.abort();
+  }, [data, runId, refreshKey, index]);
+  return state;
+};
+
+export interface EvaluationResultsState {
+  loading: boolean;
+  error?: string;
+  results: EvalResult[];
+}
+
+/** Results of one evaluation in the time range under the other filters (drill-down). */
+export const useEvaluationResults = (
+  data: DataPublicPluginStart,
+  name: string | undefined,
+  bounds: TimeBoundsMs,
+  filters: EvalFilters,
+  refreshKey: number,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): EvaluationResultsState => {
+  const [state, setState] = useState<EvaluationResultsState>({ loading: false, results: [] });
+  const key = JSON.stringify([name, bounds, filters.levels, filters.sources, refreshKey, index]);
+  useEffect(() => {
+    if (!name) {
+      setState({ loading: false, results: [] });
+      return;
+    }
+    const controller = new AbortController();
+    setState({ loading: true, results: [] });
+    const ppl = createEvalsPplService(data, isoRange(bounds), controller.signal);
+    fetchEvalResults(
+      ppl,
+      buildEvalResultsQuery(
+        { names: [name], levels: filters.levels, sources: filters.sources },
+        RESULTS_LIMIT,
+        index
+      ),
+      index
+    )
+      .then((results) => !controller.signal.aborted && setState({ loading: false, results }))
+      .catch(
+        (error) =>
+          !controller.signal.aborted &&
+          setState({ loading: false, results: [], error: errorMessage(error) })
+      );
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, key]);
   return state;
 };

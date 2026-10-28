@@ -13,6 +13,7 @@ import {
   failuresFirst,
   fetchEvalResults,
 } from '../../../evaluations/eval_data';
+import { getEvalsIndexPattern } from '../../../evaluations/eval_settings';
 
 export interface TraceEvaluations {
   /** Every result that judged the trace, one of its spans, or its session. */
@@ -81,6 +82,7 @@ export const useTraceEvaluations = (
   sessionId?: string
 ): TraceEvaluations => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
+  const index = getEvalsIndexPattern(services?.uiSettings);
   const [state, setState] = useState<{ results: EvalResult[]; isLoading: boolean; error?: string }>(
     { results: [], isLoading: false }
   );
@@ -90,7 +92,7 @@ export const useTraceEvaluations = (
       setState({ results: [], isLoading: false });
       return;
     }
-    const key = `${traceId}|${sessionId ?? ''}`;
+    const key = `${index}|${traceId}|${sessionId ?? ''}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
       setState({ results: hit.results, isLoading: false });
@@ -104,7 +106,7 @@ export const useTraceEvaluations = (
       { from: 'now-90d', to: 'now+1d' },
       controller.signal
     );
-    fetchEvalResults(ppl, buildTraceEvalsQuery(traceId, sessionId))
+    fetchEvalResults(ppl, buildTraceEvalsQuery(traceId, sessionId, 200, index), index)
       .then((results) => {
         cache.delete(key);
         cache.set(key, { at: Date.now(), results });
@@ -121,7 +123,7 @@ export const useTraceEvaluations = (
         });
       });
     return () => controller.abort();
-  }, [traceId, sessionId, services?.data]);
+  }, [traceId, sessionId, services?.data, index]);
 
   return useMemo(
     () => ({
