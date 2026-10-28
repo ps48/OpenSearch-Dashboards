@@ -42,6 +42,7 @@ import {
   recordToEvalResult,
 } from './eval_data';
 import { useEvalsIndexPattern } from './eval_settings';
+import { ShowTracesMenu } from './eval_trace_filter';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { parseEvalTime } from './eval_aggregations';
 import { JudgedTarget, TargetSpan, fetchJudgedTarget } from './eval_target';
@@ -64,16 +65,41 @@ const quote = (v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'
 export const buildSameTargetQuery = (
   r: EvalResult,
   limit = 200,
-  index: string = AGENT_EVALS_INDEX_PATTERN
+  index: string = AGENT_EVALS_INDEX_PATTERN,
+  /** A session result: also the results of these traces of the session. */
+  sessionTraceIds: string[] = []
 ): string | undefined => {
+  const byTrace = (id: string) => `\`${EVAL_FIELDS.targetTraceId}\` = ${quote(id)}`;
   const where =
     r.level === 'session' && r.sessionId
-      ? `\`${EVAL_FIELDS.sessionId}\` = ${quote(r.sessionId)}`
+      ? [
+          `\`${EVAL_FIELDS.sessionId}\` = ${quote(r.sessionId)}`,
+          ...sessionTraceIds.map(byTrace),
+        ].join(' or ')
       : r.traceId
-        ? `\`${EVAL_FIELDS.targetTraceId}\` = ${quote(r.traceId)}`
+        ? byTrace(r.traceId)
         : undefined;
   if (!where) return undefined;
   return `source = ${index} | where ${EVAL_EVENT_WHERE} | where ${where} | sort - \`${EVAL_FIELDS.time}\` | head ${limit}`;
+};
+
+/**
+ * Results shown as "other evaluations" of `result`: for a session, every result of the session
+ * and of its traces and spans; otherwise those that judged the same span or trace.
+ */
+export const isRelated = (
+  r: EvalResult,
+  result: EvalResult,
+  sessionTraceIds: ReadonlySet<string> = new Set()
+): boolean => {
+  if (r.id === result.id) return false;
+  if (result.level === 'session') {
+    return (
+      (!!result.sessionId && r.sessionId === result.sessionId) ||
+      (!!r.traceId && sessionTraceIds.has(r.traceId))
+    );
+  }
+  return sameTarget(r, result);
 };
 
 /** Whether two results judged the same thing (same level and same span, trace or session). */
@@ -260,21 +286,39 @@ export const ResultFlyout: React.FC<{
     const controller = new AbortController();
     const ppl = createEvalsPplService(services.data, undefined, controller.signal);
     setTarget({ loading: true });
-    setOthers({ loading: true });
     fetchJudgedTarget(ppl, result)
       .then((value) => !controller.signal.aborted && setTarget({ loading: false, value }))
       .catch(
         (e) => !controller.signal.aborted && setTarget({ loading: false, error: errorMessage(e) })
       );
-    const query = buildSameTargetQuery(result, 200, index);
+    return () => controller.abort();
+  }, [services.data, result]);
+
+  // A session's other evaluations include those of its traces, known once the target loaded.
+  const isSession = result.level === 'session';
+  const sessionTraceIds = useMemo(
+    () => (isSession ? (target.value?.traces ?? []).map((t) => t.traceId) : []),
+    [isSession, target.value]
+  );
+  const waitForTraces = isSession && target.loading;
+  useEffect(() => {
+    if (waitForTraces) {
+      setOthers({ loading: true });
+      return;
+    }
+    const controller = new AbortController();
+    const ppl = createEvalsPplService(services.data, undefined, controller.signal);
+    setOthers({ loading: true });
+    const query = buildSameTargetQuery(result, 500, index, sessionTraceIds);
     if (query) {
+      const traceSet = new Set(sessionTraceIds);
       ppl
         .executeQuery(withoutTimeRange(evalsDataset(index)), query)
         .then((response) => {
           if (controller.signal.aborted) return;
           const list = pplResponseToRecords(response)
             .map(recordToEvalResult)
-            .filter((r) => r.id !== result.id && sameTarget(r, result));
+            .filter((r) => isRelated(r, result, traceSet));
           setOthers({ loading: false, value: failuresFirst(list) });
         })
         .catch(
@@ -284,7 +328,7 @@ export const ResultFlyout: React.FC<{
       setOthers({ loading: false, value: [] });
     }
     return () => controller.abort();
-  }, [services.data, result, index]);
+  }, [services.data, result, index, sessionTraceIds, waitForTraces]);
 
   const traceId =
     traceToOpen(result) ?? target.value?.traces?.[target.value.traces.length - 1]?.traceId;
@@ -414,8 +458,8 @@ export const ResultFlyout: React.FC<{
                 data-test-subj="agtEvlOpenTrace"
               >
                 {result.level === 'session'
-                  ? i18n.translate('agentTraces.evalsPage.openSessionTrace', {
-                      defaultMessage: 'Open session trace in Agent Traces',
+                  ? i18n.translate('agentTraces.evalsPage.openSession', {
+                      defaultMessage: 'Open session',
                     })
                   : i18n.translate('agentTraces.evalsPage.openTrace', {
                       defaultMessage: 'Open trace in Agent Traces',
@@ -515,6 +559,17 @@ export const ResultFlyout: React.FC<{
           })}
           testSubj="agtEvlFlyoutOthers"
         >
+          {isSession && (
+            <>
+              <EuiText size="xs" color="subdued">
+                <FormattedMessage
+                  id="agentTraces.evalsPage.othersSessionHelp"
+                  defaultMessage="Session results, and the trace and span results of the session's traces."
+                />
+              </EuiText>
+              <EuiSpacer size="s" />
+            </>
+          )}
           {others.loading && <EuiLoadingContent lines={2} />}
           {others.error && (
             <EuiCallOut size="s" color="danger" iconType="alert" title={others.error} />
@@ -531,6 +586,14 @@ export const ResultFlyout: React.FC<{
                   <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
                     <EuiFlexItem grow={false}>
                       <OutcomeBadge result={r} />
+                    </EuiFlexItem>
+                    {isSession && (
+                      <EuiFlexItem grow={false}>
+                        <LevelBadge level={r.level} />
+                      </EuiFlexItem>
+                    )}
+                    <EuiFlexItem grow={false}>
+                      <ShowTracesMenu name={r.name} label={r.label} value={r.value} />
                     </EuiFlexItem>
                     <EuiFlexItem grow={false}>
                       <EuiButtonEmpty
