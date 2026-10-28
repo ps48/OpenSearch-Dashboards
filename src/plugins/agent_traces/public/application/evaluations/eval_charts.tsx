@@ -21,8 +21,10 @@ import { i18n } from '@osd/i18n';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import { EvalOutcome, EvalResult, normalizedScore } from './eval_data';
 import {
+  OutcomeBucket,
   RunCaseRow,
   SuiteTrendPoint,
+  TrendPoint,
   TimeBoundsMs,
   bucketOutcomes,
   scoreTrend,
@@ -45,19 +47,24 @@ const useChartThemes = () => {
   return { chartsTheme, baseTheme };
 };
 
-const OUTCOMES: EvalOutcome[] = ['fail', 'neutral', 'pass'];
+const OUTCOMES: EvalOutcome[] = ['fail', 'error', 'neutral', 'pass'];
 
 /** Results per time bucket, stacked by outcome (fail at the bottom, where the eye starts). */
 export const OutcomeHistogram: React.FC<{
-  results: EvalResult[];
+  /** Results to bucket, or buckets already counted (server-side aggregations). */
+  results?: EvalResult[];
+  buckets?: OutcomeBucket[];
   bounds: TimeBoundsMs;
   interval: number;
   height: number;
   compact?: boolean;
   'data-test-subj'?: string;
-}> = ({ results, bounds, interval, height, compact, ...rest }) => {
+}> = ({ results, buckets, bounds, interval, height, compact, ...rest }) => {
   const { chartsTheme, baseTheme } = useChartThemes();
-  const data = useMemo(() => bucketOutcomes(results, interval), [results, interval]);
+  const data = useMemo(
+    () => buckets ?? bucketOutcomes(results ?? [], interval),
+    [buckets, results, interval]
+  );
   const formatter = useMemo(() => niceTimeFormatter([bounds.from, bounds.to]), [bounds]);
   return (
     <div style={{ height }} data-test-subj={rest['data-test-subj'] ?? 'agtEvlOutcomeHistogram'}>
@@ -94,13 +101,18 @@ export const OutcomeHistogram: React.FC<{
 
 /** Normalized mean score (0 to 1, higher is better) per evaluation over time. */
 export const ScoreTrendChart: React.FC<{
-  results: EvalResult[];
+  /** Results to average, or points already averaged (server-side aggregations). */
+  results?: EvalResult[];
+  trend?: TrendPoint[];
   bounds: TimeBoundsMs;
   interval: number;
   height?: number;
-}> = ({ results, bounds, interval, height = 240 }) => {
+}> = ({ results, trend, bounds, interval, height = 240 }) => {
   const { chartsTheme, baseTheme } = useChartThemes();
-  const points = useMemo(() => scoreTrend(results, interval), [results, interval]);
+  const points = useMemo(
+    () => trend ?? scoreTrend(results ?? [], interval),
+    [trend, results, interval]
+  );
   const names = useMemo(() => Array.from(new Set(points.map((p) => p.name))).sort(), [points]);
   const formatter = useMemo(() => niceTimeFormatter([bounds.from, bounds.to]), [bounds]);
   return (

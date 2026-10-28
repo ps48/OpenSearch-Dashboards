@@ -19,21 +19,11 @@ import {
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import { AGENT_EVALS_INDEX_PATTERN, EVALS_INDEX_SETTING } from '../../../common';
-import { EvalOutcome, EvalResult, LEVEL_LABEL, SOURCE_LABEL, formatScore } from './eval_data';
+import { EvalOutcome, EvalResult } from './eval_data';
+import { LevelPill, SourcePill, VerdictBadge } from './eval_chips';
 import { CaseStatus, EvaluatorAggregate, parseEvalTime } from './eval_aggregations';
 
-export const OUTCOME_TEXT: Record<EvalOutcome, string> = {
-  pass: i18n.translate('agentTraces.evalsPage.outcomePass', { defaultMessage: 'Pass' }),
-  fail: i18n.translate('agentTraces.evalsPage.outcomeFail', { defaultMessage: 'Fail' }),
-  neutral: i18n.translate('agentTraces.evalsPage.outcomeNeutral', { defaultMessage: 'Scored' }),
-};
-
-/** Badge colors matching the trace flyout's evaluation badges. */
-export const OUTCOME_BADGE_COLOR: Record<EvalOutcome, string> = {
-  pass: 'secondary',
-  fail: 'danger',
-  neutral: 'hollow',
-};
+export { OUTCOME_BADGE_COLOR, OUTCOME_TEXT, levelLabel, sourceLabel } from './eval_chips';
 
 /**
  * Pass, fail and errored colors: the shades the OUI badges use (`secondary`, `danger`,
@@ -45,6 +35,7 @@ const NEUTRAL_COLOR = '#98A2B3';
 export const OUTCOME_CHART_COLOR: Record<EvalOutcome, string> = {
   pass: BADGE_SHADES[0],
   fail: BADGE_SHADES[9],
+  error: BADGE_SHADES[5],
   neutral: NEUTRAL_COLOR,
 };
 
@@ -55,20 +46,13 @@ export const CASE_STATUS_COLOR: Record<CaseStatus, string> = {
   unknown: NEUTRAL_COLOR,
 };
 
-/** Series colors for evaluations: the OUI vis palette without the pass, fail and warning hues. */
+/**
+ * Series colors for evaluation names: blues, purples and neutrals of the OUI vis palette.
+ * Never green, red, pink, orange or amber, which read as verdicts.
+ */
 const VIS = euiPaletteColorBlind();
-export const SERIES_COLORS = [VIS[1], VIS[2], VIS[3], VIS[4], VIS[7], VIS[8], VIS[6]];
+export const SERIES_COLORS = [VIS[1], VIS[3], VIS[6], '#3F6E9A', '#6B4D94', '#8D9BAD', '#5C7FA3'];
 export const seriesColor = (index: number) => SERIES_COLORS[index % SERIES_COLORS.length];
-
-const LEVEL_COLOR: Record<string, string> = {
-  session: VIS[1],
-  trace: VIS[2],
-  span: VIS[3],
-  tool_call: VIS[4],
-};
-
-export const levelLabel = (level: string) => LEVEL_LABEL[level] ?? level;
-export const sourceLabel = (source: string) => SOURCE_LABEL[source] ?? source;
 
 /** Short display of an id: first 8 characters. */
 export const shortId = (id: string | undefined, length = 8) =>
@@ -150,36 +134,10 @@ export const SectionHeader: React.FC<{
   </div>
 );
 
-/** The result: outcome word, colored, with the label and score. Never color-only. */
-export const OutcomeBadge: React.FC<{
-  result: Pick<EvalResult, 'outcome' | 'value' | 'label'>;
-}> = ({ result }) => {
-  const score = formatScore(result);
-  return (
-    <EuiBadge
-      color={OUTCOME_BADGE_COLOR[result.outcome]}
-      iconType={
-        result.outcome === 'fail' ? 'alert' : result.outcome === 'pass' ? 'check' : undefined
-      }
-      data-test-subj="agtEvlOutcomeBadge"
-    >
-      {OUTCOME_TEXT[result.outcome]}
-      {score !== '-' ? `: ${score}` : ''}
-    </EuiBadge>
-  );
-};
-
-export const LevelBadge: React.FC<{ level: string }> = ({ level }) => (
-  <EuiBadge color={LEVEL_COLOR[level] ?? 'hollow'} data-test-subj="agtEvlLevelBadge">
-    {levelLabel(level)}
-  </EuiBadge>
-);
-
-export const SourceBadge: React.FC<{ source: string }> = ({ source }) => (
-  <EuiBadge color="hollow" data-test-subj="agtEvlSourceBadge">
-    {sourceLabel(source)}
-  </EuiBadge>
-);
+/** A result's chip, colored by verdict. */
+export const OutcomeBadge = VerdictBadge;
+export const LevelBadge = LevelPill;
+export const SourceBadge = SourcePill;
 
 /** What a result judged, as a short label: `Session abcd1234`, `Trace ...`, `Span ...`. */
 export const targetLabelOf = (r: EvalResult): string => {
@@ -325,6 +283,20 @@ export const TruncationNotice: React.FC<{ shown: number; total?: number }> = ({ 
         shown: shown.toLocaleString(),
         total: total !== undefined ? total.toLocaleString() : `${shown.toLocaleString()}+`,
       },
+    })}
+  />
+);
+
+/** An aggregation hit the engine's row limit: some groups may be missing. */
+export const AggregateLimitNotice: React.FC = () => (
+  <EuiCallOut
+    size="s"
+    color="warning"
+    iconType="iInCircle"
+    data-test-subj="agtEvlAggLimit"
+    title={i18n.translate('agentTraces.evalsPage.aggLimit', {
+      defaultMessage:
+        'More than 10,000 combinations of evaluation, label and interval: some are left out. Narrow the time range or filters.',
     })}
   />
 );

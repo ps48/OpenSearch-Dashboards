@@ -354,7 +354,7 @@ const SideHeader: React.FC<{
     <EuiText size="xs" color="subdued">
       {title}
     </EuiText>
-    <EuiText size="s" className="agtEvlMono eui-textTruncate">
+    <EuiText size="s" className="eui-textTruncate">
       <strong title={side.label}>{side.label}</strong>
     </EuiText>
     <EuiLink onClick={() => onOpenTrace(side.traceId, side.aroundMs)} data-test-subj={testSubj}>

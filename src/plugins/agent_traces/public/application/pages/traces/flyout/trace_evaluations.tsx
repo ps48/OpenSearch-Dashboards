@@ -28,16 +28,18 @@ import {
   failuresFirst,
   formatScore,
 } from '../../../evaluations/eval_data';
+import {
+  LevelPill,
+  OUTCOME_BADGE_COLOR,
+  OUTCOME_HEALTH_COLOR,
+  OUTCOME_ICON,
+  OUTCOME_TEXT,
+} from '../../../evaluations/eval_chips';
 import { TraceEvaluations } from './use_trace_evaluations';
 import './trace_evaluations.scss';
 
-const OUTCOME_TEXT = {
-  pass: i18n.translate('agentTraces.evals.outcomePass', { defaultMessage: 'Pass' }),
-  fail: i18n.translate('agentTraces.evals.outcomeFail', { defaultMessage: 'Fail' }),
-  neutral: i18n.translate('agentTraces.evals.outcomeNeutral', { defaultMessage: 'Scored' }),
-};
-const HEALTH_COLOR = { pass: 'success', fail: 'danger', neutral: 'subdued' } as const;
-const BADGE_COLOR = { pass: 'secondary', fail: 'danger', neutral: 'hollow' } as const;
+const HEALTH_COLOR = OUTCOME_HEALTH_COLOR;
+const BADGE_COLOR = OUTCOME_BADGE_COLOR;
 
 /** PPL timestamps are UTC without a zone ("2026-10-26 09:38:26.94"); show them in local time. */
 const formatTime = (time: string) => {
@@ -68,9 +70,7 @@ export const EvalBadge: React.FC<{ result: EvalResult; onClick?: () => void }> =
   <EuiToolTip content={resultTooltip(result)}>
     <EuiBadge
       color={BADGE_COLOR[result.outcome]}
-      iconType={
-        result.outcome === 'fail' ? 'alert' : result.outcome === 'pass' ? 'check' : undefined
-      }
+      iconType={OUTCOME_ICON[result.outcome]}
       onClick={onClick}
       onClickAriaLabel={onClick ? `${result.name} ${OUTCOME_TEXT[result.outcome]}` : undefined}
       data-test-subj="agentTracesEvalBadge"
@@ -155,7 +155,7 @@ export const EvalResultItem: React.FC<{
         <EuiText size="s">{formatScore(r)}</EuiText>
       </EuiFlexItem>
       <EuiFlexItem grow={false}>
-        <EuiBadge color="hollow">{LEVEL_LABEL[r.level] ?? r.level}</EuiBadge>
+        <LevelPill level={r.level} />
       </EuiFlexItem>
       {targetLabel && (
         <EuiFlexItem grow={false}>

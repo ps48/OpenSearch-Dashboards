@@ -1,0 +1,66 @@
+// Level and source pills: outlined, in hues that carry no verdict (no success, danger or
+// warning colors), so a level never reads as a pass or a failure.
+.agtEvlPill {
+  display: inline-flex;
+  align-items: center;
+  gap: $euiSizeXS;
+  height: $euiSizeL - 4px;
+  padding: 0 $euiSizeS;
+  border: $euiBorderWidthThin solid $euiColorLightShade;
+  border-radius: $euiBorderRadius;
+  background: transparent;
+  color: $euiTextColor;
+  font-size: $euiFontSizeXS;
+  font-weight: $euiFontWeightMedium;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+
+  &--level::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: $euiColorMediumShade;
+  }
+
+  &--session {
+    border-color: $euiColorVis3;
+
+    &::before {
+      background: $euiColorVis3;
+    }
+  }
+
+  &--trace {
+    border-color: $euiColorVis1;
+
+    &::before {
+      background: $euiColorVis1;
+    }
+  }
+
+  &--span,
+  &--other {
+    border-color: $euiColorMediumShade;
+  }
+
+  &--tool_call {
+    border-color: $euiColorVis6;
+
+    &::before {
+      background: $euiColorVis6;
+    }
+  }
+
+  &--source {
+    color: $euiTextSubduedColor;
+    font-weight: $euiFontWeightRegular;
+  }
+}
+
+.agtEvlVerdict,
+.agtEvlSummaryChip {
+  font-variant-numeric: tabular-nums;
+}
