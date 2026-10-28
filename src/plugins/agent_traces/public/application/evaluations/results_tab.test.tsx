@@ -45,10 +45,18 @@ describe('ResultsTab', () => {
     const rows = Array.from(table.querySelectorAll<HTMLElement>('tbody tr'));
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText('Helpfulness')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('Pass: Very Helpful')).toBeInTheDocument();
+    const pass = within(rows[0]).getByTestId('agtEvlOutcomeBadge');
+    expect(pass).toHaveTextContent('Very Helpful');
+    expect(pass).toHaveAttribute('data-outcome', 'pass');
     expect(within(rows[0]).getByText('Session session-0123')).toBeInTheDocument();
     expect(within(rows[0]).getByText('Travel')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('Fail: Looping on one tool (0.33)')).toBeInTheDocument();
+    expect(within(rows[1]).getByTestId('agtEvlOutcomeBadge')).toHaveAttribute(
+      'data-outcome',
+      'fail'
+    );
+    expect(within(rows[1]).getByTestId('agtEvlOutcomeBadge')).toHaveTextContent(
+      'Looping on one tool (0.33)'
+    );
     expect(within(rows[1]).getByText('Span 11112222')).toBeInTheDocument();
     // explanation truncated in the cell
     expect(within(rows[1]).getByText(/^x+\.\.\.$/).textContent).toHaveLength(120);
@@ -63,6 +71,17 @@ describe('ResultsTab', () => {
     );
     fireEvent.click(screen.getByTestId('agtEvlResultRow-fail'));
     expect(onOpenResult).toHaveBeenCalledWith(expect.objectContaining({ name: 'tool_diversity' }));
+  });
+
+  it('gives the exact total and says when the table lists only the latest results', () => {
+    render(
+      <I18nProvider>
+        <ResultsTab results={results} total={12345} limit={2} onOpenResult={jest.fn()} />
+      </I18nProvider>
+    );
+    expect(screen.getByTestId('agtEvlResultsTotal')).toHaveTextContent(
+      '12,345 results. The table lists the latest 2'
+    );
   });
 
   it('ranks failures before passes for the result sort', () => {

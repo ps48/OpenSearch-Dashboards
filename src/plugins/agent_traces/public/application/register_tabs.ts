@@ -21,6 +21,20 @@ import {
   AGENT_TRACES_SESSIONS_TAB_ID,
 } from '../../common';
 import { prepareAgentSpansQuery, prepareRootSpansQuery } from './tab_queries';
+import { withEvalTraceFilter } from './evaluations/eval_trace_filter_store';
+
+type Prepare = NonNullable<TabDefinition['prepareQuery']>;
+
+/** Narrows a tab's query to the traces of an evaluation filter, when one is set. */
+const withEvalFilter =
+  (prepare: Prepare): Prepare =>
+  (query, sort) =>
+    prepare(
+      typeof query.query === 'string'
+        ? { ...query, query: withEvalTraceFilter(query.query) }
+        : query,
+      sort
+    );
 import { prepareQueryForLanguage } from './utils/languages';
 
 /**
@@ -38,7 +52,7 @@ export const registerBuiltInTabs = (tabRegistry: TabRegistryService) => {
     order: 10,
     supportedLanguages: [AGENT_TRACES_DEFAULT_LANGUAGE],
 
-    prepareQuery: prepareRootSpansQuery,
+    prepareQuery: withEvalFilter(prepareRootSpansQuery),
 
     component: TracesTab,
   };
@@ -55,7 +69,7 @@ export const registerBuiltInTabs = (tabRegistry: TabRegistryService) => {
     supportedLanguages: [AGENT_TRACES_DEFAULT_LANGUAGE],
 
     // Filter to all gen_ai spans (not just root spans)
-    prepareQuery: prepareAgentSpansQuery,
+    prepareQuery: withEvalFilter(prepareAgentSpansQuery),
 
     component: SpansTab,
   };

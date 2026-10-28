@@ -12,8 +12,9 @@ import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dash
 import { AppMountParameters } from '../../../../../core/public';
 import { EvaluationsApp } from './evaluations_app';
 import { makeResult, twoRunFixture } from './eval_test_fixtures';
-import { EvalData, RunData, RunDetailState } from './use_eval_data';
-import { EMPTY_RUN_EVENTS } from './eval_data';
+import { EvalAggregates, EvalData, RunData, RunDetailState } from './use_eval_data';
+import { EMPTY_RUN_EVENTS, summarizeByEvaluator } from './eval_data';
+import { computeKpis } from './eval_aggregations';
 
 jest.mock('../../../../data/public', () => ({
   syncQueryStateWithUrl: () => ({ stop: jest.fn() }),
@@ -39,13 +40,24 @@ const mockUseEvalData = jest.fn(() => evalData);
 const mockUseRunResults = jest.fn(() => runData);
 const mockUseRunDetail = jest.fn(() => runDetail);
 const mockUseEvaluationResults = jest.fn(() => ({ loading: false, results }));
+let mockAgentCorePresent = false;
 jest.mock('./use_eval_data', () => ({
   ...jest.requireActual('./use_eval_data'),
   useEvalData: (...args: unknown[]) => mockUseEvalData(...(args as [])),
   useRunResults: (...args: unknown[]) => mockUseRunResults(...(args as [])),
   useRunDetail: (...args: unknown[]) => mockUseRunDetail(...(args as [])),
   useEvaluationResults: (...args: unknown[]) => mockUseEvaluationResults(...(args as [])),
+  useAgentCorePresent: () => mockAgentCorePresent,
 }));
+
+const aggOf = (list: typeof results): EvalAggregates => ({
+  summaries: summarizeByEvaluator(list),
+  kpis: computeKpis(list),
+  buckets: [],
+  bucketsByName: new Map(),
+  trend: [],
+  truncated: false,
+});
 jest.mock('./run_detail', () => ({
   RunDetailPage: ({ runId, results: shown }: { runId: string; results: unknown[] }) => (
     <div data-test-subj="runDetailStub">
@@ -87,6 +99,7 @@ const makeServices = () => {
             : (fallback ?? 'MMM D, YYYY'),
     },
     chrome: { docTitle: { change: jest.fn() }, setBreadcrumbs: jest.fn() },
+    notifications: { toasts: { addDanger: jest.fn() } },
     application: { navigateToApp: jest.fn() },
   };
 };
@@ -113,11 +126,13 @@ beforeEach(() => {
     loading: false,
     indexMissing: false,
     results,
-    previous: [],
+    current: aggOf(results),
     total: 2,
+    interval: 3600 * 1000,
     facets: [{ name: 'tool_diversity', level: 'span', source: 'opensearch-sdk', count: 1 }],
     truncated: false,
   };
+  mockAgentCorePresent = false;
   runData = {
     loading: false,
     indexMissing: false,
@@ -192,20 +207,40 @@ describe('EvaluationsApp', () => {
     expect(screen.getByTestId('agtEvlQueryError')).toHaveTextContent('Field [x] not found.');
   });
 
-  it('says when aggregates use only the latest results', () => {
-    evalData = { ...evalData, truncated: true, total: 5000 };
+  it('says when an aggregation hit the row limit', () => {
+    evalData = { ...evalData, current: { ...aggOf(results), truncated: true } };
     renderApp();
-    expect(
-      within(screen.getByTestId('agtEvlTruncated')).getByText(/of 5,000 results/)
-    ).toBeTruthy();
+    expect(screen.getByTestId('agtEvlAggLimit')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlTruncated')).not.toBeInTheDocument();
   });
 
-  it('opens Overview and Results on the last 24 hours when the link has no time range', () => {
+  it('gives the Results tab the exact total', () => {
+    evalData = { ...evalData, total: 12345, truncated: true };
+    renderApp('#/?_a=(tab:results)');
+    expect(screen.getByTestId('agtEvlResultsTotal')).toHaveTextContent('12,345 results');
+    expect(screen.getByTestId('agtEvlTab-results')).toHaveTextContent('12345');
+  });
+
+  it('notes the AgentCore lag when the range ends now and AgentCore results exist', () => {
+    mockAgentCorePresent = true;
+    const now = Date.now();
+    BOUNDS['now-24h'] = [now - 24 * 3600 * 1000, now];
     renderApp();
-    expect(services.data.query.timefilter.timefilter.setTime).toHaveBeenCalledWith({
-      from: 'now-24h',
-      to: 'now',
-    });
+    expect(screen.getByTestId('agtEvlLagNote')).toHaveTextContent(
+      'AgentCore results arrive about 15 minutes after a session ends.'
+    );
+    BOUNDS['now-24h'] = [Date.UTC(2026, 9, 26, 0), Date.UTC(2026, 9, 27, 0)];
+  });
+
+  it('has no lag note for a range that ended long ago', () => {
+    mockAgentCorePresent = true;
+    renderApp();
+    expect(screen.queryByTestId('agtEvlLagNote')).not.toBeInTheDocument();
+  });
+
+  it('keeps the global time range: no range is forced when the link has none', () => {
+    renderApp();
+    expect(services.data.query.timefilter.timefilter.setTime).not.toHaveBeenCalled();
   });
 
   it('keeps the time range of the link', () => {

@@ -8,6 +8,20 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import { DeltaText, OverviewTab } from './overview_tab';
 import { makeResult } from './eval_test_fixtures';
+import { EvalResult, summarizeByEvaluator } from './eval_data';
+import { bucketOutcomes, computeKpis } from './eval_aggregations';
+import { EvalAggregates } from './use_eval_data';
+import { ShowTracesContext } from './eval_trace_filter';
+
+/** What the server-side aggregations return for these results. */
+const aggOf = (list: EvalResult[]): EvalAggregates => ({
+  summaries: summarizeByEvaluator(list),
+  kpis: computeKpis(list),
+  buckets: bucketOutcomes(list, 3600 * 1000),
+  bucketsByName: new Map(),
+  trend: [],
+  truncated: false,
+});
 
 jest.mock('./eval_charts', () => ({
   OutcomeHistogram: () => <div data-test-subj="histogramStub" />,
@@ -36,19 +50,26 @@ const results = [
 ];
 const previous = [makeResult({ name: 'tool_diversity', value: 1, time: '2026-10-25 09:00:00' })];
 
-const renderOverview = (props: Partial<React.ComponentProps<typeof OverviewTab>> = {}) => {
+const renderOverview = (
+  props: Partial<React.ComponentProps<typeof OverviewTab>> = {},
+  showTraces?: jest.Mock
+) => {
   const onSelectEvaluation = jest.fn();
   const onOpenResult = jest.fn();
   render(
     <I18nProvider>
-      <OverviewTab
-        results={results}
-        previous={previous}
-        bounds={bounds}
-        onSelectEvaluation={onSelectEvaluation}
-        onOpenResult={onOpenResult}
-        {...props}
-      />
+      <ShowTracesContext.Provider value={showTraces}>
+        <OverviewTab
+          current={aggOf(results)}
+          previous={aggOf(previous)}
+          failures={results.filter((r) => r.outcome === 'fail')}
+          bounds={bounds}
+          interval={3600 * 1000}
+          onSelectEvaluation={onSelectEvaluation}
+          onOpenResult={onOpenResult}
+          {...props}
+        />
+      </ShowTracesContext.Provider>
     </I18nProvider>
   );
   return { onSelectEvaluation, onOpenResult };
@@ -81,16 +102,41 @@ describe('OverviewTab', () => {
     expect(onSelectEvaluation).toHaveBeenCalledWith('Helpfulness');
   });
 
+  it('shows the mean and a "No pass rule" hint for an evaluation without a rule', () => {
+    renderOverview({
+      current: aggOf([
+        makeResult({ name: 'span_coverage', value: 1, label: 'Full' }),
+        makeResult({ name: 'span_coverage', value: 0.5, label: 'Partial' }),
+      ]),
+    });
+    const card = screen.getByTestId('agtEvlEvaluatorCard');
+    expect(within(card).getByTestId('agtEvlCardMean')).toHaveTextContent('0.75');
+    expect(within(card).getByTestId('agtEvlNoPassRule')).toBeInTheDocument();
+    expect(within(card).queryByTestId('agtEvlCardPassRate')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlKpiPassRateSub')).toHaveTextContent('2 scored without a rule');
+  });
+
+  it('offers the traces where an evaluation fails from its card', () => {
+    const showTraces = jest.fn();
+    renderOverview({}, showTraces);
+    const card = screen.getAllByTestId('agtEvlEvaluatorCard')[0];
+    fireEvent.click(within(card).getByTestId('agtEvlShowTracesButton'));
+    fireEvent.click(screen.getByTestId('agtEvlShowTraces-fail'));
+    expect(showTraces).toHaveBeenCalledWith({ name: 'tool_diversity', kind: 'fail' });
+  });
+
   it('lists recent failures that open the result', () => {
     const { onOpenResult } = renderOverview();
     const list = screen.getByTestId('agtEvlRecentFailures');
-    expect(within(list).getByText('Fail: Looping on one tool (0.33)')).toBeInTheDocument();
+    expect(within(list).getByTestId('agtEvlOutcomeBadge')).toHaveTextContent(
+      'Looping on one tool (0.33)'
+    );
     fireEvent.click(within(list).getByTestId('agtEvlFailureLink'));
     expect(onOpenResult).toHaveBeenCalledWith(results[0]);
   });
 
   it('explains an empty result set', () => {
-    renderOverview({ results: [] });
+    renderOverview({ current: aggOf([]) });
     expect(screen.getByTestId('agtEvlOverviewEmpty')).toBeInTheDocument();
   });
 });

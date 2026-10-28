@@ -8,6 +8,7 @@ import './evaluations.scss';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isEqual } from 'lodash';
 import {
+  EuiCallOut,
   EuiErrorBoundary,
   EuiFlexGroup,
   EuiFlexItem,
@@ -32,11 +33,13 @@ import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react
 import { createOsdUrlStateStorage } from '../../../../opensearch_dashboards_utils/public';
 import { syncQueryStateWithUrl } from '../../../../data/public';
 import { TimeRange } from '../../../../data/common';
+import { AGENT_TRACES_NAV_ID } from '../../../common';
 import { EvalResult } from './eval_data';
+import { ShowTracesContext, TraceCondition, fetchConditionTraces } from './eval_trace_filter';
+import { setEvalTraceFilter } from './eval_trace_filter_store';
 import { TimeBoundsMs, mergeRunData } from './eval_aggregations';
 import {
   APP_STATE_KEY,
-  DEFAULT_EVALS_TIME,
   DEFAULT_RUNS_TIME,
   EvalAppState,
   EvalTab,
@@ -47,7 +50,10 @@ import {
 } from './eval_url_state';
 import {
   RESULTS_LIMIT,
+  useAgentCorePresent,
   useEvalData,
+  AGENTCORE_LAG_MS,
+  errorMessage,
   useEvaluationResults,
   useRunDetail,
   useRunResults,
@@ -60,6 +66,7 @@ import { ResultFlyout } from './result_flyout';
 import {
   NoEvalIndexPrompt,
   QueryErrorCallout,
+  AggregateLimitNotice,
   TruncationNotice,
   formatEvalTime,
 } from './eval_components';
@@ -99,14 +106,12 @@ const useAppState = (params: AppMountParameters, services: EvaluationsServices) 
       }),
     [params.history, services.uiSettings]
   );
-  // The global `_g` state (time range, refresh interval) is shared with the other apps. Start
-  // syncing on the first render, so the time range is read from the URL before the first fetch.
-  // A link without a time range opens the last 24 hours (the global default is often 15
-  // minutes, which rarely holds evaluation results).
+  // The global `_g` state (time range, refresh interval) is shared with the other apps, as in
+  // Explore and Agent Traces: the range carries over between apps, a link's `_g` wins, and
+  // without either it is the `timepicker:timeDefaults` setting (the last 15 minutes). Start
+  // syncing on the first render, so the range is read from the URL before the first fetch.
   const sync = useRef<{ stop: () => void }>();
   if (!sync.current) {
-    const global = storage.get<{ time?: unknown }>('_g');
-    if (!global?.time) services.data.query.timefilter.timefilter.setTime(DEFAULT_EVALS_TIME);
     sync.current = syncQueryStateWithUrl(services.data.query, storage);
   }
   const [state, setState] = useState<EvalAppState>(() =>
@@ -238,7 +243,45 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     })
   );
   const filters = useMemo(() => filtersOf(state), [state]);
-  const data = useEvalData(services.data, time.bounds, filters, time.refreshKey, index);
+  const data = useEvalData(
+    services.data,
+    time.bounds,
+    filters,
+    time.refreshKey,
+    index,
+    state.tab === 'results' ? 'results' : 'overview'
+  );
+  const agentCorePresent = useAgentCorePresent(services.data, index);
+  const showLagNote =
+    state.tab !== 'runs' && agentCorePresent && time.bounds.to > Date.now() - AGENTCORE_LAG_MS;
+  const showTraces = useCallback(
+    (condition: TraceCondition) => {
+      fetchConditionTraces(
+        services.data,
+        condition,
+        {
+          from: new Date(time.bounds.from).toISOString(),
+          to: new Date(time.bounds.to).toISOString(),
+        },
+        index
+      )
+        .then((filter) => {
+          setEvalTraceFilter(filter);
+          services.application.navigateToApp(AGENT_TRACES_NAV_ID, {
+            path: '#/?_a=(ui:(activeTabId:traces,showHistogram:!t))',
+          });
+        })
+        .catch((error) =>
+          services.notifications.toasts.addDanger({
+            title: i18n.translate('agentTraces.evalsPage.showTracesError', {
+              defaultMessage: 'Could not list the traces',
+            }),
+            text: errorMessage(error),
+          })
+        );
+    },
+    [services, time.bounds, index]
+  );
   const runsActive = state.tab === 'runs';
   const runs = useRunResults(
     services.data,
@@ -297,7 +340,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
   );
 
   const counts: Partial<Record<EvalTab, number>> = {
-    results: data.results.length,
+    results: data.total,
   };
 
   const openTrace = useCallback(
@@ -350,28 +393,50 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     }
     if (data.indexMissing) return <NoEvalIndexPrompt index={index} />;
     if (data.error) return <QueryErrorCallout message={data.error} />;
-    if (data.loading && data.results.length === 0) return <EuiLoadingContent lines={8} />;
-    const notice = data.truncated ? (
+    if (data.loading && !data.current) return <EuiLoadingContent lines={8} />;
+    const lagNote = showLagNote ? (
       <>
-        <TruncationNotice shown={RESULTS_LIMIT} total={data.total} />
+        <EuiCallOut
+          size="s"
+          iconType="clock"
+          data-test-subj="agtEvlLagNote"
+          title={i18n.translate('agentTraces.evalsPage.lagNote', {
+            defaultMessage: 'AgentCore results arrive about 15 minutes after a session ends.',
+          })}
+        />
+        <EuiSpacer size="s" />
+      </>
+    ) : null;
+    const partial = data.current?.truncated ? (
+      <>
+        <AggregateLimitNotice />
         <EuiSpacer size="s" />
       </>
     ) : null;
     if (state.tab === 'results') {
       return (
         <>
-          {notice}
-          <ResultsTab results={data.results} onOpenResult={openResult} />
+          {lagNote}
+          <ResultsTab
+            results={data.results}
+            total={data.total}
+            limit={RESULTS_LIMIT}
+            onOpenResult={openResult}
+          />
         </>
       );
     }
+    if (!data.current) return null;
     return (
       <>
-        {notice}
+        {lagNote}
+        {partial}
         <OverviewTab
-          results={data.results}
+          current={data.current}
           previous={data.previous}
+          failures={data.results}
           bounds={time.bounds}
+          interval={data.interval}
           onSelectEvaluation={(name) => setState({ evaluation: name })}
           onOpenResult={openResult}
         />
@@ -391,118 +456,120 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
 
   return (
     <EuiErrorBoundary>
-      <EuiPage paddingSize="m" className="agtEvlPage" data-test-subj="agtEvlPage">
-        <EuiPageBody>
-          <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" wrap>
-            <EuiFlexItem grow={false}>
-              {/* The new navigation header already shows the app title. */}
-              {!services.chrome.navGroup?.getNavGroupEnabled() && (
-                <EuiTitle size="m">
-                  <h1>{PAGE_TITLE}</h1>
-                </EuiTitle>
-              )}
-              <EuiText size="s" color="subdued">
-                <FormattedMessage
-                  id="agentTraces.evalsPage.description"
-                  defaultMessage="Scores and judgments on your agents' spans, traces and sessions, from online evaluators and offline evaluation runs."
-                />
-              </EuiText>
-            </EuiFlexItem>
-            <EuiFlexItem grow={false}>
-              {runsActive ? (
-                <div data-test-subj="agtEvlRunsTimePicker">
+      <ShowTracesContext.Provider value={showTraces}>
+        <EuiPage paddingSize="m" className="agtEvlPage" data-test-subj="agtEvlPage">
+          <EuiPageBody>
+            <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" wrap>
+              <EuiFlexItem grow={false}>
+                {/* The new navigation header already shows the app title. */}
+                {!services.chrome.navGroup?.getNavGroupEnabled() && (
+                  <EuiTitle size="m">
+                    <h1>{PAGE_TITLE}</h1>
+                  </EuiTitle>
+                )}
+                <EuiText size="s" color="subdued">
+                  <FormattedMessage
+                    id="agentTraces.evalsPage.description"
+                    defaultMessage="Scores and judgments on your agents' spans, traces and sessions, from online evaluators and offline evaluation runs."
+                  />
+                </EuiText>
+              </EuiFlexItem>
+              <EuiFlexItem grow={false}>
+                {runsActive ? (
+                  <div data-test-subj="agtEvlRunsTimePicker">
+                    <EuiSuperDatePicker
+                      start={runsTime.time.from}
+                      end={runsTime.time.to}
+                      onTimeChange={runsTime.onTimeChange}
+                      onRefresh={runsTime.onRefresh}
+                      isLoading={loading}
+                      dateFormat={services.uiSettings.get('dateFormat')}
+                      commonlyUsedRanges={quickRanges}
+                      data-test-subj="agtEvlRunsDatePicker"
+                    />
+                  </div>
+                ) : (
                   <EuiSuperDatePicker
-                    start={runsTime.time.from}
-                    end={runsTime.time.to}
-                    onTimeChange={runsTime.onTimeChange}
-                    onRefresh={runsTime.onRefresh}
+                    start={time.time.from}
+                    end={time.time.to}
+                    isPaused={time.refreshInterval.pause}
+                    refreshInterval={time.refreshInterval.value}
+                    onTimeChange={time.onTimeChange}
+                    onRefresh={time.onRefresh}
+                    onRefreshChange={time.onRefreshChange}
                     isLoading={loading}
                     dateFormat={services.uiSettings.get('dateFormat')}
                     commonlyUsedRanges={quickRanges}
-                    data-test-subj="agtEvlRunsDatePicker"
+                    data-test-subj="agtEvlDatePicker"
                   />
-                </div>
-              ) : (
-                <EuiSuperDatePicker
-                  start={time.time.from}
-                  end={time.time.to}
-                  isPaused={time.refreshInterval.pause}
-                  refreshInterval={time.refreshInterval.value}
-                  onTimeChange={time.onTimeChange}
-                  onRefresh={time.onRefresh}
-                  onRefreshChange={time.onRefreshChange}
-                  isLoading={loading}
-                  dateFormat={services.uiSettings.get('dateFormat')}
-                  commonlyUsedRanges={quickRanges}
-                  data-test-subj="agtEvlDatePicker"
-                />
-              )}
-            </EuiFlexItem>
-          </EuiFlexGroup>
-          <EuiSpacer size="m" />
-          {!runPageOpen && (
-            <>
-              <EvalFiltersBar state={state} facets={data.facets} onChange={setState} />
-              <EuiSpacer size="m" />
-            </>
-          )}
-          <EuiTabs size="s">
-            {(Object.keys(TAB_LABELS) as EvalTab[]).map((tab) => (
-              <EuiTab
-                key={tab}
-                isSelected={state.tab === tab}
-                onClick={() =>
-                  setState(
-                    tab === state.tab && tab === 'runs'
-                      ? { run: undefined, compare: undefined }
-                      : { tab }
-                  )
-                }
-                data-test-subj={`agtEvlTab-${tab}`}
-              >
-                {TAB_LABELS[tab]}
-                {counts[tab] !== undefined && !data.loading && (
-                  <>
-                    {' '}
-                    <EuiNotificationBadge color="subdued">{counts[tab]}</EuiNotificationBadge>
-                  </>
                 )}
-              </EuiTab>
-            ))}
-          </EuiTabs>
-          <div className="agtEvlPage__tabBody">
-            {loading && <EuiProgress size="xs" color="accent" position="absolute" />}
+              </EuiFlexItem>
+            </EuiFlexGroup>
             <EuiSpacer size="m" />
-            {renderTab()}
-          </div>
-        </EuiPageBody>
-      </EuiPage>
-      {drilldownName && !flyoutResult && (
-        <EvaluatorDrilldownFlyout
-          name={drilldownName}
-          results={drilldown.results}
-          loading={drilldown.loading}
-          error={drilldown.error}
-          scope={formatScope(time.bounds)}
-          bounds={time.bounds}
-          onClose={() => setState({ evaluation: undefined })}
-          onOpenResult={openResult}
-          onOpenTrace={openTrace}
-          onViewAllResults={() =>
-            setState({ names: [drilldownName], tab: 'results', evaluation: undefined })
-          }
-        />
-      )}
-      {flyoutResult && (
-        <ResultFlyout
-          result={flyoutResult}
-          onClose={() => {
-            setFlyoutResult(undefined);
-            setState({ result: undefined });
-          }}
-          onOpenResult={openResult}
-        />
-      )}
+            {!runPageOpen && (
+              <>
+                <EvalFiltersBar state={state} facets={data.facets} onChange={setState} />
+                <EuiSpacer size="m" />
+              </>
+            )}
+            <EuiTabs size="s">
+              {(Object.keys(TAB_LABELS) as EvalTab[]).map((tab) => (
+                <EuiTab
+                  key={tab}
+                  isSelected={state.tab === tab}
+                  onClick={() =>
+                    setState(
+                      tab === state.tab && tab === 'runs'
+                        ? { run: undefined, compare: undefined }
+                        : { tab }
+                    )
+                  }
+                  data-test-subj={`agtEvlTab-${tab}`}
+                >
+                  {TAB_LABELS[tab]}
+                  {counts[tab] !== undefined && !data.loading && (
+                    <>
+                      {' '}
+                      <EuiNotificationBadge color="subdued">{counts[tab]}</EuiNotificationBadge>
+                    </>
+                  )}
+                </EuiTab>
+              ))}
+            </EuiTabs>
+            <div className="agtEvlPage__tabBody">
+              {loading && <EuiProgress size="xs" color="accent" position="absolute" />}
+              <EuiSpacer size="m" />
+              {renderTab()}
+            </div>
+          </EuiPageBody>
+        </EuiPage>
+        {drilldownName && !flyoutResult && (
+          <EvaluatorDrilldownFlyout
+            name={drilldownName}
+            results={drilldown.results}
+            loading={drilldown.loading}
+            error={drilldown.error}
+            scope={formatScope(time.bounds)}
+            bounds={time.bounds}
+            onClose={() => setState({ evaluation: undefined })}
+            onOpenResult={openResult}
+            onOpenTrace={openTrace}
+            onViewAllResults={() =>
+              setState({ names: [drilldownName], tab: 'results', evaluation: undefined })
+            }
+          />
+        )}
+        {flyoutResult && (
+          <ResultFlyout
+            result={flyoutResult}
+            onClose={() => {
+              setFlyoutResult(undefined);
+              setState({ result: undefined });
+            }}
+            onOpenResult={openResult}
+          />
+        )}
+      </ShowTracesContext.Provider>
     </EuiErrorBoundary>
   );
 };

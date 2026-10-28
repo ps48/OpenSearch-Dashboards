@@ -4,9 +4,18 @@
  */
 
 import React, { useMemo } from 'react';
-import { EuiBasicTableColumn, EuiInMemoryTable, EuiText, EuiToolTip } from '@elastic/eui';
+import {
+  EuiBasicTableColumn,
+  EuiFlexGroup,
+  EuiFlexItem,
+  EuiInMemoryTable,
+  EuiSpacer,
+  EuiText,
+  EuiToolTip,
+} from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { EvalResult, normalizedScore } from './eval_data';
+import { EvalResult, OUTCOME_RANK, normalizedScore } from './eval_data';
+import { ShowTracesMenu } from './eval_trace_filter';
 import { parseEvalTime } from './eval_aggregations';
 import {
   LevelBadge,
@@ -25,8 +34,6 @@ interface ResultRow extends EvalResult {
   agentOrService: string;
 }
 
-const OUTCOME_RANK = { fail: 0, neutral: 1, pass: 2 };
-
 export const toResultRows = (results: EvalResult[]): ResultRow[] =>
   results.map((r) => ({
     ...r,
@@ -40,8 +47,11 @@ const truncate = (text: string, max: number) =>
 
 export const ResultsTab: React.FC<{
   results: EvalResult[];
+  /** Results under the filters (exact); the table lists at most `limit` of them. */
+  total?: number;
+  limit?: number;
   onOpenResult: (r: EvalResult) => void;
-}> = ({ results, onOpenResult }) => {
+}> = ({ results, total, limit, onOpenResult }) => {
   const rows = useMemo(() => toResultRows(results), [results]);
 
   const columns: Array<EuiBasicTableColumn<ResultRow>> = [
@@ -60,8 +70,14 @@ export const ResultsTab: React.FC<{
       field: 'name',
       name: i18n.translate('agentTraces.evalsPage.colName', { defaultMessage: 'Evaluation' }),
       sortable: true,
-      truncateText: true,
-      render: (name: string) => <strong>{name}</strong>,
+      width: '18%',
+      render: (name: string) => (
+        <EuiToolTip content={name} display="block" anchorClassName="agtEvlNameCell">
+          <span className="agtEvlName eui-textTruncate" data-test-subj="agtEvlResultName">
+            {name}
+          </span>
+        </EuiToolTip>
+      ),
     },
     {
       field: 'level',
@@ -74,7 +90,17 @@ export const ResultsTab: React.FC<{
       field: 'rank',
       name: i18n.translate('agentTraces.evalsPage.colResult', { defaultMessage: 'Result' }),
       sortable: true,
-      render: (_rank: number, r: ResultRow) => <OutcomeBadge result={r} />,
+      width: '210px',
+      render: (_rank: number, r: ResultRow) => (
+        <EuiFlexGroup gutterSize="xs" alignItems="center" responsive={false} wrap={false}>
+          <EuiFlexItem grow={false}>
+            <OutcomeBadge result={r} />
+          </EuiFlexItem>
+          <EuiFlexItem grow={false}>
+            <ShowTracesMenu name={r.name} label={r.label} value={r.value} />
+          </EuiFlexItem>
+        </EuiFlexGroup>
+      ),
     },
     {
       field: 'explanation',
@@ -123,23 +149,44 @@ export const ResultsTab: React.FC<{
     },
   ];
 
+  const shownAll = total === undefined || total <= rows.length;
   return (
-    <EuiInMemoryTable<ResultRow>
-      items={rows}
-      itemId="id"
-      columns={columns}
-      tableLayout="auto"
-      pagination={{ initialPageSize: 25, pageSizeOptions: [25, 50, 100] }}
-      sorting={{ sort: { field: 'timeMs', direction: 'desc' } }}
-      rowProps={(r: ResultRow) => ({
-        onClick: () => onOpenResult(r),
-        className: 'agtEvlTable__row',
-        'data-test-subj': `agtEvlResultRow-${r.outcome}`,
-      })}
-      message={i18n.translate('agentTraces.evalsPage.noRows', {
-        defaultMessage: 'No results match the filters in this time range.',
-      })}
-      data-test-subj="agtEvlResultsTable"
-    />
+    <>
+      <EuiText size="xs" color="subdued" data-test-subj="agtEvlResultsTotal">
+        {shownAll
+          ? i18n.translate('agentTraces.evalsPage.resultsTotal', {
+              defaultMessage: '{total} {total, plural, one {result} other {results}}',
+              values: { total: rows.length },
+            })
+          : i18n.translate('agentTraces.evalsPage.resultsTotalPaged', {
+              defaultMessage:
+                '{total} results. The table lists the latest {shown}; narrow the filters to list the others.',
+              values: {
+                total: (total ?? 0).toLocaleString(),
+                shown: (limit ?? rows.length).toLocaleString(),
+              },
+            })}
+      </EuiText>
+      <EuiSpacer size="xs" />
+      <EuiInMemoryTable<ResultRow>
+        items={rows}
+        itemId="id"
+        columns={columns}
+        tableLayout="fixed"
+        compressed
+        className="agtEvlDenseTable"
+        pagination={{ initialPageSize: 25, pageSizeOptions: [25, 50, 100] }}
+        sorting={{ sort: { field: 'timeMs', direction: 'desc' } }}
+        rowProps={(r: ResultRow) => ({
+          onClick: () => onOpenResult(r),
+          className: 'agtEvlTable__row',
+          'data-test-subj': `agtEvlResultRow-${r.outcome}`,
+        })}
+        message={i18n.translate('agentTraces.evalsPage.noRows', {
+          defaultMessage: 'No results match the filters in this time range.',
+        })}
+        data-test-subj="agtEvlResultsTable"
+      />
+    </>
   );
 };

@@ -39,8 +39,6 @@ export interface EvalAppState {
 
 /** Offline runs happen a few times a day: the runs tab looks back a week by default. */
 export const DEFAULT_RUNS_TIME = { from: 'now-7d', to: 'now' };
-/** Overview and Results default, when the URL has no global time range. */
-export const DEFAULT_EVALS_TIME = { from: 'now-24h', to: 'now' };
 
 export const DEFAULT_APP_STATE: EvalAppState = {
   tab: 'overview',
