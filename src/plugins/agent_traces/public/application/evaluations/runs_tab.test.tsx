@@ -122,9 +122,8 @@ describe('RunsTab with test case and run events', () => {
     renderRuns({ events: twoRunEventsFixture(), compare: ['run-1', 'run-2'] });
     const d = caseRow('Case d');
     expect(d).toHaveTextContent('Regressed');
-    expect(within(d).getByTestId('agtEvlCaseErrorBadge')).toHaveTextContent(
-      'Errored: TimeoutError'
-    );
+    // Compact in the table: the error type is in the badge's tooltip.
+    expect(within(d).getByTestId('agtEvlCaseErrorBadge')).toHaveTextContent(/^Errored$/);
     expect(screen.getByTestId('agtEvlCaseFilter-missing')).toBeInTheDocument();
   });
 

@@ -42,10 +42,12 @@ export const STATUS_TEXT: Record<CaseStatus, string> = {
 };
 
 /** Case status; an errored case shows a badge with the exception type. */
-export const CaseStatusView: React.FC<{ status?: CaseStatus; errorType?: string }> = ({
-  status,
-  errorType,
-}) => {
+/** `compact` keeps the error type in the tooltip only, for narrow table cells. */
+export const CaseStatusView: React.FC<{
+  status?: CaseStatus;
+  errorType?: string;
+  compact?: boolean;
+}> = ({ status, errorType, compact }) => {
   if (!status) {
     return (
       <EuiText size="xs" color="subdued">
@@ -57,7 +59,7 @@ export const CaseStatusView: React.FC<{ status?: CaseStatus; errorType?: string 
     return (
       <EuiToolTip content={errorType}>
         <EuiBadge color="warning" iconType="alert" data-test-subj="agtEvlCaseErrorBadge">
-          {errorType ? `${STATUS_TEXT.error}: ${errorType}` : STATUS_TEXT.error}
+          {errorType && !compact ? `${STATUS_TEXT.error}: ${errorType}` : STATUS_TEXT.error}
         </EuiBadge>
       </EuiToolTip>
     );

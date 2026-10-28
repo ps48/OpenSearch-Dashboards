@@ -219,8 +219,12 @@ export const CompareRuns: React.FC<{
       }),
       render: (_s: CaseStatus | undefined, c: CaseComparison) => (
         <div data-test-subj="agtEvlCompareCaseStatus">
-          <CaseStatusView status={c.baselineStatus} errorType={c.baselineCase?.errorType} />
-          <CaseStatusView status={c.candidateStatus} errorType={c.candidateCase?.errorType} />
+          <CaseStatusView status={c.baselineStatus} errorType={c.baselineCase?.errorType} compact />
+          <CaseStatusView
+            status={c.candidateStatus}
+            errorType={c.candidateCase?.errorType}
+            compact
+          />
         </div>
       ),
     },
@@ -251,8 +255,9 @@ export const CompareRuns: React.FC<{
     })),
     {
       name: i18n.translate('agentTraces.evalsPage.colTraces', { defaultMessage: 'Traces' }),
+      width: '230px',
       render: (c: CaseComparison) => (
-        <EuiFlexGroup gutterSize="s" responsive={false}>
+        <EuiFlexGroup gutterSize="s" responsive={false} wrap={false} className="agtEvlNoWrap">
           {c.baselineTraceId && (
             <EuiFlexItem grow={false}>
               <EuiLink

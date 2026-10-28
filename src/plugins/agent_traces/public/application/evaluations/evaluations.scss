@@ -111,6 +111,16 @@
   }
 }
 
+.agtEvlNoWrap {
+  white-space: nowrap;
+}
+
+.agtEvlClampGroup {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .agtEvlClamp {
   overflow: hidden;
   white-space: nowrap;

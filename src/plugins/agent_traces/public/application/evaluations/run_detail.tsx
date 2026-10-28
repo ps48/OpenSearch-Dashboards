@@ -485,7 +485,7 @@ export const RunDetailPage: React.FC<{
       width: '28%',
       render: (c: RunCaseRow) =>
         c.event?.input || c.event?.expected || c.event?.output ? (
-          <div>
+          <div className="agtEvlClampGroup">
             <Clamp
               label={i18n.translate('agentTraces.evalsPage.inShort', { defaultMessage: 'In' })}
               value={c.event?.input}
@@ -514,7 +514,7 @@ export const RunDetailPage: React.FC<{
     },
     {
       name: i18n.translate('agentTraces.evalsPage.colTrace', { defaultMessage: 'Agent trace' }),
-      width: '120px',
+      width: '170px',
       render: (c: RunCaseRow) => {
         const before = previousCases.get(c.caseId);
         return (
