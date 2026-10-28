@@ -487,6 +487,8 @@ export const EvaluatorDrilldownFlyout: React.FC<{
             </EuiTitle>
             <EuiSpacer size="s" />
             <EuiInMemoryTable<JoinedFailure>
+              compressed
+              className="agtEvlDenseTable"
               items={joined}
               columns={columns}
               pagination={{ initialPageSize: 10, pageSizeOptions: [10, 25, 50] }}

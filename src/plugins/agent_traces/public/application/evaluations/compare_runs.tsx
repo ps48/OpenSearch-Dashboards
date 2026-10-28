@@ -458,6 +458,8 @@ export const CompareRuns: React.FC<{
       </EuiFilterGroup>
       <EuiSpacer size="s" />
       <EuiInMemoryTable<CaseComparison>
+        compressed
+        className="agtEvlDenseTable"
         items={cases}
         itemId="caseId"
         columns={columns}

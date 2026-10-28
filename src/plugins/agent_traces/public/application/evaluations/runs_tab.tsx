@@ -324,6 +324,8 @@ export const RunsTab: React.FC<{
       />
       <EuiSpacer size="s" />
       <EuiInMemoryTable<RunSummary>
+        compressed
+        className="agtEvlDenseTable"
         items={runs}
         itemId="runId"
         columns={columns}

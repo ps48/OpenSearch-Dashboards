@@ -18,6 +18,7 @@ import {
   niceTimeFormatter,
 } from '@elastic/charts';
 import { i18n } from '@osd/i18n';
+import { euiThemeVars } from '@osd/ui-shared-deps/theme';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import { EvalOutcome, EvalResult, normalizedScore } from './eval_data';
 import {
@@ -156,6 +157,9 @@ export const ScoreTrendChart: React.FC<{
 };
 
 const percentTick = (v: number) => `${Math.round(v * 100)}%`;
+
+/** The run the page is about, on its suite's trend: the theme's primary color. */
+const CURRENT_RUN_COLOR = euiThemeVars.euiColorPrimary;
 
 /** Normalized score bins (0 to 100%, 10 bins) stacked by outcome. */
 export const scoreBins = (results: EvalResult[], bins = 10) => {
@@ -297,6 +301,15 @@ export const SuiteTrendChart: React.FC<{
     [xs.join(',')]
   );
   const current = points.find((p) => p.runId === currentRunId);
+  const thisRunLabel = i18n.translate('agentTraces.evalsPage.trendThisRun', {
+    defaultMessage: 'This run',
+  });
+  const currentPoints = current
+    ? [
+        ...(current.passRate !== undefined ? [{ x: current.x, y: current.passRate }] : []),
+        ...Object.values(current.evaluators).map((y) => ({ x: current.x, y })),
+      ]
+    : [];
   const runAt = useMemo(() => new Map(points.map((p) => [p.x, p.runId])), [points]);
   const passLabel = i18n.translate('agentTraces.evalsPage.trendPassRate', {
     defaultMessage: 'Test cases passed',
@@ -324,12 +337,30 @@ export const SuiteTrendChart: React.FC<{
           tickFormat={percentTick}
         />
         {current && (
+          // A dashed vertical line through the run, plus ringed points on its values.
           <LineAnnotation
             id="currentRun"
             domainType={AnnotationDomainType.XDomain}
-            dataValues={[{ dataValue: current.x, details: currentRunId }]}
-            marker={<span className="agtEvlTrendMarker" />}
-            hideTooltips
+            dataValues={[{ dataValue: current.x, details: thisRunLabel }]}
+            style={{
+              line: { stroke: CURRENT_RUN_COLOR, strokeWidth: 1, opacity: 0.8, dash: [4, 3] },
+            }}
+          />
+        )}
+        {current && currentPoints.length > 0 && (
+          <LineSeries
+            id="currentRunPoints"
+            name={thisRunLabel}
+            xScaleType={ScaleType.Time}
+            yScaleType={ScaleType.Linear}
+            xAccessor="x"
+            yAccessors={['y']}
+            color={CURRENT_RUN_COLOR}
+            data={currentPoints}
+            lineSeriesStyle={{
+              line: { visible: false },
+              point: { visible: true, radius: 7, strokeWidth: 2, fill: 'transparent', opacity: 1 },
+            }}
           />
         )}
         <LineSeries

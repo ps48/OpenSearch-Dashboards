@@ -834,6 +834,8 @@ export const RunDetailPage: React.FC<{
           })}
         />
         <EuiInMemoryTable<RunCaseRow>
+          compressed
+          className="agtEvlDenseTable"
           items={cases}
           itemId="caseId"
           columns={caseColumns}
