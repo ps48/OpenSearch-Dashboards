@@ -21,6 +21,8 @@ import './trace_metrics_bar.scss';
 
 interface TraceMetricsBarProps {
   metrics: TraceMetrics | null;
+  /** Why the totals could not be computed (the stats show "—" instead of loading). */
+  error?: string | null;
   onErrorClick?: (target: 'traces' | 'spans') => void;
 }
 
@@ -34,9 +36,13 @@ const formatNumber = (value: number): string => {
   return value.toLocaleString();
 };
 
-export const TraceMetricsBar: React.FC<TraceMetricsBarProps> = ({ metrics, onErrorClick }) => {
+export const TraceMetricsBar: React.FC<TraceMetricsBarProps> = ({
+  metrics,
+  error,
+  onErrorClick,
+}) => {
   const [showMetrics, setShowMetrics] = useState(true);
-  const showLoading = !metrics;
+  const showLoading = !metrics && !error;
 
   const toggleLabel = i18n.translate('agentTraces.metricsBar.toggleMetrics', {
     defaultMessage: 'Toggle metrics',
@@ -61,6 +67,25 @@ export const TraceMetricsBar: React.FC<TraceMetricsBarProps> = ({ metrics, onErr
             />
           </EuiToolTip>
         </EuiFlexItem>
+        {!metrics && error && (
+          <EuiFlexItem grow={false}>
+            <EuiToolTip
+              content={i18n.translate('agentTraces.metricsBar.error', {
+                defaultMessage: 'Could not compute the totals: {error}',
+                values: { error },
+              })}
+            >
+              <EuiButtonIcon
+                iconType="alert"
+                color="warning"
+                aria-label={i18n.translate('agentTraces.metricsBar.errorAria', {
+                  defaultMessage: 'Totals unavailable',
+                })}
+                data-test-subj="agentTracesMetricsError"
+              />
+            </EuiToolTip>
+          </EuiFlexItem>
+        )}
         {showMetrics ? (
           <EuiFlexItem grow className="agentTracesMetrics__content">
             <EuiFlexGroup gutterSize="xl" alignItems="flexStart" responsive={false} wrap>

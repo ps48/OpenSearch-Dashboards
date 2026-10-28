@@ -1,0 +1,5 @@
+// The evaluation filter pill above the Traces and Spans tabs: its own row, content height.
+.agtEvlFilterBar {
+  flex: 0 0 auto;
+  padding: $euiSizeXS $euiSizeS 0;
+}

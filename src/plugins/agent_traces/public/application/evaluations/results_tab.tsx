@@ -173,8 +173,10 @@ export const ResultsTab: React.FC<{
       name: i18n.translate('agentTraces.evalsPage.colEvaluator', { defaultMessage: 'Evaluator' }),
       truncateText: true,
       render: (evaluator: string, r: ResultRow) => (
-        <div>
-          <EuiText size="xs">{evaluator}</EuiText>
+        <div className="agtEvlNameCell" title={evaluator}>
+          <EuiText size="xs" className="eui-textTruncate">
+            {evaluator}
+          </EuiText>
           <EuiText size="xs" color="subdued">
             {sourceLabel(r.source)}
           </EuiText>

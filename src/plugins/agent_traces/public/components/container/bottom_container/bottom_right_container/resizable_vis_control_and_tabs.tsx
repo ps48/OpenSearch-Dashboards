@@ -53,7 +53,11 @@ export const ResizableVisControlAndTabs = () => {
     <TraceMetricsContext.Provider value={metricsResult}>
       <TracesEvalFilterProvider>
         <TraceFlyoutProvider>
-          <TraceMetricsBar metrics={metricsResult.metrics} onErrorClick={handleErrorClick} />
+          <TraceMetricsBar
+            metrics={metricsResult.metrics}
+            error={metricsResult.error}
+            onErrorClick={handleErrorClick}
+          />
           <AgentTracesTabs />
         </TraceFlyoutProvider>
       </TracesEvalFilterProvider>
@@ -65,7 +69,11 @@ export const ResizableVisControlAndTabs = () => {
     return (
       <TraceMetricsContext.Provider value={metricsResult}>
         <TraceFlyoutProvider>
-          <TraceMetricsBar metrics={metricsResult.metrics} onErrorClick={handleErrorClick} />
+          <TraceMetricsBar
+            metrics={metricsResult.metrics}
+            error={metricsResult.error}
+            onErrorClick={handleErrorClick}
+          />
           <EuiResizableContainer className="tabsPanelContainer">
             {(EuiResizablePanel, EuiResizableButton, { togglePanel }) => {
               collapseFn.current = (id, direction: PanelDirection = 'left') =>

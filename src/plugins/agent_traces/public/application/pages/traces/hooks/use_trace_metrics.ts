@@ -142,6 +142,22 @@ const doFetchMetrics = async (
   };
 };
 
+/** The engine's reason when the response carries one (e.g. PPL memory limits), else the message. */
+export const metricsErrorMessage = (err: unknown): string => {
+  const e = err as { body?: { message?: unknown }; message?: unknown };
+  const raw = String(e?.body?.message ?? e?.message ?? 'Failed to fetch metrics');
+  const start = raw.indexOf('{');
+  if (start >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(start)) as { error?: { reason?: string } };
+      if (parsed.error?.reason) return parsed.error.reason;
+    } catch {
+      // not JSON
+    }
+  }
+  return raw;
+};
+
 export const useTraceMetrics = (tracesLoaded: boolean): UseTraceMetricsResult => {
   const { services, datasetParam, baseQueryString, sourceOnlyQueryString } = usePPLQueryDeps();
   const fetchVersion = useSelector((state: RootState) => state.queryEditor.fetchVersion);
@@ -194,7 +210,7 @@ export const useTraceMetrics = (tracesLoaded: boolean): UseTraceMetricsResult =>
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch trace metrics:', err);
-      setError((err as Error).message || 'Failed to fetch metrics');
+      setError(metricsErrorMessage(err));
     } finally {
       setLoading(false);
     }

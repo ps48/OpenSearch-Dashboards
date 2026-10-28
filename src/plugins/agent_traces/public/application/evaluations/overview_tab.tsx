@@ -366,120 +366,129 @@ export const EvaluatorCard: React.FC<{
     </EuiToolTip>
   );
   return (
-    <EuiPanel
-      paddingSize="m"
-      hasBorder
-      className="agtEvlCard agtEvlStatCard"
+    // A div, not a button: the card holds its own menu button.
+    <div
+      role="button"
+      tabIndex={0}
+      className="agtEvlCardClick"
       onClick={() => onSelect(summary.name)}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onSelect(summary.name);
+        }
+      }}
       data-test-subj="agtEvlEvaluatorCard"
       aria-label={i18n.translate('agentTraces.evalsPage.cardAria', {
         defaultMessage: 'Where {name} fails',
         values: { name: summary.name },
       })}
     >
-      <EuiFlexGroup gutterSize="xs" alignItems="center" responsive={false} wrap>
-        <EuiFlexItem grow={true} style={{ minWidth: 0 }}>
-          <EuiTitle size="xs">
-            <h3 className="eui-textTruncate" title={summary.name}>
-              {summary.name}
-            </h3>
-          </EuiTitle>
-        </EuiFlexItem>
-        {summary.levels.map((l) => (
-          <EuiFlexItem grow={false} key={l}>
-            <LevelBadge level={l} />
+      <EuiPanel paddingSize="m" hasBorder className="agtEvlCard agtEvlStatCard">
+        <EuiFlexGroup gutterSize="xs" alignItems="center" responsive={false} wrap>
+          <EuiFlexItem grow={true} style={{ minWidth: 0 }}>
+            <EuiTitle size="xs">
+              <h3 className="eui-textTruncate" title={summary.name}>
+                {summary.name}
+              </h3>
+            </EuiTitle>
           </EuiFlexItem>
-        ))}
-        {summary.sources.map((s) => (
-          <EuiFlexItem grow={false} key={s}>
-            <SourceBadge source={s} />
+          {summary.levels.map((l) => (
+            <EuiFlexItem grow={false} key={l}>
+              <LevelBadge level={l} />
+            </EuiFlexItem>
+          ))}
+          {summary.sources.map((s) => (
+            <EuiFlexItem grow={false} key={s}>
+              <SourceBadge source={s} />
+            </EuiFlexItem>
+          ))}
+          <EuiFlexItem grow={false}>
+            <ShowTracesMenu
+              name={summary.name}
+              labels={summary.labels.slice(0, 5).map((l) => l.label)}
+            />
           </EuiFlexItem>
-        ))}
-        <EuiFlexItem grow={false}>
-          <ShowTracesMenu
-            name={summary.name}
-            labels={summary.labels.slice(0, 5).map((l) => l.label)}
-          />
-        </EuiFlexItem>
-      </EuiFlexGroup>
-      <EuiSpacer size="s" />
-      <EuiFlexGroup gutterSize="l" responsive={false} alignItems="flexEnd">
+        </EuiFlexGroup>
+        <EuiSpacer size="s" />
+        <EuiFlexGroup gutterSize="l" responsive={false} alignItems="flexEnd">
+          {hasRule ? (
+            <CardStat
+              title={i18n.translate('agentTraces.evalsPage.cardPassRate', {
+                defaultMessage: 'Pass rate',
+              })}
+              testSubj="agtEvlCardPassRate"
+            >
+              {formatPercent(passRate)}
+            </CardStat>
+          ) : summary.mean !== undefined ? (
+            <CardStat title={meanTitle} testSubj="agtEvlCardMean">
+              {formatValue(summary.mean)}
+            </CardStat>
+          ) : (
+            <CardStat
+              title={i18n.translate('agentTraces.evalsPage.cardTopLabel', {
+                defaultMessage: 'Top label',
+              })}
+              testSubj="agtEvlCardTopLabel"
+            >
+              {summary.labels[0]?.label ?? '-'}
+            </CardStat>
+          )}
+          {hasRule && summary.mean !== undefined && (
+            <CardStat title={meanTitle}>{formatValue(summary.mean)}</CardStat>
+          )}
+          <CardStat
+            title={i18n.translate('agentTraces.evalsPage.cardCount', { defaultMessage: 'Results' })}
+            testSubj="agtEvlCardCount"
+          >
+            {formatCount(summary.count)}
+          </CardStat>
+          {hasRule && (
+            <CardStat
+              title={i18n.translate('agentTraces.evalsPage.failing', { defaultMessage: 'Failing' })}
+              testSubj="agtEvlCardFailing"
+              color={summary.failCount > 0 ? OUTCOME_CHART_COLOR.fail : undefined}
+            >
+              {formatCount(summary.failCount)}
+            </CardStat>
+          )}
+          {summary.errorCount > 0 && (
+            <CardStat
+              title={i18n.translate('agentTraces.evalsPage.cardErrors', {
+                defaultMessage: 'Errors',
+              })}
+              testSubj="agtEvlCardErrors"
+            >
+              {formatCount(summary.errorCount)}
+            </CardStat>
+          )}
+        </EuiFlexGroup>
         {hasRule ? (
-          <CardStat
-            title={i18n.translate('agentTraces.evalsPage.cardPassRate', {
-              defaultMessage: 'Pass rate',
-            })}
-            testSubj="agtEvlCardPassRate"
-          >
-            {formatPercent(passRate)}
-          </CardStat>
-        ) : summary.mean !== undefined ? (
-          <CardStat title={meanTitle} testSubj="agtEvlCardMean">
-            {formatValue(summary.mean)}
-          </CardStat>
+          <DeltaText current={passRate} previous={prevPassRate} kind="rate" good="up" />
         ) : (
-          <CardStat
-            title={i18n.translate('agentTraces.evalsPage.cardTopLabel', {
-              defaultMessage: 'Top label',
+          <NoPassRuleHint />
+        )}
+        {hasRule && summary.neutralCount > 0 && (
+          <EuiText size="xs" color="subdued">
+            {i18n.translate('agentTraces.evalsPage.cardScored', {
+              defaultMessage: '{count} scored without a rule',
+              values: { count: formatCount(summary.neutralCount) },
             })}
-            testSubj="agtEvlCardTopLabel"
-          >
-            {summary.labels[0]?.label ?? '-'}
-          </CardStat>
+          </EuiText>
         )}
-        {hasRule && summary.mean !== undefined && (
-          <CardStat title={meanTitle}>{formatValue(summary.mean)}</CardStat>
-        )}
-        <CardStat
-          title={i18n.translate('agentTraces.evalsPage.cardCount', { defaultMessage: 'Results' })}
-          testSubj="agtEvlCardCount"
-        >
-          {formatCount(summary.count)}
-        </CardStat>
-        {hasRule && (
-          <CardStat
-            title={i18n.translate('agentTraces.evalsPage.failing', { defaultMessage: 'Failing' })}
-            testSubj="agtEvlCardFailing"
-            color={summary.failCount > 0 ? OUTCOME_CHART_COLOR.fail : undefined}
-          >
-            {formatCount(summary.failCount)}
-          </CardStat>
-        )}
-        {summary.errorCount > 0 && (
-          <CardStat
-            title={i18n.translate('agentTraces.evalsPage.cardErrors', {
-              defaultMessage: 'Errors',
-            })}
-            testSubj="agtEvlCardErrors"
-          >
-            {formatCount(summary.errorCount)}
-          </CardStat>
-        )}
-      </EuiFlexGroup>
-      {hasRule ? (
-        <DeltaText current={passRate} previous={prevPassRate} kind="rate" good="up" />
-      ) : (
-        <NoPassRuleHint />
-      )}
-      {hasRule && summary.neutralCount > 0 && (
-        <EuiText size="xs" color="subdued">
-          {i18n.translate('agentTraces.evalsPage.cardScored', {
-            defaultMessage: '{count} scored without a rule',
-            values: { count: formatCount(summary.neutralCount) },
-          })}
-        </EuiText>
-      )}
-      <LabelDistribution labels={summary.labels} />
-      <div className="agtEvlCard__spacer" />
-      <OutcomeHistogram
-        buckets={buckets}
-        bounds={bounds}
-        interval={interval}
-        height={56}
-        compact
-        data-test-subj="agtEvlCardHistogram"
-      />
-    </EuiPanel>
+        <LabelDistribution labels={summary.labels} />
+        <div className="agtEvlCard__spacer" />
+        <OutcomeHistogram
+          buckets={buckets}
+          bounds={bounds}
+          interval={interval}
+          height={56}
+          compact
+          data-test-subj="agtEvlCardHistogram"
+        />
+      </EuiPanel>
+    </div>
   );
 };
 

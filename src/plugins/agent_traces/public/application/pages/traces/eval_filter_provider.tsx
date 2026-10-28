@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import './eval_filter_provider.scss';
+
 import React, { useCallback } from 'react';
 import { useDispatch } from 'react-redux';
-import { EuiFlexGroup, EuiFlexItem } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { useOpenSearchDashboards } from '../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../types';
@@ -64,11 +65,9 @@ export const TracesEvalFilterProvider: React.FC = ({ children }) => {
   return (
     <ShowTracesContext.Provider value={showTraces}>
       {activeFilter && (
-        <EuiFlexGroup gutterSize="s" responsive={false} className="agtEvlFilterBar">
-          <EuiFlexItem grow={false}>
-            <EvalTraceFilterPill onRemove={rerun} />
-          </EuiFlexItem>
-        </EuiFlexGroup>
+        <div className="agtEvlFilterBar" data-test-subj="agtEvlTraceFilterBar">
+          <EvalTraceFilterPill onRemove={rerun} />
+        </div>
       )}
       {children}
     </ShowTracesContext.Provider>
