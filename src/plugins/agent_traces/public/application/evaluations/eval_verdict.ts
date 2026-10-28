@@ -408,17 +408,31 @@ export const condToPpl = (cond: Cond, missing: ReadonlySet<string> = new Set()):
 /** Name of the verdict column the PPL `eval` adds. */
 export const VERDICT_COLUMN = 'evl_verdict';
 
-/** `eval evl_verdict = case(...)`: the verdict of each result, computed by the engine. */
-export const verdictEvalPpl = (clauses: Clause[], missing: ReadonlySet<string> = new Set()) => {
+/**
+ * The verdict as one PPL `case(...)` expression, each verdict written as `values[verdict]`
+ * (a quoted word by default, a number for sort ranks).
+ */
+export const verdictCasePpl = (
+  clauses: Clause[],
+  missing: ReadonlySet<string> = new Set(),
+  values: Record<EvalOutcome, string> = {
+    pass: "'pass'",
+    fail: "'fail'",
+    error: "'error'",
+    neutral: "'neutral'",
+  }
+): string => {
   const branches = clauses
     .map((c) => ({ cond: condToPpl(c.when, missing), outcome: c.outcome }))
     // Branches that can never match only lengthen the query.
     .filter((b) => b.cond !== 'false')
-    .map((b) => `${b.cond === 'true' ? 'true' : b.cond}, '${b.outcome}'`);
-  return branches.length
-    ? `eval ${VERDICT_COLUMN} = case(${branches.join(', ')} else 'neutral')`
-    : `eval ${VERDICT_COLUMN} = 'neutral'`;
+    .map((b) => `${b.cond}, ${values[b.outcome]}`);
+  return branches.length ? `case(${branches.join(', ')} else ${values.neutral})` : values.neutral;
 };
+
+/** `eval evl_verdict = case(...)`: the verdict of each result, computed by the engine. */
+export const verdictEvalPpl = (clauses: Clause[], missing: ReadonlySet<string> = new Set()) =>
+  `eval ${VERDICT_COLUMN} = ${verdictCasePpl(clauses, missing)}`;
 
 // ---------------------------------------------------------------------------------------
 // Active rules: read from uiSettings once the plugin starts

@@ -4,6 +4,9 @@
  */
 
 import {
+  RESULTS_PAGE_SIZES,
+  buildResultsPageQuery,
+  fetchResultsPage,
   buildDistinctAggQuery,
   buildMatchingTraceIdsQuery,
   buildSummaryAggQuery,
@@ -274,5 +277,73 @@ describe('index groups', () => {
   it('reads the missing field from a PPL error', () => {
     expect(missingFieldOf(new Error('Field [x.y] not found.'))).toBe('x.y');
     expect(missingFieldOf(new Error('boom'))).toBeUndefined();
+  });
+});
+
+describe('Results paging', () => {
+  it('pages in PPL with head from, sorted by the column', () => {
+    expect(buildResultsPageQuery({}, { field: 'time', direction: 'desc' }, 50, 25)).toMatch(
+      /\| sort - `@timestamp` \| head 25 from 50$/
+    );
+    expect(buildResultsPageQuery({}, { field: 'name', direction: 'asc' }, 0, 25)).toMatch(
+      /\| sort `attributes\.gen_ai\.evaluation\.name`, - `@timestamp` \| head 25$/
+    );
+    const byResult = buildResultsPageQuery({}, { field: 'result', direction: 'asc' }, 0, 25);
+    expect(byResult).toContain('| eval evl_rank = case(isnotnull(`attributes.error.type`), 1,');
+    expect(byResult).not.toContain('evl_verdict');
+    expect(byResult).toMatch(
+      /sort evl_rank, `attributes\.gen_ai\.evaluation\.score\.value`, - `@timestamp`/
+    );
+    expect(RESULTS_PAGE_SIZES.every((size) => 10000 % size === 0)).toBe(true);
+  });
+
+  it('merges a page across index groups when the verdict script is needed', async () => {
+    clearMissingFieldsCache();
+    const rec = (t: string, name: string) => ({
+      '@timestamp': t,
+      eventName: 'gen_ai.evaluation.result',
+      attributes: { gen_ai: { evaluation: { name, score: { value: 1 } } } },
+    });
+    const response = (rows: Array<Record<string, unknown>>) => ({
+      schema: Object.keys(rows[0]).map((name) => ({ name })),
+      datarows: rows.map((r) => Object.values(r)),
+    });
+    const executeQuery = jest
+      .fn()
+      .mockResolvedValueOnce(
+        response([rec('2026-10-28 10:00:00', 'a'), rec('2026-10-28 08:00:00', 'b')])
+      )
+      .mockResolvedValueOnce(
+        response([rec('2026-10-27 09:00:00', 'c'), rec('2026-10-28 09:00:00', 'd')])
+      );
+    const ppl = { executeQuery } as unknown as PPLService;
+    const page = await fetchResultsPage(
+      ppl,
+      'evals-*',
+      { failingOnly: true },
+      { field: 'time', direction: 'desc' },
+      1,
+      2,
+      [
+        { source: 'x', missing: new Set() },
+        { source: 'y', missing: new Set([F.assessment]) },
+      ]
+    );
+    // each group returned its first 4; merged newest first, page 2 of size 2
+    expect(executeQuery.mock.calls[0][1]).toMatch(/head 4$/);
+    expect(page.rows.map((r) => r.name)).toEqual(['b', 'c']);
+    const far = await fetchResultsPage(
+      ppl,
+      'evals-*',
+      { failingOnly: true },
+      { field: 'time', direction: 'desc' },
+      400,
+      25,
+      [
+        { source: 'x', missing: new Set() },
+        { source: 'y', missing: new Set() },
+      ]
+    );
+    expect(far).toEqual({ rows: [], beyondLimit: true });
   });
 });

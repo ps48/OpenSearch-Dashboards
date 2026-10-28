@@ -41,6 +41,7 @@ const mockUseRunResults = jest.fn(() => runData);
 const mockUseRunDetail = jest.fn(() => runDetail);
 const mockUseEvaluationResults = jest.fn(() => ({ loading: false, results }));
 let mockAgentCorePresent = false;
+const mockUseResultsPage = jest.fn(() => ({ loading: false, rows: results, beyondLimit: false }));
 jest.mock('./use_eval_data', () => ({
   ...jest.requireActual('./use_eval_data'),
   useEvalData: (...args: unknown[]) => mockUseEvalData(...(args as [])),
@@ -48,6 +49,7 @@ jest.mock('./use_eval_data', () => ({
   useRunDetail: (...args: unknown[]) => mockUseRunDetail(...(args as [])),
   useEvaluationResults: (...args: unknown[]) => mockUseEvaluationResults(...(args as [])),
   useAgentCorePresent: () => mockAgentCorePresent,
+  useResultsPage: (...args: unknown[]) => mockUseResultsPage(...(args as [])),
 }));
 
 const aggOf = (list: typeof results): EvalAggregates => ({
@@ -146,6 +148,7 @@ beforeEach(() => {
   mockUseRunResults.mockClear();
   mockUseRunDetail.mockClear();
   mockUseEvaluationResults.mockClear();
+  mockUseResultsPage.mockClear();
 });
 
 describe('EvaluationsApp', () => {
@@ -214,11 +217,22 @@ describe('EvaluationsApp', () => {
     expect(screen.queryByTestId('agtEvlTruncated')).not.toBeInTheDocument();
   });
 
-  it('gives the Results tab the exact total', () => {
-    evalData = { ...evalData, total: 12345, truncated: true };
+  it('gives the Results tab the exact total and pages it in the query', () => {
+    evalData = { ...evalData, total: 12345 };
     renderApp('#/?_a=(tab:results)');
     expect(screen.getByTestId('agtEvlResultsTotal')).toHaveTextContent('12,345 results');
     expect(screen.getByTestId('agtEvlTab-results')).toHaveTextContent('12345');
+    expect(screen.queryByTestId('agtEvlTruncated')).not.toBeInTheDocument();
+    const call = mockUseResultsPage.mock.calls[mockUseResultsPage.mock.calls.length - 1];
+    // sort, page index, page size, enabled
+    expect((call as unknown[]).slice(5)).toEqual([
+      { field: 'time', direction: 'desc' },
+      0,
+      25,
+      true,
+    ]);
+    // 12,345 results at 25 a page: 494 pages, the last one reachable
+    expect(screen.getByTestId('pagination-button-493')).toBeInTheDocument();
   });
 
   it('notes the AgentCore lag when the range ends now and AgentCore results exist', () => {

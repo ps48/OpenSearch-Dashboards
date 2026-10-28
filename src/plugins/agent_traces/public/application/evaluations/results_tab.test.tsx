@@ -34,10 +34,10 @@ const results = [
 ];
 
 describe('ResultsTab', () => {
-  it('renders one row per result, newest first, with outcome, level and target', () => {
+  it('renders one row per result in the order given, with outcome, level and target', () => {
     render(
       <I18nProvider>
-        <ResultsTab results={results} onOpenResult={jest.fn()} />
+        <ResultsTab results={[results[1], results[0]]} onOpenResult={jest.fn()} />
       </I18nProvider>
     );
     const table = screen.getByTestId('agtEvlResultsTable');
@@ -73,15 +73,45 @@ describe('ResultsTab', () => {
     expect(onOpenResult).toHaveBeenCalledWith(expect.objectContaining({ name: 'tool_diversity' }));
   });
 
-  it('gives the exact total and says when the table lists only the latest results', () => {
+  it('gives the exact total and asks for the next page and a new sort', () => {
+    const onTableChange = jest.fn();
     render(
       <I18nProvider>
-        <ResultsTab results={results} total={12345} limit={2} onOpenResult={jest.fn()} />
+        <ResultsTab
+          results={results}
+          total={12345}
+          pageIndex={0}
+          pageSize={25}
+          onTableChange={onTableChange}
+          onOpenResult={jest.fn()}
+        />
       </I18nProvider>
     );
-    expect(screen.getByTestId('agtEvlResultsTotal')).toHaveTextContent(
-      '12,345 results. The table lists the latest 2'
+    expect(screen.getByTestId('agtEvlResultsTotal')).toHaveTextContent('12,345 results');
+    fireEvent.click(screen.getByTestId('pagination-button-next'));
+    expect(onTableChange).toHaveBeenLastCalledWith({
+      sort: { field: 'time', direction: 'desc' },
+      pageIndex: 1,
+      pageSize: 25,
+    });
+    const header = screen
+      .getAllByRole('columnheader')
+      .find((h) => h.textContent?.startsWith('Evaluation')) as HTMLElement;
+    fireEvent.click(within(header).getByRole('button'));
+    expect(onTableChange).toHaveBeenLastCalledWith({
+      sort: { field: 'name', direction: 'asc' },
+      pageIndex: 0,
+      pageSize: 25,
+    });
+  });
+
+  it('says when a page cannot be read', () => {
+    render(
+      <I18nProvider>
+        <ResultsTab results={[]} total={20000} beyondLimit onOpenResult={jest.fn()} />
+      </I18nProvider>
     );
+    expect(screen.getByTestId('agtEvlResultsBeyondLimit')).toBeInTheDocument();
   });
 
   it('ranks failures before passes for the result sort', () => {

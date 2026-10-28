@@ -41,8 +41,10 @@ import {
   buildSummaryAggQuery,
   buildTrendAggQuery,
   bucketsFromAgg,
+  ResultsSort,
   executeEvalPpl,
   fetchEvalResultsWith,
+  fetchResultsPage,
   kpisFromAgg,
   probeIndexGroups,
   summariesFromAgg,
@@ -51,8 +53,6 @@ import {
 } from './eval_ppl';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 
-/** Result rows read for the Results table; its total and every aggregate are exact. */
-export const RESULTS_LIMIT = 5000;
 /** Results read for the Evaluation runs tab. */
 export const RUN_RESULTS_LIMIT = 10000;
 /** Test case and run events read for the Evaluation runs tab. */
@@ -121,10 +121,7 @@ export interface EvalData {
   loading: boolean;
   error?: string;
   indexMissing: boolean;
-  /**
-   * Result rows, newest first: the latest RESULTS_LIMIT under the filters on the Results
-   * tab, the latest failures on the Overview.
-   */
+  /** The latest failures under the filters (Overview). The Results table pages its own. */
   results: EvalResult[];
   /** Results in the range under the filters (exact). */
   total?: number;
@@ -234,9 +231,7 @@ export const useEvalData = (
           ? probeIndexGroups(data, index, previousRange, controller.signal)
           : Promise.resolve(undefined),
       ]);
-      const rowsFilters: EvalFilters =
-        view === 'overview' ? { ...filters, outcomes: ['fail'] } : filters;
-      const rowsLimit = view === 'overview' ? RECENT_FAILURES : RESULTS_LIMIT;
+      // The Results table pages its rows itself (useResultsPage).
       return Promise.all([
         fetchAggregates(
           current,
@@ -248,7 +243,15 @@ export const useEvalData = (
         view === 'overview'
           ? fetchAggregates(before, index, filters, undefined, previousGroups)
           : Promise.resolve(undefined),
-        fetchEvalResultsWith(current, index, rowsFilters, rowsLimit, groups),
+        view === 'overview'
+          ? fetchEvalResultsWith(
+              current,
+              index,
+              { ...filters, outcomes: ['fail'] },
+              RECENT_FAILURES,
+              groups
+            )
+          : Promise.resolve([]),
         current.executeQuery(evalsDataset(index), buildEvalFacetsQuery({}, index)),
       ]);
     };
@@ -264,7 +267,7 @@ export const useEvalData = (
           current: agg,
           previous: previous && { summaries: previous.summaries, kpis: previous.kpis },
           interval,
-          truncated: view === 'results' && agg.kpis.results > results.length,
+          truncated: false,
         });
       })
       .catch((error) => {
@@ -423,6 +426,9 @@ export interface EvaluationResultsState {
   results: EvalResult[];
 }
 
+/** Latest results the evaluation drill-down reads (its failure breakdown and charts). */
+export const DRILLDOWN_RESULTS_LIMIT = 5000;
+
 /** Results of one evaluation in the time range under the other filters (drill-down). */
 export const useEvaluationResults = (
   data: DataPublicPluginStart,
@@ -446,7 +452,7 @@ export const useEvaluationResults = (
       ppl,
       buildEvalResultsQuery(
         { names: [name], levels: filters.levels, sources: filters.sources },
-        RESULTS_LIMIT,
+        DRILLDOWN_RESULTS_LIMIT,
         index
       ),
       index
@@ -485,4 +491,54 @@ export const useAgentCorePresent = (
     return () => controller.abort();
   }, [data, index]);
   return present;
+};
+
+export interface ResultsPageState {
+  loading: boolean;
+  error?: string;
+  rows: EvalResult[];
+  /** The page cannot be read (see `MERGED_PAGE_LIMIT`). */
+  beyondLimit: boolean;
+}
+
+/** One page of the Results table, sorted and filtered in the query. */
+export const useResultsPage = (
+  data: DataPublicPluginStart,
+  bounds: TimeBoundsMs,
+  filters: EvalFilters,
+  refreshKey: number,
+  index: string,
+  sort: ResultsSort,
+  pageIndex: number,
+  pageSize: number,
+  enabled = true
+): ResultsPageState => {
+  const [state, setState] = useState<ResultsPageState>({
+    loading: true,
+    rows: [],
+    beyondLimit: false,
+  });
+  const key = JSON.stringify([bounds, filters, refreshKey, index, sort, pageIndex, pageSize]);
+  useEffect(() => {
+    if (!enabled) return;
+    const controller = new AbortController();
+    setState((s) => ({ ...s, loading: true, error: undefined }));
+    const range = isoRange(bounds);
+    const ppl = createEvalsPplService(data, range, controller.signal);
+    const needsScript = !!outcomesFilter(filters) || sort.field === 'result';
+    (needsScript
+      ? probeIndexGroups(data, index, range, controller.signal)
+      : Promise.resolve(undefined)
+    )
+      .then((groups) => fetchResultsPage(ppl, index, filters, sort, pageIndex, pageSize, groups))
+      .then((page) => !controller.signal.aborted && setState({ loading: false, ...page }))
+      .catch(
+        (error) =>
+          !controller.signal.aborted &&
+          setState({ loading: false, rows: [], beyondLimit: false, error: errorMessage(error) })
+      );
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, key, enabled]);
+  return state;
 };

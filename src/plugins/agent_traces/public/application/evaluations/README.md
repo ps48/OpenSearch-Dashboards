@@ -105,8 +105,17 @@ KPIs, evaluation cards (count, pass, fail, error and scored counts, mean, label 
 score trend and results over time come from PPL aggregations on the evaluation index
 (`eval evl_verdict = case(...)` with the verdict rules compiled to PPL, then `stats ... by`,
 `span(@timestamp, ...)`), so they are exact at any volume. Distinct traces and sessions use
-`distinct_count` (exact below 3,000 per period, approximate above). The Results table lists the
-latest 5,000 results; its total is exact.
+`distinct_count` (exact below 3,000 per period, approximate above).
+
+The Results table reaches every result in the range: it is sorted (Time, Evaluation, Level,
+Result) and paged in the query (`sort ... | head <size> from <offset>`), filters and search
+included, with the exact total from the aggregation. Page sizes are 25, 50 and 100: on
+OpenSearch 3.9 a page that straddles offset 10,000 (`plugins.query.size_limit`) is cut at
+10,000, while pages on either side are complete, and these sizes never straddle it. Sorting
+by Result or filtering on Failing only needs the verdict script; when the range spans
+indices with different fields, each group of indices is read up to the page and merged in
+the browser, which reaches the first 10,000 results in that order (the table says so past
+that).
 
 PPL on OpenSearch 3.9 drops the documents of indices that do not map a field an `eval`
 script names (daily indices with dynamic mappings, where a new attribute such as

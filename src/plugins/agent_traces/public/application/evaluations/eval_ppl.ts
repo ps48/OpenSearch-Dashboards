@@ -18,6 +18,7 @@ import {
   evalsDataset,
   recordToEvalResult,
   labelCounts,
+  outcomesFilter,
   sortSummaries,
 } from './eval_data';
 import {
@@ -25,8 +26,10 @@ import {
   RuleEntry,
   VERDICT_COLUMN,
   builtinRange,
+  getActiveClauses,
   getActiveRuleEntries,
   ruleFor,
+  verdictCasePpl,
 } from './eval_verdict';
 import type { EvalKpis, OutcomeBucket, TrendPoint } from './eval_aggregations';
 import { parseEvalTime } from './eval_aggregations';
@@ -544,3 +547,149 @@ export const trendFromAgg = (
 
 /** Literal list for a PPL `in (...)`. */
 export const pplList = (values: string[]) => values.map(quote).join(', ');
+
+// ---------------------------------------------------------------------------------------
+// Results table: server-side paging and sorting
+// ---------------------------------------------------------------------------------------
+
+export type ResultsSortField = 'time' | 'name' | 'level' | 'result';
+export interface ResultsSort {
+  field: ResultsSortField;
+  direction: 'asc' | 'desc';
+}
+export const DEFAULT_RESULTS_SORT: ResultsSort = { field: 'time', direction: 'desc' };
+
+/** Sort key of the Result column: failures, errors, scored, passes; then the value. */
+export const RANK_COLUMN = 'evl_rank';
+
+/**
+ * Page sizes of the Results table. They divide 10,000: on OpenSearch 3.9 a PPL page that
+ * straddles offset 10,000 (`plugins.query.size_limit`) is cut there; pages on either side of
+ * it are complete.
+ */
+export const RESULTS_PAGE_SIZES = [25, 50, 100];
+
+/**
+ * Rows a merged page may reach: when the query needs the verdict script and the indices fall
+ * into several mapping groups, each group returns its first `offset + size` rows and the
+ * page is merged in the browser.
+ */
+export const MERGED_PAGE_LIMIT = 10000;
+
+/** One page of results under the filters, in the given order. */
+export const buildResultsPageQuery = (
+  filters: EvalFilters,
+  sort: ResultsSort,
+  from: number,
+  size: number,
+  ctx: QueryContext = {}
+): string => {
+  const missing = ctx.missing ?? new Set<string>();
+  const byResult = sort.field === 'result';
+  const commands = buildEvalCommands(filters, ctx.index ?? AGENT_EVALS_INDEX_PATTERN, {
+    missing,
+    clauses: ctx.clauses,
+  });
+  const dir = sort.direction === 'desc' ? '- ' : '';
+  const time = field(EVAL_FIELDS.time);
+  let sortBy: string;
+  if (byResult) {
+    // The rank is its own case(): naming evl_verdict would inline the verdict once per use.
+    commands.push(
+      `eval ${RANK_COLUMN} = ${verdictCasePpl(ctx.clauses ?? getActiveClauses(), missing, {
+        fail: '0',
+        error: '1',
+        neutral: '2',
+        pass: '3',
+      })}`
+    );
+    sortBy = [
+      `${dir}${RANK_COLUMN}`,
+      ...(missing.has(EVAL_FIELDS.value) ? [] : [`${dir}${field(EVAL_FIELDS.value)}`]),
+      `- ${time}`,
+    ].join(', ');
+  } else if (sort.field === 'time') {
+    sortBy = `${dir}${time}`;
+  } else {
+    const f = sort.field === 'name' ? EVAL_FIELDS.name : EVAL_FIELDS.level;
+    sortBy = missing.has(f) ? `- ${time}` : `${dir}${field(f)}, - ${time}`;
+  }
+  commands.push(`sort ${sortBy}`);
+  commands.push(from > 0 ? `head ${size} from ${from}` : `head ${size}`);
+  return commands.join(' | ');
+};
+
+const RANK: Record<EvalOutcome, number> = { fail: 0, error: 1, neutral: 2, pass: 3 };
+
+/** The browser's order for merged pages, the same as the query's. */
+export const compareResults =
+  (sort: ResultsSort) =>
+  (a: EvalResult, b: EvalResult): number => {
+    const sign = sort.direction === 'desc' ? -1 : 1;
+    const byTime = parseEvalTime(b.time) - parseEvalTime(a.time);
+    const cmp = (x: string | number | undefined, y: string | number | undefined) => {
+      if (x === y) return 0;
+      if (x === undefined) return -1;
+      if (y === undefined) return 1;
+      return x < y ? -1 : 1;
+    };
+    switch (sort.field) {
+      case 'time':
+        return -sign * byTime || 0;
+      case 'name':
+        return sign * cmp(a.name, b.name) || byTime;
+      case 'level':
+        return sign * cmp(a.level, b.level) || byTime;
+      case 'result':
+        return sign * (RANK[a.outcome] - RANK[b.outcome]) || sign * cmp(a.value, b.value) || byTime;
+    }
+  };
+
+export interface ResultsPage {
+  rows: EvalResult[];
+  /** The page lies beyond what a merged page can reach (see `MERGED_PAGE_LIMIT`). */
+  beyondLimit: boolean;
+}
+
+/**
+ * One page of the Results table. Without the verdict script (no verdict filter, not sorted by
+ * Result) one query pages the whole pattern. With it, one query per index group: a single
+ * group pages in PPL; several groups each return their first rows and the page is merged.
+ */
+export const fetchResultsPage = async (
+  ppl: PPLService,
+  index: string,
+  filters: EvalFilters,
+  sort: ResultsSort,
+  pageIndex: number,
+  pageSize: number,
+  groups?: IndexGroup[]
+): Promise<ResultsPage> => {
+  const from = pageIndex * pageSize;
+  const needsScript = !!outcomesFilter(filters) || sort.field === 'result';
+  if (!needsScript || !groups || groups.length <= 1) {
+    const rows = await executeEvalPpl(
+      ppl,
+      index,
+      (missing, source) =>
+        buildResultsPageQuery(filters, sort, from, pageSize, { index: source, missing }),
+      needsScript ? groups : undefined
+    );
+    return { rows: rows.map(recordToEvalResult), beyondLimit: false };
+  }
+  if (from + pageSize > MERGED_PAGE_LIMIT) return { rows: [], beyondLimit: true };
+  const rows = await executeEvalPpl(
+    ppl,
+    index,
+    (missing, source) =>
+      buildResultsPageQuery(filters, sort, 0, from + pageSize, { index: source, missing }),
+    groups
+  );
+  return {
+    rows: rows
+      .map(recordToEvalResult)
+      .sort(compareResults(sort))
+      .slice(from, from + pageSize),
+    beyondLimit: false,
+  };
+};

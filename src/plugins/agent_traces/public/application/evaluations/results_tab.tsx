@@ -5,10 +5,12 @@
 
 import React, { useMemo } from 'react';
 import {
+  Criteria,
+  EuiBasicTable,
   EuiBasicTableColumn,
+  EuiCallOut,
   EuiFlexGroup,
   EuiFlexItem,
-  EuiInMemoryTable,
   EuiSpacer,
   EuiText,
   EuiToolTip,
@@ -16,10 +18,18 @@ import {
 import { i18n } from '@osd/i18n';
 import { EvalResult, OUTCOME_RANK, normalizedScore } from './eval_data';
 import { ShowTracesMenu } from './eval_trace_filter';
+import {
+  DEFAULT_RESULTS_SORT,
+  MERGED_PAGE_LIMIT,
+  RESULTS_PAGE_SIZES,
+  ResultsSort,
+  ResultsSortField,
+} from './eval_ppl';
 import { parseEvalTime } from './eval_aggregations';
 import {
   LevelBadge,
   OutcomeBadge,
+  QueryErrorCallout,
   TargetText,
   formatEvalTime,
   sourceLabel,
@@ -45,13 +55,47 @@ export const toResultRows = (results: EvalResult[]): ResultRow[] =>
 const truncate = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 3)}...` : text;
 
+/** Table column field of each server-side sort. */
+const SORT_COLUMN: Record<ResultsSortField, keyof ResultRow> = {
+  time: 'timeMs',
+  name: 'name',
+  level: 'level',
+  result: 'rank',
+};
+const COLUMN_SORT = Object.fromEntries(
+  Object.entries(SORT_COLUMN).map(([k, v]) => [v, k])
+) as Record<string, ResultsSortField>;
+
+/**
+ * Every result in the range under the filters: one page at a time, sorted and paged in the
+ * query, with the exact total from the aggregation.
+ */
 export const ResultsTab: React.FC<{
+  /** The current page's results, in the requested order. */
   results: EvalResult[];
-  /** Results under the filters (exact); the table lists at most `limit` of them. */
+  /** Results under the filters (exact). */
   total?: number;
-  limit?: number;
+  loading?: boolean;
+  error?: string;
+  /** The page lies beyond what can be read (see `MERGED_PAGE_LIMIT`). */
+  beyondLimit?: boolean;
+  sort?: ResultsSort;
+  pageIndex?: number;
+  pageSize?: number;
+  onTableChange?: (change: { sort: ResultsSort; pageIndex: number; pageSize: number }) => void;
   onOpenResult: (r: EvalResult) => void;
-}> = ({ results, total, limit, onOpenResult }) => {
+}> = ({
+  results,
+  total,
+  loading,
+  error,
+  beyondLimit,
+  sort = DEFAULT_RESULTS_SORT,
+  pageIndex = 0,
+  pageSize = RESULTS_PAGE_SIZES[0],
+  onTableChange,
+  onOpenResult,
+}) => {
   const rows = useMemo(() => toResultRows(results), [results]);
 
   const columns: Array<EuiBasicTableColumn<ResultRow>> = [
@@ -127,7 +171,6 @@ export const ResultsTab: React.FC<{
     {
       field: 'evaluator',
       name: i18n.translate('agentTraces.evalsPage.colEvaluator', { defaultMessage: 'Evaluator' }),
-      sortable: true,
       truncateText: true,
       render: (evaluator: string, r: ResultRow) => (
         <div>
@@ -143,40 +186,62 @@ export const ResultsTab: React.FC<{
       name: i18n.translate('agentTraces.evalsPage.colAgent', {
         defaultMessage: 'Agent or service',
       }),
-      sortable: true,
       truncateText: true,
       render: (value: string) => <EuiText size="xs">{value || '-'}</EuiText>,
     },
   ];
 
-  const shownAll = total === undefined || total <= rows.length;
+  const totalItems = total ?? rows.length;
   return (
     <>
       <EuiText size="xs" color="subdued" data-test-subj="agtEvlResultsTotal">
-        {shownAll
-          ? i18n.translate('agentTraces.evalsPage.resultsTotal', {
-              defaultMessage: '{total} {total, plural, one {result} other {results}}',
-              values: { total: rows.length },
-            })
-          : i18n.translate('agentTraces.evalsPage.resultsTotalPaged', {
-              defaultMessage:
-                '{total} results. The table lists the latest {shown}; narrow the filters to list the others.',
-              values: {
-                total: (total ?? 0).toLocaleString(),
-                shown: (limit ?? rows.length).toLocaleString(),
-              },
-            })}
+        {i18n.translate('agentTraces.evalsPage.resultsTotal', {
+          defaultMessage: '{total} {count, plural, one {result} other {results}}',
+          values: { total: totalItems.toLocaleString(), count: totalItems },
+        })}
       </EuiText>
       <EuiSpacer size="xs" />
-      <EuiInMemoryTable<ResultRow>
+      {error && <QueryErrorCallout message={error} />}
+      {beyondLimit && (
+        <EuiCallOut
+          size="s"
+          color="warning"
+          iconType="iInCircle"
+          data-test-subj="agtEvlResultsBeyondLimit"
+          title={i18n.translate('agentTraces.evalsPage.resultsBeyondLimit', {
+            defaultMessage:
+              'Pages past result {limit} cannot be read in this order: the indices in this range differ in their fields, so they are read separately and merged in the browser. Sort by another column or narrow the time range.',
+            values: { limit: MERGED_PAGE_LIMIT.toLocaleString() },
+          })}
+        />
+      )}
+      <EuiBasicTable<ResultRow>
         items={rows}
         itemId="id"
         columns={columns}
+        loading={loading}
         tableLayout="fixed"
         compressed
         className="agtEvlDenseTable"
-        pagination={{ initialPageSize: 25, pageSizeOptions: [25, 50, 100] }}
-        sorting={{ sort: { field: 'timeMs', direction: 'desc' } }}
+        pagination={{
+          pageIndex,
+          pageSize,
+          totalItemCount: totalItems,
+          pageSizeOptions: RESULTS_PAGE_SIZES,
+        }}
+        sorting={{ sort: { field: SORT_COLUMN[sort.field], direction: sort.direction } }}
+        onChange={({ page, sort: next }: Criteria<ResultRow>) => {
+          const field = next ? COLUMN_SORT[String(next.field)] : undefined;
+          const nextSort = field ? { field, direction: next?.direction ?? 'desc' } : sort;
+          const sortChanged =
+            nextSort.field !== sort.field || nextSort.direction !== sort.direction;
+          const nextSize = page?.size ?? pageSize;
+          onTableChange?.({
+            sort: nextSort,
+            pageIndex: sortChanged || nextSize !== pageSize ? 0 : (page?.index ?? pageIndex),
+            pageSize: nextSize,
+          });
+        }}
         rowProps={(r: ResultRow) => ({
           onClick: () => onOpenResult(r),
           className: 'agtEvlTable__row',

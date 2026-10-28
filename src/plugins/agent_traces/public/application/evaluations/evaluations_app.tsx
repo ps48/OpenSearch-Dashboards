@@ -36,6 +36,7 @@ import { TimeRange } from '../../../../data/common';
 import { AGENT_TRACES_NAV_ID } from '../../../common';
 import { EvalResult } from './eval_data';
 import { ShowTracesContext, TraceCondition, fetchConditionTraces } from './eval_trace_filter';
+import { DEFAULT_RESULTS_SORT, RESULTS_PAGE_SIZES, ResultsSort } from './eval_ppl';
 import { setEvalTraceFilter } from './eval_trace_filter_store';
 import { TimeBoundsMs, mergeRunData } from './eval_aggregations';
 import {
@@ -49,8 +50,8 @@ import {
   runsTimeOf,
 } from './eval_url_state';
 import {
-  RESULTS_LIMIT,
   useAgentCorePresent,
+  useResultsPage,
   useEvalData,
   AGENTCORE_LAG_MS,
   errorMessage,
@@ -252,6 +253,25 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     state.tab === 'results' ? 'results' : 'overview'
   );
   const agentCorePresent = useAgentCorePresent(services.data, index);
+  // Results table: sorted and paged in the query; a new range or filter starts on page 1.
+  const [resultsSort, setResultsSort] = useState<ResultsSort>(DEFAULT_RESULTS_SORT);
+  const [resultsPageAt, setResultsPageAt] = useState({
+    index: 0,
+    size: RESULTS_PAGE_SIZES[0],
+  });
+  const filtersKey = JSON.stringify([filters, time.bounds]);
+  useEffect(() => setResultsPageAt((p) => (p.index === 0 ? p : { ...p, index: 0 })), [filtersKey]);
+  const resultsPage = useResultsPage(
+    services.data,
+    time.bounds,
+    filters,
+    time.refreshKey,
+    index,
+    resultsSort,
+    resultsPageAt.index,
+    resultsPageAt.size,
+    state.tab === 'results'
+  );
   const showLagNote =
     state.tab !== 'runs' && agentCorePresent && time.bounds.to > Date.now() - AGENTCORE_LAG_MS;
   const showTraces = useCallback(
@@ -327,9 +347,10 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     if (flyoutResult?.id === state.result) return;
     const found =
       data.results.find((r) => r.id === state.result) ??
+      resultsPage.rows.find((r) => r.id === state.result) ??
       runs.results.find((r) => r.id === state.result);
     if (found) setFlyoutResult(found);
-  }, [state.result, data.results, runs.results, flyoutResult]);
+  }, [state.result, data.results, resultsPage.rows, runs.results, flyoutResult]);
 
   const openResult = useCallback(
     (r: EvalResult) => {
@@ -418,9 +439,18 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
         <>
           {lagNote}
           <ResultsTab
-            results={data.results}
+            results={resultsPage.rows}
             total={data.total}
-            limit={RESULTS_LIMIT}
+            loading={resultsPage.loading}
+            error={resultsPage.error}
+            beyondLimit={resultsPage.beyondLimit}
+            sort={resultsSort}
+            pageIndex={resultsPageAt.index}
+            pageSize={resultsPageAt.size}
+            onTableChange={({ sort, pageIndex, pageSize }) => {
+              setResultsSort(sort);
+              setResultsPageAt({ index: pageIndex, size: pageSize });
+            }}
             onOpenResult={openResult}
           />
         </>
