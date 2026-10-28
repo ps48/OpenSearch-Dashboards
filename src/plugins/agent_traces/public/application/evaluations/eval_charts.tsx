@@ -301,6 +301,14 @@ export const SuiteTrendChart: React.FC<{
     [xs.join(',')]
   );
   const current = points.find((p) => p.runId === currentRunId);
+  const xDomain = useMemo(() => {
+    if (xs.length === 0) return undefined;
+    const min = Math.min(...xs);
+    const max = Math.max(...xs);
+    const pad = Math.max((max - min) * 0.04, 60 * 60 * 1000);
+    return { min: min - pad, max: max + pad };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xs.join(',')]);
   const thisRunLabel = i18n.translate('agentTraces.evalsPage.trendThisRun', {
     defaultMessage: 'This run',
   });
@@ -322,6 +330,8 @@ export const SuiteTrendChart: React.FC<{
           baseTheme={baseTheme}
           showLegend
           legendPosition={Position.Bottom}
+          // Room on both sides, so the first and last runs' rings are not cut at the edge.
+          xDomain={xDomain}
           onElementClick={(elements) => {
             const [first] = elements as XYChartElementEvent[];
             const runId = first ? runAt.get(Number(first[0].x)) : undefined;
