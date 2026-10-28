@@ -4,13 +4,28 @@
  */
 
 import { EvalResult, RunEvents, SuiteRunEvent, TestCaseEvent, outcomeOf } from './eval_data';
+import { setEvaluationRulesSource } from './eval_verdict';
+
+/** Pass rules the fixtures' evaluations declare, as the rules setting would. */
+export const FIXTURE_RULES = {
+  accuracy: { threshold: 0.5, min: 0, max: 1 },
+  helpfulness: { threshold: 0.5, min: 0, max: 1 },
+  tool_diversity: { threshold: 0.5, min: 0, max: 1 },
+  Helpfulness: { passLabels: ['Very Helpful'] },
+};
+setEvaluationRulesSource(() => FIXTURE_RULES);
 
 let seq = 0;
 
-/** An evaluation result for tests; the outcome is derived like the real mapping does. */
+/**
+ * An evaluation result for tests; the outcome is derived like the real mapping does. A
+ * `pass` or `fail` label stands for the producer's assessment.
+ */
 export const makeResult = (partial: Partial<EvalResult> = {}): EvalResult => {
   seq += 1;
+  const word = partial.label?.toLowerCase();
   const base = {
+    ...(word === 'pass' || word === 'fail' ? { assessment: word } : {}),
     time: '2026-10-26 09:00:00.000',
     name: 'helpfulness',
     level: 'span',

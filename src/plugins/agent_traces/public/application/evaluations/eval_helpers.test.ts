@@ -66,7 +66,12 @@ describe('recordToEvalResult (AgentCore)', () => {
       '@timestamp': '2026-10-26 09:00:00',
       traceId: '',
       attributes: {
-        gen_ai: { evaluation: { name: 'Builtin.Helpfulness', score: { label: 'Very Helpful' } } },
+        gen_ai: {
+          evaluation: {
+            name: 'Builtin.Helpfulness',
+            score: { label: 'Very Helpful', value: 0.83 },
+          },
+        },
         derived: { evaluation: { level: 'session', source: 'agentcore' }, session: { id: 's1' } },
         aws: {
           bedrock_agentcore: {

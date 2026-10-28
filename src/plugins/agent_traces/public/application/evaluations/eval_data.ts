@@ -8,6 +8,20 @@ import { DataPublicPluginStart } from '../../../../data/public';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import { pplResponseToRecords, PplRecord } from '../pages/sessions/session_utils';
+import {
+  Clause,
+  EvalOutcome,
+  RuleEntry,
+  VERDICT_COLUMN,
+  builtinRange,
+  getActiveClauses,
+  getActiveRuleEntries,
+  ruleFor,
+  verdictEvalPpl,
+  verdictOf,
+} from './eval_verdict';
+
+export type { EvalOutcome } from './eval_verdict';
 
 /**
  * Evaluation results are OTel `gen_ai.evaluation.result` log events, one document per result
@@ -54,12 +68,17 @@ export const EVAL_FIELDS = {
   caseName: 'attributes.test.case.name',
   caseStatus: 'attributes.test.case.result.status',
   evaluatorName: 'attributes.opensearch.evaluation.evaluator.name',
+  assessment: 'attributes.opensearch.evaluation.assessment',
+  threshold: 'attributes.opensearch.evaluation.score.threshold',
+  direction: 'attributes.opensearch.evaluation.score.direction',
+  scoreMin: 'attributes.opensearch.evaluation.score.min',
+  scoreMax: 'attributes.opensearch.evaluation.score.max',
+  errorType: 'attributes.error.type',
   evaluatorType: 'attributes.opensearch.evaluation.evaluator.type',
   scope: 'instrumentationScope.name',
 } as const;
 
 export type EvalLevel = 'span' | 'trace' | 'session' | 'tool_call' | string;
-export type EvalOutcome = 'pass' | 'fail' | 'neutral';
 
 export interface EvalResult {
   /** Stable key: time + target + name. */
@@ -82,6 +101,10 @@ export interface EvalResult {
   evaluatorVersion?: string;
   evaluatorType?: string;
   direction?: 'maximize' | 'minimize';
+  /** Producer verdict, `opensearch.evaluation.assessment` (`pass` or `fail`). */
+  assessment?: string;
+  /** Producer pass threshold, `opensearch.evaluation.score.threshold`. */
+  threshold?: number;
   scoreMin?: number;
   scoreMax?: number;
   judgeTraceId?: string;
@@ -124,72 +147,71 @@ const num = (v: unknown): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
-const PASS_LABELS = new Set([
-  'pass',
-  'passed',
-  'yes',
-  'true',
-  'correct',
-  'relevant',
-  'good',
-  'success',
-  'faithful',
-  'coherent',
-  'helpful',
-  'very helpful',
-  'completely yes',
-  'perfectly correct',
-  'thumbs_up',
-]);
-const FAIL_LABELS = new Set([
-  'fail',
-  'failed',
-  'no',
-  'false',
-  'incorrect',
-  'not_relevant',
-  'irrelevant',
-  'bad',
-  'error',
-  'unfaithful',
-  'incoherent',
-  'not helpful',
-  'completely no',
-  'thumbs_down',
-]);
+/**
+ * Verdict of a result under the declared rules (see `eval_verdict.ts`): evaluator error, the
+ * rules setting, the producer's assessment or threshold, built-in rules for known evaluators;
+ * neutral ("Scored") when none decides.
+ */
+export const outcomeOf = (
+  r: Omit<EvalResult, 'outcome' | 'id'>,
+  clauses: Clause[] = getActiveClauses()
+): EvalOutcome =>
+  verdictOf(
+    {
+      name: r.name,
+      value: r.value,
+      label: r.label,
+      errorType: r.errorType,
+      assessment: r.assessment,
+      threshold: r.threshold,
+      direction: r.direction,
+      source: r.source,
+    },
+    clauses
+  );
 
 /**
- * Pass/fail for color and pass rates. The label wins when it is a known word; otherwise the
- * score is normalized to the declared range (0..1 when unknown, 1..5 when it looks like a
- * Likert score) and compared with the midpoint in the declared direction.
+ * Declared score range and direction of a result: the rules setting, else the producer's
+ * attributes, else a known evaluator's scale. Values within 0..1 without a declared range
+ * are read as 0..1. Undefined when the range is unknown.
  */
-export const outcomeOf = (r: Omit<EvalResult, 'outcome' | 'id'>): EvalOutcome => {
-  if (r.errorType) return 'neutral';
-  const label = r.label?.trim().toLowerCase();
-  if (label && PASS_LABELS.has(label)) return 'pass';
-  if (label && FAIL_LABELS.has(label)) return 'fail';
-  if (r.caseStatus === 'pass') return 'pass';
-  if (r.caseStatus === 'fail') return 'fail';
-  if (r.value === undefined) return 'neutral';
-  const max = r.scoreMax ?? (r.value > 1 ? 5 : 1);
-  const min = r.scoreMin ?? (r.value > 1 ? 1 : 0);
-  if (max <= min) return 'neutral';
-  const normalized = (r.value - min) / (max - min);
-  // The exact midpoint (3 on a 1..5 scale) is neither good nor bad.
-  if (normalized === 0.5) return 'neutral';
-  const good = r.direction === 'minimize' ? normalized < 0.5 : normalized > 0.5;
-  return good ? 'pass' : 'fail';
+export const scaleOf = (
+  r: Pick<EvalResult, 'name' | 'value' | 'scoreMin' | 'scoreMax' | 'direction'>,
+  rules: RuleEntry[] = getActiveRuleEntries()
+): { min: number; max: number; direction: 'maximize' | 'minimize' } | undefined => {
+  const rule = ruleFor(rules, r.name);
+  const builtin = builtinRange(r.name);
+  const direction = rule?.direction ?? r.direction ?? 'maximize';
+  let min = rule?.min ?? r.scoreMin ?? builtin?.min;
+  let max = rule?.max ?? r.scoreMax ?? builtin?.max;
+  if (min === undefined && max === undefined && r.value !== undefined) {
+    if (r.value >= 0 && r.value <= 1) {
+      min = 0;
+      max = 1;
+    }
+  }
+  if (min === undefined || max === undefined || max <= min) return undefined;
+  return { min, max, direction };
 };
 
-/** Normalized 0..1 score for charts (higher is better), when the result has a value. */
+/** Normalized 0..1 score for charts (higher is better), when the result has a value and a
+ *  known range; pass and fail count as 1 and 0 for results without a value. */
 export const normalizedScore = (r: EvalResult): number | undefined => {
   if (r.value === undefined) return r.outcome === 'pass' ? 1 : r.outcome === 'fail' ? 0 : undefined;
-  const max = r.scoreMax ?? (r.value > 1 ? 5 : 1);
-  const min = r.scoreMin ?? (r.value > 1 ? 1 : 0);
-  if (max <= min) return undefined;
-  const n = Math.min(1, Math.max(0, (r.value - min) / (max - min)));
-  return r.direction === 'minimize' ? 1 - n : n;
+  const scale = scaleOf(r);
+  if (!scale) return undefined;
+  const n = Math.min(1, Math.max(0, (r.value - scale.min) / (scale.max - scale.min)));
+  return scale.direction === 'minimize' ? 1 - n : n;
 };
+
+/** `maximize` or `minimize` for an evaluation: the setting, else what its results declare. */
+export const directionOf = (
+  name: string,
+  results: Array<Pick<EvalResult, 'direction'>>,
+  rules: RuleEntry[] = getActiveRuleEntries()
+): 'maximize' | 'minimize' =>
+  ruleFor(rules, name)?.direction ??
+  (results.some((r) => r.direction === 'minimize') ? 'minimize' : 'maximize');
 
 export const recordToEvalResult = (row: PplRecord): EvalResult => {
   const attrs = row.attributes as Record<string, unknown> | undefined;
@@ -201,7 +223,7 @@ export const recordToEvalResult = (row: PplRecord): EvalResult => {
   const name = str(a('gen_ai.evaluation.name')) ?? '(unnamed)';
   const level = (str(a('derived.evaluation.level')) ?? (spanId ? 'span' : 'trace')).toLowerCase();
   const time = str(row['@timestamp']) ?? str(row.time) ?? '';
-  const direction = str(a('opensearch.evaluation.score.direction'));
+  const direction = str(a('opensearch.evaluation.score.direction'))?.toLowerCase();
   const agentcoreEvaluator = str(a('aws.bedrock_agentcore.evaluator.arn'));
   const base = {
     time,
@@ -228,6 +250,8 @@ export const recordToEvalResult = (row: PplRecord): EvalResult => {
       str(a('opensearch.evaluation.evaluator.type')) ??
       (agentcoreEvaluator ? 'llm_judge' : undefined),
     direction: direction === 'minimize' || direction === 'maximize' ? direction : undefined,
+    assessment: str(a('opensearch.evaluation.assessment'))?.toLowerCase(),
+    threshold: num(a('opensearch.evaluation.score.threshold')),
     scoreMin: num(a('opensearch.evaluation.score.min')),
     scoreMax: num(a('opensearch.evaluation.score.max')),
     judgeTraceId: str(a('opensearch.evaluation.judge.trace_id')),
@@ -266,15 +290,22 @@ export interface EvalFilters {
   runIds?: string[];
   /** Only results that belong to an evaluation run (`test.suite.run.id` is set). */
   runsOnly?: boolean;
-  /** Only results whose outcome is fail (label in the fail set, or a low score). Applied
-   *  client-side by `applyClientFilters`: the outcome depends on labels and score ranges. */
+  /** Only failing results (the verdict is computed in the query). */
   failingOnly?: boolean;
+  /** Only results with these verdicts. */
+  outcomes?: EvalOutcome[];
+  /** Only results whose value is below or above a bound. */
+  valueBelow?: number;
+  valueAbove?: number;
   /** Free text matched against name, label and explanation. */
   search?: string;
 }
 
 /** `where` clauses for the filters. Only mapped fields are referenced. */
-export const buildEvalWhere = (filters: EvalFilters = {}): string[] => {
+export const buildEvalWhere = (
+  filters: EvalFilters = {},
+  missing: ReadonlySet<string> = new Set()
+): string[] => {
   const clauses: string[] = [EVAL_EVENT_WHERE, `${field(EVAL_FIELDS.name)} != ''`];
   const anyOf = (f: string, values?: string[]) => {
     if (values && values.length > 0) {
@@ -289,6 +320,20 @@ export const buildEvalWhere = (filters: EvalFilters = {}): string[] => {
   anyOf(EVAL_FIELDS.sessionId, filters.sessionIds);
   anyOf(EVAL_FIELDS.runId, filters.runIds);
   if (filters.runsOnly) clauses.push(`isnotnull(${field(EVAL_FIELDS.runId)})`);
+  if (filters.valueBelow !== undefined && Number.isFinite(filters.valueBelow)) {
+    clauses.push(
+      missing.has(EVAL_FIELDS.value)
+        ? 'false'
+        : `${field(EVAL_FIELDS.value)} < ${Number(filters.valueBelow)}`
+    );
+  }
+  if (filters.valueAbove !== undefined && Number.isFinite(filters.valueAbove)) {
+    clauses.push(
+      missing.has(EVAL_FIELDS.value)
+        ? 'false'
+        : `${field(EVAL_FIELDS.value)} > ${Number(filters.valueAbove)}`
+    );
+  }
   if (filters.search?.trim()) {
     // `like` is case-insensitive; `%` and `_` typed by the user act as wildcards.
     const q = quote(`%${filters.search.trim()}%`);
@@ -301,14 +346,46 @@ export const buildEvalWhere = (filters: EvalFilters = {}): string[] => {
   return clauses;
 };
 
+/** The verdicts a filter keeps, if it narrows them. */
+export const outcomesFilter = (filters: EvalFilters): EvalOutcome[] | undefined => {
+  if (filters.outcomes?.length) return filters.outcomes;
+  if (filters.failingOnly) return ['fail'];
+  return undefined;
+};
+
+/**
+ * `source`, the filters as `where` clauses, and the verdict: an `eval` adding the
+ * `evl_verdict` column (always with `withVerdict`, else when the filters narrow verdicts)
+ * and a `where` on it. `missing`: fields the index does not map (see `executeEvalPpl`).
+ */
+export const buildEvalCommands = (
+  filters: EvalFilters = {},
+  index: string = AGENT_EVALS_INDEX_PATTERN,
+  options: { missing?: ReadonlySet<string>; clauses?: Clause[]; withVerdict?: boolean } = {}
+): string[] => {
+  const missing = options.missing ?? new Set<string>();
+  const outcomes = outcomesFilter(filters);
+  const commands = [
+    `source = ${index}`,
+    ...buildEvalWhere(filters, missing).map((c) => `where ${c}`),
+  ];
+  if (options.withVerdict || outcomes) {
+    commands.push(verdictEvalPpl(options.clauses ?? getActiveClauses(), missing));
+  }
+  if (outcomes) {
+    commands.push(`where ${outcomes.map((o) => `${VERDICT_COLUMN} = '${o}'`).join(' or ')}`);
+  }
+  return commands;
+};
+
 export const buildEvalResultsQuery = (
   filters: EvalFilters = {},
   limit = 500,
-  index: string = AGENT_EVALS_INDEX_PATTERN
+  index: string = AGENT_EVALS_INDEX_PATTERN,
+  missing: ReadonlySet<string> = new Set()
 ): string =>
   [
-    `source = ${index}`,
-    ...buildEvalWhere(filters).map((c) => `where ${c}`),
+    ...buildEvalCommands(filters, index, { missing }),
     `sort - ${field(EVAL_FIELDS.time)}`,
     `head ${limit}`,
   ].join(' | ');
@@ -567,6 +644,13 @@ export const recordsToRunDetail = (rows: PplRecord[]): RunDetailData => ({
   events: recordsToRunEvents(rows),
 });
 
+export interface LabelCount {
+  label: string;
+  count: number;
+  /** The verdict most results with this label had. */
+  outcome: EvalOutcome;
+}
+
 export interface EvaluatorSummary {
   name: string;
   levels: string[];
@@ -574,13 +658,46 @@ export interface EvaluatorSummary {
   count: number;
   passCount: number;
   failCount: number;
+  errorCount: number;
+  /** Results no rule decided ("Scored"); left out of the pass rate. */
+  neutralCount: number;
   /** Mean of numeric values, when the evaluator reports numbers. */
   mean?: number;
-  /** Mean normalized score 0..1 (higher is better). */
+  /** Mean normalized score 0..1 (higher is better), when the range is known. */
   normalizedMean?: number;
-  labels: Array<{ label: string; count: number }>;
+  labels: LabelCount[];
+  direction: 'maximize' | 'minimize';
   latest?: string;
 }
+
+/** Pass share among passing and failing results (neutral and errors excluded). */
+export const summaryPassRate = (s: Pick<EvaluatorSummary, 'passCount' | 'failCount'>) =>
+  s.passCount + s.failCount > 0 ? s.passCount / (s.passCount + s.failCount) : undefined;
+
+/** Most failing first, then the busiest. */
+export const sortSummaries = (summaries: EvaluatorSummary[]): EvaluatorSummary[] =>
+  summaries.sort(
+    (x, y) =>
+      y.failCount / Math.max(1, y.count) - x.failCount / Math.max(1, x.count) || y.count - x.count
+  );
+
+/** Labels with counts and their majority verdict, most frequent first. */
+export const labelCounts = (
+  rows: Array<{ label: string; outcome: EvalOutcome; count: number }>
+): LabelCount[] => {
+  const byLabel = new Map<string, Record<EvalOutcome, number>>();
+  rows.forEach(({ label, outcome, count }) => {
+    const c = byLabel.get(label) ?? { pass: 0, fail: 0, error: 0, neutral: 0 };
+    c[outcome] += count;
+    byLabel.set(label, c);
+  });
+  return Array.from(byLabel.entries())
+    .map(([label, c]) => {
+      const [outcome] = (Object.keys(c) as EvalOutcome[]).sort((x, y) => c[y] - c[x]);
+      return { label, outcome, count: c.pass + c.fail + c.error + c.neutral };
+    })
+    .sort((x, y) => y.count - x.count || x.label.localeCompare(y.label));
+};
 
 /** Per-evaluator rollup of a set of results. */
 export const summarizeByEvaluator = (results: EvalResult[]): EvaluatorSummary[] => {
@@ -590,39 +707,46 @@ export const summarizeByEvaluator = (results: EvalResult[]): EvaluatorSummary[] 
     list.push(r);
     byName.set(r.name, list);
   });
-  return Array.from(byName.entries())
-    .map(([name, list]) => {
+  return sortSummaries(
+    Array.from(byName.entries()).map(([name, list]) => {
       const values = list.map((r) => r.value).filter((v): v is number => v !== undefined);
       const normalized = list.map(normalizedScore).filter((v): v is number => v !== undefined);
-      const labels = new Map<string, number>();
-      list.forEach((r) => r.label && labels.set(r.label, (labels.get(r.label) ?? 0) + 1));
+      const count = (o: EvalOutcome) => list.filter((r) => r.outcome === o).length;
       return {
         name,
         levels: Array.from(new Set(list.map((r) => r.level))),
         sources: Array.from(new Set(list.map((r) => r.source))),
         count: list.length,
-        passCount: list.filter((r) => r.outcome === 'pass').length,
-        failCount: list.filter((r) => r.outcome === 'fail').length,
+        passCount: count('pass'),
+        failCount: count('fail'),
+        errorCount: count('error'),
+        neutralCount: count('neutral'),
         mean: values.length ? values.reduce((s, v) => s + v, 0) / values.length : undefined,
         normalizedMean: normalized.length
           ? normalized.reduce((s, v) => s + v, 0) / normalized.length
           : undefined,
-        labels: Array.from(labels.entries())
-          .map(([label, count]) => ({ label, count }))
-          .sort((x, y) => y.count - x.count),
+        labels: labelCounts(
+          list
+            .filter((r) => !!r.label)
+            .map((r) => ({ label: r.label as string, outcome: r.outcome, count: 1 }))
+        ),
+        direction: directionOf(name, list),
         latest: list
           .map((r) => r.time)
           .sort()
           .pop(),
       };
     })
-    .sort((x, y) => y.failCount / y.count - x.failCount / x.count || y.count - x.count);
+  );
 };
+
+/** Scan order of verdicts: failures, evaluator errors, neutral scores, passes. */
+export const OUTCOME_RANK: Record<EvalOutcome, number> = { fail: 0, error: 1, neutral: 2, pass: 3 };
 
 /** Failures first, then by normalized score ascending: the order to scan results in. */
 export const failuresFirst = (results: EvalResult[]): EvalResult[] =>
   [...results].sort((x, y) => {
-    const rank = (r: EvalResult) => (r.outcome === 'fail' ? 0 : r.outcome === 'neutral' ? 1 : 2);
+    const rank = (r: EvalResult) => OUTCOME_RANK[r.outcome];
     return rank(x) - rank(y) || (normalizedScore(x) ?? 1) - (normalizedScore(y) ?? 1);
   });
 
@@ -636,12 +760,6 @@ export const formatScore = (r: Pick<EvalResult, 'value' | 'label'>): string => {
         : r.value.toFixed(2);
   if (r.label && value !== undefined) return `${r.label} (${value})`;
   return r.label ?? value ?? '-';
-};
-
-export const OUTCOME_COLOR: Record<EvalOutcome, 'success' | 'danger' | 'hollow'> = {
-  pass: 'success',
-  fail: 'danger',
-  neutral: 'hollow',
 };
 
 export const LEVEL_LABEL: Record<string, string> = {

@@ -4,7 +4,6 @@
  */
 
 import {
-  applyClientFilters,
   bucketOutcomes,
   caseStatusOf,
   compareRuns,
@@ -19,7 +18,7 @@ import {
   suiteTrend,
   summarizeRuns,
 } from './eval_aggregations';
-import { EMPTY_RUN_EVENTS } from './eval_data';
+import { EMPTY_RUN_EVENTS, outcomesFilter } from './eval_data';
 import {
   makeCaseEvent,
   makeResult,
@@ -61,12 +60,16 @@ describe('computeKpis', () => {
       makeResult({ name: 'a', label: 'fail', traceId: 't1' }),
       makeResult({ name: 'b', value: 0.9, traceId: 't2', sessionId: 's1' }),
       makeResult({ name: 'b', traceId: 't3' }), // neutral: no score, no label
+      makeResult({ name: 'b', traceId: 't3', errorType: 'Timeout' }),
     ];
+    // b has no pass rule: its scores are neutral and stay out of the pass rate.
     expect(computeKpis(results)).toEqual({
-      results: 4,
+      results: 5,
       evaluators: 2,
-      passRate: 2 / 3,
+      passRate: 1 / 2,
       failing: 1,
+      errors: 1,
+      scored: 2,
       traces: 3,
       sessions: 1,
     });
@@ -76,11 +79,11 @@ describe('computeKpis', () => {
   });
 });
 
-describe('applyClientFilters', () => {
-  it('keeps only failures when asked', () => {
-    const results = [makeResult({ label: 'pass' }), makeResult({ label: 'fail' })];
-    expect(applyClientFilters(results, { failingOnly: true })).toHaveLength(1);
-    expect(applyClientFilters(results, {})).toHaveLength(2);
+describe('outcomesFilter', () => {
+  it('narrows verdicts for failing-only and explicit verdict filters', () => {
+    expect(outcomesFilter({ failingOnly: true })).toEqual(['fail']);
+    expect(outcomesFilter({ outcomes: ['error'] })).toEqual(['error']);
+    expect(outcomesFilter({})).toBeUndefined();
   });
 });
 

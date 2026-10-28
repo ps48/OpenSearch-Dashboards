@@ -137,7 +137,9 @@ describe('RunDetailPage', () => {
     expect(rows[0]).toHaveTextContent('Case d');
     expect(within(rows[0]).getByTestId('agtEvlCaseErrorBadge')).toHaveTextContent('TimeoutError');
     const caseB = rows.find((r) => within(r).queryByText('Case b')) as HTMLElement;
-    expect(within(caseB).getByTestId('agtEvlOutcomeBadge')).toHaveTextContent('Fail: 0.20');
+    const badge = within(caseB).getByTestId('agtEvlOutcomeBadge');
+    expect(badge).toHaveTextContent('0.20');
+    expect(badge).toHaveAttribute('data-outcome', 'fail');
     expect(within(caseB).getByTestId('agtEvlRunCaseInput')).toHaveTextContent('Plan a trip b');
     expect(within(caseB).getByTestId('agtEvlRunCaseOutput')).toHaveTextContent('new b');
     fireEvent.click(within(caseB).getByTestId('agtEvlRunCaseTrace'));

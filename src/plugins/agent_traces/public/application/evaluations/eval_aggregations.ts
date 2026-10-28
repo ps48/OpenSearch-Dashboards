@@ -10,6 +10,7 @@ import {
   RunEvents,
   SuiteRunEvent,
   TestCaseEvent,
+  directionOf,
   normalizedScore,
 } from './eval_data';
 
@@ -46,12 +47,6 @@ export const previousPeriod = ({ from, to }: TimeBoundsMs): TimeBoundsMs => ({
   to: from,
 });
 
-/** Results passing the client-side filters (the outcome is computed in the browser). */
-export const applyClientFilters = (
-  results: EvalResult[],
-  { failingOnly }: { failingOnly?: boolean }
-): EvalResult[] => (failingOnly ? results.filter((r) => r.outcome === 'fail') : results);
-
 // ---------------------------------------------------------------------------------------
 // KPIs
 // ---------------------------------------------------------------------------------------
@@ -62,6 +57,10 @@ export interface EvalKpis {
   /** Share of pass among pass and fail results (neutral excluded); undefined without any. */
   passRate?: number;
   failing: number;
+  /** Evaluator errors. */
+  errors: number;
+  /** Results no pass rule decided. */
+  scored: number;
   traces: number;
   sessions: number;
 }
@@ -76,6 +75,8 @@ export const computeKpis = (results: EvalResult[]): EvalKpis => {
     evaluators: distinct(results.map((r) => r.name)),
     passRate: pass + fail > 0 ? pass / (pass + fail) : undefined,
     failing: fail,
+    errors: results.filter((r) => r.outcome === 'error').length,
+    scored: results.filter((r) => r.outcome === 'neutral').length,
     traces: distinct(results.map((r) => r.traceId)),
     sessions: distinct(results.map((r) => r.sessionId)),
   };
@@ -203,7 +204,7 @@ export const aggregateEvaluator = (name: string, results: EvalResult[]): Evaluat
     topLabel,
     min: values.length ? Math.min(...values) : undefined,
     max: values.length ? Math.max(...values) : undefined,
-    direction: results.some((r) => r.direction === 'minimize') ? 'minimize' : 'maximize',
+    direction: directionOf(name, results),
     passCount: results.filter((r) => r.outcome === 'pass').length,
     failCount: results.filter((r) => r.outcome === 'fail').length,
   };

@@ -63,6 +63,7 @@ import { createAbortDataQueryAction } from './application/utils/state_management
 import { ABORT_DATA_QUERY_TRIGGER } from '../../ui_actions/public';
 import { abortAllActiveQueries } from './application/utils/state_management/actions/query_actions';
 import { setServices } from './services/services';
+import { setEvaluationRulesSource } from './application/evaluations/eval_verdict';
 import { AgentTracesIcon } from './assets/agent_traces_icon';
 import { AgentSpansIcon } from './assets/agent_spans_icon';
 import { AgentEvalsIcon } from './assets/agent_evals_icon';
@@ -314,6 +315,30 @@ export class AgentTracesPlugin implements Plugin<
       if (!this.stateUpdaterByApp[AGENT_EVALS_NAV_ID]) {
         this.stateUpdaterByApp[AGENT_EVALS_NAV_ID] = new BehaviorSubject<AppUpdater>(() => ({}));
       }
+      // Like Explore and the base Agent Traces app: the nav link reopens the last URL of the
+      // browser session (tab, filters, runs range), with the current global time range.
+      let evalsHistory: AppMountParameters['history'] | undefined;
+      const evalsTracker = createOsdUrlTracker({
+        baseUrl: core.http.basePath.prepend(`/app/${AGENT_EVALS_NAV_ID}`),
+        defaultSubUrl: '#/',
+        storageKey: `lastUrl:${core.http.basePath.get()}:${AGENT_EVALS_NAV_ID}`,
+        navLinkUpdater$: this.stateUpdaterByApp[AGENT_EVALS_NAV_ID],
+        toastNotifications: core.notifications.toasts,
+        stateParams: [
+          {
+            osdUrlKey: '_g',
+            stateUpdate$: setupDeps.data.query.state$.pipe(
+              filter(
+                (value: Record<string, unknown>) =>
+                  !!((value.changes as any)?.time || (value.changes as any)?.refreshInterval)
+              ),
+              map(({ state }) => getGlobalQueryUrlState(state))
+            ),
+          },
+        ],
+        getHistory: () => evalsHistory as AppMountParameters['history'],
+      });
+      this.stopUrlTrackingCallbackByApp[AGENT_EVALS_NAV_ID] = evalsTracker.stop;
       core.application.register({
         id: AGENT_EVALS_NAV_ID,
         title: i18n.translate('agentTraces.evaluations.appTitle', {
@@ -334,7 +359,13 @@ export class AgentTracesPlugin implements Plugin<
             return () => {};
           }
           const { renderEvaluationsApp } = await import('./application/evaluations');
-          return renderEvaluationsApp(params, coreStart, pluginsStart);
+          evalsHistory = params.history;
+          evalsTracker.appMounted();
+          const unmount = renderEvaluationsApp(params, coreStart, pluginsStart);
+          return () => {
+            evalsTracker.appUnMounted();
+            unmount();
+          };
         },
       });
 
@@ -398,6 +429,8 @@ export class AgentTracesPlugin implements Plugin<
 
   public start(core: CoreStart, plugins: AgentTracesStartDependencies): AgentTracesPluginStart {
     setUiActions(plugins.uiActions);
+    // Evaluation verdicts read the pass rules setting wherever results are shown.
+    setEvaluationRulesSource(core.uiSettings);
     setDashboard(plugins.dashboard);
     const opensearchDashboardsVersion = this.initializerContext.env.packageInfo.version;
     setDashboardVersion({ version: opensearchDashboardsVersion });
