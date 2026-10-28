@@ -7,6 +7,7 @@ import React from 'react';
 import {
   EuiBadge,
   EuiBasicTable,
+  EuiButton,
   EuiCallOut,
   EuiCodeBlock,
   EuiFlexGroup,
@@ -31,15 +32,9 @@ import {
   ValueComparison,
   parseEvalTime,
 } from './eval_aggregations';
-import { formatAggregate, formatDuration, shortId } from './eval_components';
+import { CASE_STATUS_COLOR, formatAggregate, formatDuration, shortId } from './eval_components';
 
-const STATUS_COLOR: Record<CaseStatus, string> = {
-  pass: 'success',
-  fail: 'danger',
-  error: 'warning',
-  unknown: 'subdued',
-};
-const STATUS_TEXT: Record<CaseStatus, string> = {
+export const STATUS_TEXT: Record<CaseStatus, string> = {
   pass: i18n.translate('agentTraces.evalsPage.casePassed', { defaultMessage: 'Passed' }),
   fail: i18n.translate('agentTraces.evalsPage.caseFailed', { defaultMessage: 'Failed' }),
   error: i18n.translate('agentTraces.evalsPage.caseErrored', { defaultMessage: 'Errored' }),
@@ -67,7 +62,11 @@ export const CaseStatusView: React.FC<{ status?: CaseStatus; errorType?: string 
       </EuiToolTip>
     );
   }
-  return <EuiHealth color={STATUS_COLOR[status]}>{STATUS_TEXT[status]}</EuiHealth>;
+  return (
+    <EuiHealth color={CASE_STATUS_COLOR[status]} data-test-subj={`agtEvlCaseStatus-${status}`}>
+      {STATUS_TEXT[status]}
+    </EuiHealth>
+  );
 };
 
 /** JSON is pretty-printed; anything else is shown as is. */
@@ -177,7 +176,16 @@ export const CaseCompareFlyout: React.FC<{
   candidateStartedMs: number;
   onClose: () => void;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
-}> = ({ comparison: c, baselineStartedMs, candidateStartedMs, onClose, onOpenTrace }) => {
+  /** Opens both agent traces side by side; shown when both runs have a trace for the case. */
+  onCompareTraces?: () => void;
+}> = ({
+  comparison: c,
+  baselineStartedMs,
+  candidateStartedMs,
+  onClose,
+  onOpenTrace,
+  onCompareTraces,
+}) => {
   const input = c.candidateCase?.input ?? c.baselineCase?.input;
   const expected = c.candidateCase?.expected ?? c.baselineCase?.expected;
   const hasContent =
@@ -202,6 +210,21 @@ export const CaseCompareFlyout: React.FC<{
           <EuiText size="xs" color="subdued" className="agtEvlMono">
             {c.caseId}
           </EuiText>
+        )}
+        {onCompareTraces && c.baselineTraceId && c.candidateTraceId && (
+          <>
+            <EuiSpacer size="s" />
+            <EuiButton
+              size="s"
+              iconType="inspect"
+              onClick={onCompareTraces}
+              data-test-subj="agtEvlCaseCompareTraces"
+            >
+              {i18n.translate('agentTraces.evalsPage.compareTraces', {
+                defaultMessage: 'Compare agent traces',
+              })}
+            </EuiButton>
+          </>
         )}
       </EuiFlyoutHeader>
       <EuiFlyoutBody>

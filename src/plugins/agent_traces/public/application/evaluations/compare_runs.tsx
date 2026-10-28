@@ -36,6 +36,7 @@ import {
 } from './eval_aggregations';
 import { formatAggregate, formatDuration, formatEvalTime, shortId } from './eval_components';
 import { CaseCompareFlyout, CaseStatusView } from './case_compare_flyout';
+import { TraceCompareFlyout } from './trace_compare_flyout';
 
 const CHANGE_TEXT: Record<ChangeKind, string> = {
   improved: i18n.translate('agentTraces.evalsPage.changeImproved', { defaultMessage: 'Improved' }),
@@ -150,6 +151,8 @@ export const CompareRuns: React.FC<{
   baseline?: RunSummary;
   candidate?: RunSummary;
   onBack: () => void;
+  /** Back link text; the runs list by default. */
+  backLabel?: string;
   onSwap: () => void;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
 }> = ({
@@ -160,6 +163,7 @@ export const CompareRuns: React.FC<{
   baseline,
   candidate,
   onBack,
+  backLabel,
   onSwap,
   onOpenTrace,
 }) => {
@@ -169,6 +173,7 @@ export const CompareRuns: React.FC<{
   );
   const [openCaseId, setOpenCaseId] = useState<string | undefined>();
   const openCase = comparison.cases.find((c) => c.caseId === openCaseId);
+  const [tracesOpen, setTracesOpen] = useState(false);
   const [filter, setFilter] = useState<CaseFilter>('all');
   const cases = useMemo(
     () =>
@@ -282,6 +287,27 @@ export const CompareRuns: React.FC<{
               </EuiLink>
             </EuiFlexItem>
           )}
+          {c.baselineTraceId && c.candidateTraceId && (
+            <EuiFlexItem grow={false}>
+              <EuiToolTip
+                content={i18n.translate('agentTraces.evalsPage.compareTracesTip', {
+                  defaultMessage: 'Both agent traces side by side',
+                })}
+              >
+                <EuiLink
+                  onClick={() => {
+                    setOpenCaseId(c.caseId);
+                    setTracesOpen(true);
+                  }}
+                  data-test-subj="agtEvlCompareTracesLink"
+                >
+                  {i18n.translate('agentTraces.evalsPage.compareTracesShort', {
+                    defaultMessage: 'Compare',
+                  })}
+                </EuiLink>
+              </EuiToolTip>
+            </EuiFlexItem>
+          )}
         </EuiFlexGroup>
       ),
     },
@@ -310,9 +336,10 @@ export const CompareRuns: React.FC<{
             onClick={onBack}
             data-test-subj="agtEvlCompareBack"
           >
-            {i18n.translate('agentTraces.evalsPage.backToRuns', {
-              defaultMessage: 'Evaluation runs',
-            })}
+            {backLabel ??
+              i18n.translate('agentTraces.evalsPage.backToRuns', {
+                defaultMessage: 'Evaluation runs',
+              })}
           </EuiButtonEmpty>
         </EuiFlexItem>
         <EuiFlexItem>
@@ -435,13 +462,35 @@ export const CompareRuns: React.FC<{
         })}
         data-test-subj="agtEvlCompareCases"
       />
-      {openCase && (
+      {openCase && tracesOpen && openCase.baselineTraceId && openCase.candidateTraceId && (
+        <TraceCompareFlyout
+          caseName={openCase.caseName ?? openCase.caseId}
+          baseline={{
+            label: baselineId,
+            traceId: openCase.baselineTraceId,
+            aroundMs: timeOf(openCase.baselineCase?.time, baseline?.started),
+          }}
+          candidate={{
+            label: candidateId,
+            traceId: openCase.candidateTraceId,
+            aroundMs: timeOf(openCase.candidateCase?.time, candidate?.started),
+          }}
+          onBack={() => setTracesOpen(false)}
+          onClose={() => {
+            setTracesOpen(false);
+            setOpenCaseId(undefined);
+          }}
+          onOpenTrace={onOpenTrace}
+        />
+      )}
+      {openCase && !tracesOpen && (
         <CaseCompareFlyout
           comparison={openCase}
           baselineStartedMs={baseline?.started ?? Date.now()}
           candidateStartedMs={candidate?.started ?? Date.now()}
           onClose={() => setOpenCaseId(undefined)}
           onOpenTrace={onOpenTrace}
+          onCompareTraces={() => setTracesOpen(true)}
         />
       )}
     </div>

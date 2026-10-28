@@ -59,12 +59,12 @@ describe('OverviewTab', () => {
     renderOverview();
     const resultsKpi = screen.getByTestId('agtEvlKpiResults');
     expect(within(resultsKpi).getByText('3')).toBeInTheDocument();
-    expect(within(resultsKpi).getByText('+2 (+200%) vs previous period')).toBeInTheDocument();
+    expect(within(resultsKpi).getByText('+2 (+200%) vs previous')).toBeInTheDocument();
     const passRate = screen.getByTestId('agtEvlKpiPassRate');
     expect(within(passRate).getByText('67%')).toBeInTheDocument();
     // 100% before, 67% now: a drop shown as bad
     const delta = within(passRate).getByTestId('agtEvlDelta');
-    expect(delta).toHaveTextContent('-33.3 pts vs previous period');
+    expect(delta).toHaveTextContent('-33.3 pts vs previous');
     expect(within(screen.getByTestId('agtEvlKpiSessions')).getByText('1')).toBeInTheDocument();
   });
 
@@ -104,10 +104,10 @@ describe('DeltaText', () => {
     );
   it('says when there is no previous data', () => {
     renderDelta({ current: 1, previous: undefined, kind: 'count', good: 'up' });
-    expect(screen.getByText('No data in the previous period')).toBeInTheDocument();
+    expect(screen.getByText('No earlier data')).toBeInTheDocument();
   });
   it('says when nothing changed', () => {
     renderDelta({ current: 4, previous: 4, kind: 'count', good: 'down' });
-    expect(screen.getByText('No change vs previous period')).toBeInTheDocument();
+    expect(screen.getByText('No change')).toBeInTheDocument();
   });
 });

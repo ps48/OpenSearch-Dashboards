@@ -5,12 +5,22 @@
 
 import React from 'react';
 import moment from 'moment';
-import { EuiBadge, EuiCallOut, EuiCode, EuiEmptyPrompt, EuiText, EuiToolTip } from '@elastic/eui';
+import {
+  EuiBadge,
+  EuiCallOut,
+  EuiCode,
+  EuiEmptyPrompt,
+  EuiText,
+  EuiTitle,
+  EuiToolTip,
+  euiPaletteColorBlind,
+  euiPaletteColorBlindBehindText,
+} from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
+import { AGENT_EVALS_INDEX_PATTERN, EVALS_INDEX_SETTING } from '../../../common';
 import { EvalOutcome, EvalResult, LEVEL_LABEL, SOURCE_LABEL, formatScore } from './eval_data';
-import { EvaluatorAggregate, parseEvalTime } from './eval_aggregations';
+import { CaseStatus, EvaluatorAggregate, parseEvalTime } from './eval_aggregations';
 
 export const OUTCOME_TEXT: Record<EvalOutcome, string> = {
   pass: i18n.translate('agentTraces.evalsPage.outcomePass', { defaultMessage: 'Pass' }),
@@ -25,18 +35,36 @@ export const OUTCOME_BADGE_COLOR: Record<EvalOutcome, string> = {
   neutral: 'hollow',
 };
 
-/** Chart colors (EUI vis palette) for pass, fail and neutral series. */
+/**
+ * Pass, fail and errored colors: the shades the OUI badges use (`secondary`, `danger`,
+ * `warning`), so a bar, a dot and a badge for the same outcome look the same.
+ */
+const BADGE_SHADES = euiPaletteColorBlindBehindText();
+const NEUTRAL_COLOR = '#98A2B3';
+
 export const OUTCOME_CHART_COLOR: Record<EvalOutcome, string> = {
-  pass: '#54B399',
-  fail: '#E7664C',
-  neutral: '#98A2B3',
+  pass: BADGE_SHADES[0],
+  fail: BADGE_SHADES[9],
+  neutral: NEUTRAL_COLOR,
 };
 
+export const CASE_STATUS_COLOR: Record<CaseStatus, string> = {
+  pass: BADGE_SHADES[0],
+  fail: BADGE_SHADES[9],
+  error: BADGE_SHADES[5],
+  unknown: NEUTRAL_COLOR,
+};
+
+/** Series colors for evaluations: the OUI vis palette without the pass, fail and warning hues. */
+const VIS = euiPaletteColorBlind();
+export const SERIES_COLORS = [VIS[1], VIS[2], VIS[3], VIS[4], VIS[7], VIS[8], VIS[6]];
+export const seriesColor = (index: number) => SERIES_COLORS[index % SERIES_COLORS.length];
+
 const LEVEL_COLOR: Record<string, string> = {
-  session: '#6092C0',
-  trace: '#D36086',
-  span: '#54B399',
-  tool_call: '#D6BF57',
+  session: VIS[1],
+  trace: VIS[2],
+  span: VIS[3],
+  tool_call: VIS[4],
 };
 
 export const levelLabel = (level: string) => LEVEL_LABEL[level] ?? level;
@@ -62,15 +90,65 @@ export const formatDuration = (ms?: number): string => {
 };
 
 export const formatPercent = (rate: number | undefined, digits = 0) =>
-  rate === undefined ? '-' : `${(rate * 100).toFixed(digits)}%`;
+  rate === undefined || !Number.isFinite(rate) ? '-' : `${(rate * 100).toFixed(digits)}%`;
+
+/** A score value: integers as is, else two decimals; `-` when unknown. */
+export const formatValue = (value: number | undefined): string =>
+  value === undefined || !Number.isFinite(value)
+    ? '-'
+    : Number.isInteger(value)
+      ? String(value)
+      : value.toFixed(2);
+
+/** Counts with separators; large token counts as `12.3k` / `1.2M`. */
+export const formatCount = (n: number | undefined): string =>
+  n === undefined || !Number.isFinite(n) ? '-' : Math.round(n).toLocaleString();
+
+export const formatTokens = (n: number | undefined): string => {
+  if (n === undefined || !Number.isFinite(n)) return '-';
+  if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (Math.abs(n) >= 1e4) return `${(n / 1e3).toFixed(1)}k`;
+  return Math.round(n).toLocaleString();
+};
 
 /** An aggregate as shown in tables: mean score when numeric, else the pass rate. */
 export const formatAggregate = (agg?: EvaluatorAggregate): string => {
   if (!agg) return '-';
-  if (agg.mean !== undefined) return agg.mean.toFixed(2);
+  if (agg.mean !== undefined) return formatValue(agg.mean);
   if (agg.passRate !== undefined) return formatPercent(agg.passRate);
   return agg.topLabel ?? '-';
 };
+
+/** Section header: title, an optional count, a one-line help and right-aligned actions. */
+export const SectionHeader: React.FC<{
+  title: React.ReactNode;
+  count?: number;
+  help?: React.ReactNode;
+  actions?: React.ReactNode;
+  testSubj?: string;
+}> = ({ title, count, help, actions, testSubj }) => (
+  <div className="agtEvlSection" data-test-subj={testSubj}>
+    <div className="agtEvlSection__row">
+      <EuiTitle size="xs">
+        <h2>
+          {title}
+          {count !== undefined && (
+            <>
+              {' '}
+              <EuiBadge color="hollow">{count.toLocaleString()}</EuiBadge>
+            </>
+          )}
+        </h2>
+      </EuiTitle>
+      {actions && <div>{actions}</div>}
+    </div>
+    {help && (
+      <EuiText size="xs" color="subdued">
+        {help}
+      </EuiText>
+    )}
+  </div>
+);
 
 /** The result: outcome word, colored, with the label and score. Never color-only. */
 export const OutcomeBadge: React.FC<{
@@ -147,7 +225,9 @@ export const TargetText: React.FC<{ result: EvalResult }> = ({ result }) => {
 };
 
 /** No evaluation index in the cluster yet: how results get here. */
-export const NoEvalIndexPrompt: React.FC = () => (
+export const NoEvalIndexPrompt: React.FC<{ index?: string }> = ({
+  index = AGENT_EVALS_INDEX_PATTERN,
+}) => (
   <EuiEmptyPrompt
     iconType="visGauge"
     data-test-subj="agtEvlNoIndex"
@@ -164,10 +244,10 @@ export const NoEvalIndexPrompt: React.FC = () => (
         <p>
           <FormattedMessage
             id="agentTraces.evalsPage.noIndexBody"
-            defaultMessage="Agent Evaluations reads OpenTelemetry {event} events from the {index} indices. Emit them with:"
+            defaultMessage="Agent Evaluations reads OpenTelemetry {event} events from {index}. Emit them with:"
             values={{
               event: <EuiCode>gen_ai.evaluation.result</EuiCode>,
-              index: <EuiCode>{AGENT_EVALS_INDEX_PATTERN}</EuiCode>,
+              index: <EuiCode>{index}</EuiCode>,
             }}
           />
         </p>
@@ -197,6 +277,13 @@ export const NoEvalIndexPrompt: React.FC = () => (
             id="agentTraces.evalsPage.noIndexPipeline"
             defaultMessage="Send them over OTLP logs like your traces. Data Prepper routes evaluation events to {index}."
             values={{ index: <EuiCode>otel-v1-genai-evaluation</EuiCode> }}
+          />
+        </p>
+        <p>
+          <FormattedMessage
+            id="agentTraces.evalsPage.noIndexSetting"
+            defaultMessage="Results in another index? Set {setting} in Advanced settings."
+            values={{ setting: <EuiCode>{EVALS_INDEX_SETTING}</EuiCode> }}
           />
         </p>
       </EuiText>

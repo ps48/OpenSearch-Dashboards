@@ -33,23 +33,40 @@ import { createOsdUrlStateStorage } from '../../../../opensearch_dashboards_util
 import { syncQueryStateWithUrl } from '../../../../data/public';
 import { TimeRange } from '../../../../data/common';
 import { EvalResult } from './eval_data';
-import { TimeBoundsMs } from './eval_aggregations';
+import { TimeBoundsMs, mergeRunData } from './eval_aggregations';
 import {
   APP_STATE_KEY,
+  DEFAULT_EVALS_TIME,
+  DEFAULT_RUNS_TIME,
   EvalAppState,
   EvalTab,
   compactAppState,
   filtersOf,
   normalizeAppState,
+  runsTimeOf,
 } from './eval_url_state';
-import { RESULTS_LIMIT, useEvalData, useRunResults } from './use_eval_data';
+import {
+  RESULTS_LIMIT,
+  useEvalData,
+  useEvaluationResults,
+  useRunDetail,
+  useRunResults,
+} from './use_eval_data';
 import { EvalFiltersBar } from './eval_filters_bar';
 import { OverviewTab } from './overview_tab';
 import { ResultsTab } from './results_tab';
 import { RunsTab } from './runs_tab';
 import { ResultFlyout } from './result_flyout';
-import { NoEvalIndexPrompt, QueryErrorCallout, TruncationNotice } from './eval_components';
+import {
+  NoEvalIndexPrompt,
+  QueryErrorCallout,
+  TruncationNotice,
+  formatEvalTime,
+} from './eval_components';
 import { openTraceInAgentTraces } from './eval_links';
+import { getEvalsIndexPattern } from './eval_settings';
+import { RunDetailPage } from './run_detail';
+import { EvaluatorDrilldownFlyout } from './evaluator_drilldown';
 import type { EvaluationsServices } from '.';
 
 interface QuickRange {
@@ -84,8 +101,14 @@ const useAppState = (params: AppMountParameters, services: EvaluationsServices) 
   );
   // The global `_g` state (time range, refresh interval) is shared with the other apps. Start
   // syncing on the first render, so the time range is read from the URL before the first fetch.
+  // A link without a time range opens the last 24 hours (the global default is often 15
+  // minutes, which rarely holds evaluation results).
   const sync = useRef<{ stop: () => void }>();
-  if (!sync.current) sync.current = syncQueryStateWithUrl(services.data.query, storage);
+  if (!sync.current) {
+    const global = storage.get<{ time?: unknown }>('_g');
+    if (!global?.time) services.data.query.timefilter.timefilter.setTime(DEFAULT_EVALS_TIME);
+    sync.current = syncQueryStateWithUrl(services.data.query, storage);
+  }
   const [state, setState] = useState<EvalAppState>(() =>
     normalizeAppState(storage.get(APP_STATE_KEY))
   );
@@ -105,12 +128,13 @@ const useAppState = (params: AppMountParameters, services: EvaluationsServices) 
     };
   }, [storage, services.data.query]);
 
+  /** `push` adds a history entry (opening a run or a comparison), so Back returns. */
   const update = useCallback(
-    (patch: Partial<EvalAppState>) => {
+    (patch: Partial<EvalAppState>, options: { push?: boolean } = {}) => {
       const next = { ...stateRef.current, ...patch };
       stateRef.current = next;
       setState(next);
-      storage.set(APP_STATE_KEY, compactAppState(next), { replace: true });
+      storage.set(APP_STATE_KEY, compactAppState(next), { replace: !options.push });
     },
     [storage]
   );
@@ -161,14 +185,89 @@ const useTimeRange = (services: EvaluationsServices) => {
   };
 };
 
+/**
+ * The runs tab's own time range (in `_a`, default last 7 days): offline runs happen a few
+ * times a day, so they need a longer window than online results.
+ */
+const useRunsTimeRange = (
+  services: EvaluationsServices,
+  time: TimeRange,
+  onChange: (time: TimeRange) => void
+) => {
+  const timefilter = services.data.query.timefilter.timefilter;
+  const [refreshKey, setRefreshKey] = useState(0);
+  const bounds = useMemo<TimeBoundsMs>(() => {
+    const b = timefilter.calculateBounds(time);
+    return {
+      from: b.min?.valueOf() ?? Date.now() - 7 * 24 * 3600 * 1000,
+      to: b.max?.valueOf() ?? Date.now(),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [time.from, time.to, refreshKey, timefilter]);
+  return {
+    time,
+    bounds,
+    refreshKey,
+    onTimeChange: ({ start, end }: OnTimeChangeProps) => {
+      onChange({ from: start, to: end });
+      setRefreshKey((k) => k + 1);
+    },
+    onRefresh: () => setRefreshKey((k) => k + 1),
+  };
+};
+
+const formatScope = (bounds: TimeBoundsMs) =>
+  i18n.translate('agentTraces.evalsPage.scopeRange', {
+    defaultMessage: '{from} to {to}',
+    values: {
+      from: formatEvalTime(bounds.from, 'MMM D, HH:mm'),
+      to: formatEvalTime(bounds.to, 'MMM D, HH:mm'),
+    },
+  });
+
 export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ params }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
   const [state, setState] = useAppState(params, services);
+  const index = getEvalsIndexPattern(services.uiSettings);
   const time = useTimeRange(services);
+  const runsTimeValue = runsTimeOf(state);
+  const runsTime = useRunsTimeRange(services, runsTimeValue, (next) =>
+    setState({
+      runsTime:
+        next.from === DEFAULT_RUNS_TIME.from && next.to === DEFAULT_RUNS_TIME.to ? undefined : next,
+    })
+  );
   const filters = useMemo(() => filtersOf(state), [state]);
-  const data = useEvalData(services.data, time.bounds, filters, time.refreshKey);
+  const data = useEvalData(services.data, time.bounds, filters, time.refreshKey, index);
   const runsActive = state.tab === 'runs';
-  const runs = useRunResults(services.data, time.bounds, filters, time.refreshKey, runsActive);
+  const runs = useRunResults(
+    services.data,
+    runsTime.bounds,
+    filters,
+    runsTime.refreshKey,
+    runsActive,
+    index
+  );
+  const runDetail = useRunDetail(
+    services.data,
+    runsActive ? state.run : undefined,
+    runsTime.refreshKey,
+    index
+  );
+  const runData = useMemo(
+    () => mergeRunData(runs, state.run ? runDetail : undefined),
+    [runs, runDetail, state.run]
+  );
+  const drilldownName = state.tab === 'overview' ? state.evaluation : undefined;
+  const drilldown = useEvaluationResults(
+    services.data,
+    drilldownName,
+    time.bounds,
+    filters,
+    time.refreshKey,
+    index
+  );
+  const runPageOpen = runsActive && !!state.run && !state.compare;
   const [flyoutResult, setFlyoutResult] = useState<EvalResult | undefined>();
 
   useEffect(() => {
@@ -201,27 +300,55 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     results: data.results.length,
   };
 
+  const openTrace = useCallback(
+    (traceId: string, aroundMs: number) =>
+      openTraceInAgentTraces(services.application, traceId, aroundMs),
+    [services.application]
+  );
+
   const renderTab = () => {
     if (state.tab === 'runs') {
-      if (runs.indexMissing) return <NoEvalIndexPrompt />;
+      if (runs.indexMissing) return <NoEvalIndexPrompt index={index} />;
+      if (runPageOpen && state.run) {
+        return (
+          <RunDetailPage
+            runId={state.run}
+            results={runData.results}
+            events={runData.events}
+            loading={runDetail.loading || runs.loading}
+            error={runDetail.error}
+            onBack={() => setState({ run: undefined }, { push: true })}
+            onOpenRun={(run) => setState({ run }, { push: true })}
+            onCompare={(compare) => setState({ compare }, { push: true })}
+            onOpenTrace={openTrace}
+          />
+        );
+      }
       if (runs.error) return <QueryErrorCallout message={runs.error} />;
       if (runs.loading && runs.results.length === 0) return <EuiLoadingContent lines={6} />;
       return (
         <>
           {runs.truncated && <TruncationNotice shown={runs.results.length} />}
           <RunsTab
-            results={runs.results}
-            events={runs.events}
+            results={runData.results}
+            events={runData.events}
             compare={state.compare}
-            onCompareChange={(compare) => setState({ compare })}
-            onOpenTrace={(traceId, aroundMs) =>
-              openTraceInAgentTraces(services.application, traceId, aroundMs)
+            onCompareChange={(compare) => setState({ compare }, { push: true })}
+            onOpenTrace={openTrace}
+            onOpenRun={(run) => setState({ run, compare: undefined }, { push: true })}
+            backLabel={
+              state.run
+                ? i18n.translate('agentTraces.evalsPage.backToRun', {
+                    defaultMessage: 'Run {runId}',
+                    values: { runId: state.run },
+                  })
+                : undefined
             }
           />
         </>
       );
     }
-    if (data.indexMissing) return <NoEvalIndexPrompt />;
+    if (data.indexMissing) return <NoEvalIndexPrompt index={index} />;
     if (data.error) return <QueryErrorCallout message={data.error} />;
     if (data.loading && data.results.length === 0) return <EuiLoadingContent lines={8} />;
     const notice = data.truncated ? (
@@ -245,14 +372,14 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
           results={data.results}
           previous={data.previous}
           bounds={time.bounds}
-          onSelectEvaluation={(name) => setState({ names: [name], tab: 'results' })}
+          onSelectEvaluation={(name) => setState({ evaluation: name })}
           onOpenResult={openResult}
         />
       </>
     );
   };
 
-  const loading = state.tab === 'runs' ? runs.loading : data.loading;
+  const loading = state.tab === 'runs' ? runs.loading || runDetail.loading : data.loading;
   // A json setting: no default override (it would be JSON-parsed).
   const quickRanges = useMemo(
     () =>
@@ -282,30 +409,55 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
               </EuiText>
             </EuiFlexItem>
             <EuiFlexItem grow={false}>
-              <EuiSuperDatePicker
-                start={time.time.from}
-                end={time.time.to}
-                isPaused={time.refreshInterval.pause}
-                refreshInterval={time.refreshInterval.value}
-                onTimeChange={time.onTimeChange}
-                onRefresh={time.onRefresh}
-                onRefreshChange={time.onRefreshChange}
-                isLoading={loading}
-                dateFormat={services.uiSettings.get('dateFormat')}
-                commonlyUsedRanges={quickRanges}
-                data-test-subj="agtEvlDatePicker"
-              />
+              {runsActive ? (
+                <div data-test-subj="agtEvlRunsTimePicker">
+                  <EuiSuperDatePicker
+                    start={runsTime.time.from}
+                    end={runsTime.time.to}
+                    onTimeChange={runsTime.onTimeChange}
+                    onRefresh={runsTime.onRefresh}
+                    isLoading={loading}
+                    dateFormat={services.uiSettings.get('dateFormat')}
+                    commonlyUsedRanges={quickRanges}
+                    data-test-subj="agtEvlRunsDatePicker"
+                  />
+                </div>
+              ) : (
+                <EuiSuperDatePicker
+                  start={time.time.from}
+                  end={time.time.to}
+                  isPaused={time.refreshInterval.pause}
+                  refreshInterval={time.refreshInterval.value}
+                  onTimeChange={time.onTimeChange}
+                  onRefresh={time.onRefresh}
+                  onRefreshChange={time.onRefreshChange}
+                  isLoading={loading}
+                  dateFormat={services.uiSettings.get('dateFormat')}
+                  commonlyUsedRanges={quickRanges}
+                  data-test-subj="agtEvlDatePicker"
+                />
+              )}
             </EuiFlexItem>
           </EuiFlexGroup>
           <EuiSpacer size="m" />
-          <EvalFiltersBar state={state} facets={data.facets} onChange={setState} />
-          <EuiSpacer size="m" />
+          {!runPageOpen && (
+            <>
+              <EvalFiltersBar state={state} facets={data.facets} onChange={setState} />
+              <EuiSpacer size="m" />
+            </>
+          )}
           <EuiTabs size="s">
             {(Object.keys(TAB_LABELS) as EvalTab[]).map((tab) => (
               <EuiTab
                 key={tab}
                 isSelected={state.tab === tab}
-                onClick={() => setState({ tab })}
+                onClick={() =>
+                  setState(
+                    tab === state.tab && tab === 'runs'
+                      ? { run: undefined, compare: undefined }
+                      : { tab }
+                  )
+                }
                 data-test-subj={`agtEvlTab-${tab}`}
               >
                 {TAB_LABELS[tab]}
@@ -325,6 +477,22 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
           </div>
         </EuiPageBody>
       </EuiPage>
+      {drilldownName && !flyoutResult && (
+        <EvaluatorDrilldownFlyout
+          name={drilldownName}
+          results={drilldown.results}
+          loading={drilldown.loading}
+          error={drilldown.error}
+          scope={formatScope(time.bounds)}
+          bounds={time.bounds}
+          onClose={() => setState({ evaluation: undefined })}
+          onOpenResult={openResult}
+          onOpenTrace={openTrace}
+          onViewAllResults={() =>
+            setState({ names: [drilldownName], tab: 'results', evaluation: undefined })
+          }
+        />
+      )}
       {flyoutResult && (
         <ResultFlyout
           result={flyoutResult}

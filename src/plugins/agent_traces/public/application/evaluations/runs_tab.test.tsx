@@ -105,7 +105,7 @@ describe('RunsTab with test case and run events', () => {
     const [latest, first] = rows();
     expect(within(latest).getByText('run-2')).toBeInTheDocument();
     expect(within(latest).getByTestId('agtEvlRunErrored')).toHaveTextContent('Errored');
-    expect(within(latest).getByTestId('agtEvlRunErroredCount')).toHaveTextContent('1');
+    expect(within(latest).getByTestId('agtEvlRunErroredCount')).toHaveTextContent('1 errored');
     expect(latest).toHaveTextContent('8.00 s');
     expect(within(first).queryByTestId('agtEvlRunErrored')).not.toBeInTheDocument();
     expect(first).toHaveTextContent('6.00 s');
@@ -113,8 +113,9 @@ describe('RunsTab with test case and run events', () => {
 
   it('shows no errored cases and no duration for runs without events', () => {
     renderRuns();
-    expect(within(rows()[0]).getByTestId('agtEvlRunErroredCount')).toHaveTextContent('0');
+    expect(within(rows()[0]).queryByTestId('agtEvlRunErroredCount')).not.toBeInTheDocument();
     expect(within(rows()[0]).queryByTestId('agtEvlRunErrored')).not.toBeInTheDocument();
+    expect(within(rows()[0]).getByTestId('agtEvlRunSplit')).toHaveTextContent('2/3');
   });
 
   it('compares case status from the events, with the error badge and missing cases', () => {

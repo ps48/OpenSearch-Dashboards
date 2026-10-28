@@ -12,7 +12,7 @@ import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dash
 import { AppMountParameters } from '../../../../../core/public';
 import { EvaluationsApp } from './evaluations_app';
 import { makeResult, twoRunFixture } from './eval_test_fixtures';
-import { EvalData, RunData } from './use_eval_data';
+import { EvalData, RunData, RunDetailState } from './use_eval_data';
 import { EMPTY_RUN_EVENTS } from './eval_data';
 
 jest.mock('../../../../data/public', () => ({
@@ -34,13 +34,33 @@ const results = [
 ];
 let evalData: EvalData;
 let runData: RunData;
+let runDetail: RunDetailState;
 const mockUseEvalData = jest.fn(() => evalData);
 const mockUseRunResults = jest.fn(() => runData);
+const mockUseRunDetail = jest.fn(() => runDetail);
+const mockUseEvaluationResults = jest.fn(() => ({ loading: false, results }));
 jest.mock('./use_eval_data', () => ({
   ...jest.requireActual('./use_eval_data'),
   useEvalData: (...args: unknown[]) => mockUseEvalData(...(args as [])),
   useRunResults: (...args: unknown[]) => mockUseRunResults(...(args as [])),
+  useRunDetail: (...args: unknown[]) => mockUseRunDetail(...(args as [])),
+  useEvaluationResults: (...args: unknown[]) => mockUseEvaluationResults(...(args as [])),
 }));
+jest.mock('./run_detail', () => ({
+  RunDetailPage: ({ runId, results: shown }: { runId: string; results: unknown[] }) => (
+    <div data-test-subj="runDetailStub">
+      {runId}:{shown.length}
+    </div>
+  ),
+}));
+
+let settings: Record<string, unknown> = {};
+
+/** Bounds per relative range, so tests can tell which range a hook received. */
+const BOUNDS: Record<string, [number, number]> = {
+  'now-7d': [Date.UTC(2026, 9, 20, 0), Date.UTC(2026, 9, 27, 0)],
+  'now-24h': [Date.UTC(2026, 9, 26, 0), Date.UTC(2026, 9, 27, 0)],
+};
 
 const makeServices = () => {
   const timefilter = {
@@ -49,10 +69,10 @@ const makeServices = () => {
     getTimeUpdate$: () => new Subject(),
     getRefreshIntervalUpdate$: () => new Subject(),
     getAutoRefreshFetch$: () => new Subject(),
-    calculateBounds: () => ({
-      min: { valueOf: () => Date.UTC(2026, 9, 26, 0) },
-      max: { valueOf: () => Date.UTC(2026, 9, 27, 0) },
-    }),
+    calculateBounds: ({ from }: { from: string }) => {
+      const [min, max] = BOUNDS[from] ?? BOUNDS['now-24h'];
+      return { min: { valueOf: () => min }, max: { valueOf: () => max } };
+    },
     setTime: jest.fn(),
     setRefreshInterval: jest.fn(),
   };
@@ -60,20 +80,27 @@ const makeServices = () => {
     data: { query: { timefilter: { timefilter } } },
     uiSettings: {
       get: (key: string, fallback?: unknown) =>
-        key === 'timepicker:quickRanges' ? [] : (fallback ?? 'MMM D, YYYY'),
+        key in settings
+          ? settings[key]
+          : key === 'timepicker:quickRanges'
+            ? []
+            : (fallback ?? 'MMM D, YYYY'),
     },
     chrome: { docTitle: { change: jest.fn() }, setBreadcrumbs: jest.fn() },
     application: { navigateToApp: jest.fn() },
   };
 };
 
+let services: ReturnType<typeof makeServices>;
+
 const renderApp = (hash = '') => {
   window.history.replaceState({}, '', `/app/agentTraces/evaluations${hash}`);
   const history = createBrowserHistory();
   const params = { history } as unknown as AppMountParameters;
+  services = makeServices();
   render(
     <I18nProvider>
-      <OpenSearchDashboardsContextProvider services={makeServices()}>
+      <OpenSearchDashboardsContextProvider services={services}>
         <EvaluationsApp params={params} />
       </OpenSearchDashboardsContextProvider>
     </I18nProvider>
@@ -98,8 +125,12 @@ beforeEach(() => {
     events: EMPTY_RUN_EVENTS,
     truncated: false,
   };
+  runDetail = { loading: false, results: [], events: EMPTY_RUN_EVENTS };
+  settings = {};
   mockUseEvalData.mockClear();
   mockUseRunResults.mockClear();
+  mockUseRunDetail.mockClear();
+  mockUseEvaluationResults.mockClear();
 });
 
 describe('EvaluationsApp', () => {
@@ -167,5 +198,86 @@ describe('EvaluationsApp', () => {
     expect(
       within(screen.getByTestId('agtEvlTruncated')).getByText(/of 5,000 results/)
     ).toBeTruthy();
+  });
+
+  it('opens Overview and Results on the last 24 hours when the link has no time range', () => {
+    renderApp();
+    expect(services.data.query.timefilter.timefilter.setTime).toHaveBeenCalledWith({
+      from: 'now-24h',
+      to: 'now',
+    });
+  });
+
+  it('keeps the time range of the link', () => {
+    renderApp('#/?_g=(time:(from:now-1h,to:now))');
+    expect(services.data.query.timefilter.timefilter.setTime).not.toHaveBeenCalled();
+  });
+
+  it('gives the runs tab its own time range, the last 7 days by default', () => {
+    renderApp('#/?_a=(tab:runs)');
+    expect(screen.getByTestId('agtEvlRunsTimePicker')).toHaveTextContent('Last 7 days');
+    expect(document.querySelectorAll('.euiSuperDatePicker')).toHaveLength(1);
+    const lastCall = mockUseRunResults.mock.calls[mockUseRunResults.mock.calls.length - 1];
+    expect((lastCall as unknown[])[1]).toEqual({
+      from: BOUNDS['now-7d'][0],
+      to: BOUNDS['now-7d'][1],
+    });
+    // Overview and Results keep the global range.
+    const evalCall = mockUseEvalData.mock.calls[mockUseEvalData.mock.calls.length - 1];
+    expect((evalCall as unknown[])[1]).toEqual({
+      from: BOUNDS['now-24h'][0],
+      to: BOUNDS['now-24h'][1],
+    });
+  });
+
+  it('reads the runs time range from the URL', () => {
+    renderApp('#/?_a=(runsTime:(from:now-24h,to:now),tab:runs)');
+    const lastCall = mockUseRunResults.mock.calls[mockUseRunResults.mock.calls.length - 1];
+    expect((lastCall as unknown[])[1]).toEqual({
+      from: BOUNDS['now-24h'][0],
+      to: BOUNDS['now-24h'][1],
+    });
+  });
+
+  it("opens a run's page from the link a CI job builds, with the run loaded on its own", () => {
+    runDetail = { loading: false, results: runData.results.slice(0, 2), events: EMPTY_RUN_EVENTS };
+    renderApp("#/?_a=(tab:runs,run:'run-1')");
+    expect(screen.getByTestId('runDetailStub')).toHaveTextContent('run-1:5');
+    const call = mockUseRunDetail.mock.calls[mockUseRunDetail.mock.calls.length - 1];
+    expect((call as unknown[])[1]).toBe('run-1');
+    // No filters bar on the run page.
+    expect(screen.queryByTestId('agtEvlFailingOnly')).not.toBeInTheDocument();
+  });
+
+  it('opens a run from the runs list and keeps it in the URL', async () => {
+    const history = renderApp('#/?_a=(tab:runs)');
+    fireEvent.click(screen.getAllByTestId('agtEvlRunLink')[0]);
+    expect(screen.getByTestId('runDetailStub')).toHaveTextContent('run-2');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(decodeURIComponent(history.location.hash)).toContain('run:run-2');
+  });
+
+  it('opens the drill-down of an evaluation from its card', () => {
+    renderApp();
+    fireEvent.click(screen.getAllByTestId('agtEvlEvaluatorCard')[0]);
+    expect(screen.getByTestId('agtEvlDrilldown')).toBeInTheDocument();
+    const call =
+      mockUseEvaluationResults.mock.calls[mockUseEvaluationResults.mock.calls.length - 1];
+    expect((call as unknown[])[1]).toBe('tool_diversity');
+    fireEvent.click(screen.getByTestId('agtEvlDrilldownViewAll'));
+    expect(screen.getByTestId('agtEvlResultsTable')).toBeInTheDocument();
+  });
+
+  it('reads every query from the configured evaluation index', () => {
+    settings = { 'agentTraces:evaluationsIndexPattern': 'my-evals-*' };
+    renderApp('#/?_a=(tab:runs)');
+    const evalCall = mockUseEvalData.mock.calls[mockUseEvalData.mock.calls.length - 1];
+    expect((evalCall as unknown[])[4]).toBe('my-evals-*');
+    const runsCall = mockUseRunResults.mock.calls[mockUseRunResults.mock.calls.length - 1];
+    expect((runsCall as unknown[])[5]).toBe('my-evals-*');
+    const detailCall = mockUseRunDetail.mock.calls[mockUseRunDetail.mock.calls.length - 1];
+    expect((detailCall as unknown[])[3]).toBe('my-evals-*');
   });
 });

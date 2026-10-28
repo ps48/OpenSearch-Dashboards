@@ -64,3 +64,183 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+// Cards in a row share one height (flex grid items stretch; the panel fills the item).
+.agtEvlStatCard {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: $euiSizeXS;
+}
+
+.agtEvlChartPanel {
+  height: 100%;
+}
+
+.agtEvlSplit {
+  display: flex;
+  height: $euiSizeS;
+  border-radius: $euiSizeXS;
+  overflow: hidden;
+  margin-bottom: $euiSizeXS;
+  background: $euiColorLightShade;
+
+  &__seg {
+    display: inline-block;
+    height: 100%;
+  }
+}
+
+.agtEvlBreakdown {
+  height: 100%;
+
+  &__row {
+    padding: 2px 0;
+  }
+
+  &__track {
+    height: 4px;
+    border-radius: 2px;
+    background: $euiColorLightShade;
+    overflow: hidden;
+  }
+
+  &__bar {
+    display: block;
+    height: 100%;
+  }
+}
+
+.agtEvlClamp {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  &__label {
+    color: $euiTextSubduedColor;
+  }
+}
+
+.agtEvlTrendMarker {
+  display: inline-block;
+  width: $euiSizeS;
+  height: $euiSizeS;
+  border-radius: 50%;
+  background: $euiColorPrimary;
+}
+
+.agtEvlSteps {
+  border: $euiBorderThin;
+  border-radius: $euiBorderRadius;
+
+  &__row {
+    display: grid;
+    grid-template-columns: $euiSizeXL minmax(0, 1fr) 128px minmax(0, 1fr);
+    gap: $euiSizeS;
+    align-items: start;
+    padding: $euiSizeS;
+    border-bottom: $euiBorderThin;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &--args,
+    &--changed {
+      background: transparentize($euiColorWarning, 0.9);
+    }
+
+    &--error {
+      background: transparentize($euiColorDanger, 0.9);
+    }
+
+    &--baseline_only,
+    &--candidate_only {
+      background: transparentize($euiColorPrimary, 0.93);
+    }
+  }
+
+  &__pos {
+    text-align: right;
+    padding-top: 2px;
+  }
+
+  &__diff {
+    text-align: center;
+  }
+}
+
+.agtEvlStep {
+  &__cell {
+    min-width: 0;
+
+    &--empty {
+      opacity: 0.7;
+      font-style: italic;
+    }
+  }
+
+  &__preview {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__previewLabel {
+    color: $euiTextSubduedColor;
+  }
+}
+
+.agtEvlSection {
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $euiSizeS;
+  }
+}
+
+.agtEvlKpi {
+  &__title {
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    cursor: help;
+  }
+
+  &__value {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// Pushes the card's histogram to the bottom, so cards of a row line up.
+.agtEvlCard__spacer {
+  flex-grow: 1;
+  min-height: $euiSizeS;
+}
+
+.agtEvlMiniSplit {
+  display: inline-flex;
+  width: 72px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: $euiColorLightShade;
+  vertical-align: middle;
+  margin-right: $euiSizeS;
+
+  &__seg {
+    display: inline-block;
+    height: 100%;
+  }
+}
+
+.agtEvlMiniSplit__text {
+  font-size: $euiFontSizeXS;
+  font-variant-numeric: tabular-nums;
+}
+
+.agtEvlCompareWith {
+  max-height: 360px;
+  overflow-y: auto;
+  min-width: 300px;
+}

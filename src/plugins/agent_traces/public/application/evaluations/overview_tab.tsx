@@ -5,7 +5,6 @@
 
 import React, { useMemo } from 'react';
 import {
-  EuiBadge,
   EuiEmptyPrompt,
   EuiFlexGrid,
   EuiFlexGroup,
@@ -31,11 +30,15 @@ import {
 import { OutcomeHistogram, ScoreTrendChart } from './eval_charts';
 import {
   LevelBadge,
+  OUTCOME_CHART_COLOR,
   OutcomeBadge,
+  SectionHeader,
   SourceBadge,
   TargetText,
+  formatCount,
   formatEvalTime,
   formatPercent,
+  formatValue,
 } from './eval_components';
 
 export const RECENT_FAILURES_LIMIT = 10;
@@ -53,10 +56,7 @@ export const DeltaText: React.FC<{
   if (current === undefined || previous === undefined) {
     return (
       <EuiText size="xs" color="subdued">
-        <FormattedMessage
-          id="agentTraces.evalsPage.deltaNone"
-          defaultMessage="No data in the previous period"
-        />
+        <FormattedMessage id="agentTraces.evalsPage.deltaNone" defaultMessage="No earlier data" />
       </EuiText>
     );
   }
@@ -78,14 +78,11 @@ export const DeltaText: React.FC<{
   return (
     <EuiText size="xs" color={color} data-test-subj="agtEvlDelta">
       {flat ? (
-        <FormattedMessage
-          id="agentTraces.evalsPage.deltaFlat"
-          defaultMessage="No change vs previous period"
-        />
+        <FormattedMessage id="agentTraces.evalsPage.deltaFlat" defaultMessage="No change" />
       ) : (
         <FormattedMessage
           id="agentTraces.evalsPage.delta"
-          defaultMessage="{change} vs previous period"
+          defaultMessage="{change} vs previous"
           values={{ change: `${sign}${magnitude}${pct}` }}
         />
       )}
@@ -100,14 +97,14 @@ const KpiPanel: React.FC<{
   testSubj: string;
   children?: React.ReactNode;
 }> = ({ title, value, help, testSubj, children }) => (
-  <EuiPanel paddingSize="m" hasBorder data-test-subj={testSubj}>
+  <EuiPanel paddingSize="s" hasBorder className="agtEvlStatCard" data-test-subj={testSubj}>
     <EuiToolTip content={help}>
-      <EuiText size="xs" color="subdued">
-        {title} <EuiIcon type="questionInCircle" size="s" />
+      <EuiText size="xs" color="subdued" className="agtEvlKpi__title">
+        {title}
       </EuiText>
     </EuiToolTip>
     <EuiTitle size="m">
-      <p>{value}</p>
+      <p className="agtEvlKpi__value">{value}</p>
     </EuiTitle>
     {children}
   </EuiPanel>
@@ -135,7 +132,7 @@ export const KpiRow: React.FC<{ current: EvalKpis; previous?: EvalKpis }> = ({
       help: i18n.translate('agentTraces.evalsPage.kpiResultsHelp', {
         defaultMessage: 'Evaluation results in the time range under the filters.',
       }),
-      value: current.results.toLocaleString(),
+      value: formatCount(current.results),
       current: current.results,
       previous: prev((k) => k.results),
       kind: 'count',
@@ -149,7 +146,7 @@ export const KpiRow: React.FC<{ current: EvalKpis; previous?: EvalKpis }> = ({
       help: i18n.translate('agentTraces.evalsPage.kpiEvaluatorsHelp', {
         defaultMessage: 'Distinct evaluation names (gen_ai.evaluation.name) that reported results.',
       }),
-      value: current.evaluators.toLocaleString(),
+      value: formatCount(current.evaluators),
       current: current.evaluators,
       previous: prev((k) => k.evaluators),
       kind: 'count',
@@ -176,7 +173,7 @@ export const KpiRow: React.FC<{ current: EvalKpis; previous?: EvalKpis }> = ({
       help: i18n.translate('agentTraces.evalsPage.kpiFailingHelp', {
         defaultMessage: 'Results whose label or score counts as a failure.',
       }),
-      value: current.failing.toLocaleString(),
+      value: formatCount(current.failing),
       current: current.failing,
       previous: prev((k) => k.failing),
       kind: 'count',
@@ -190,7 +187,7 @@ export const KpiRow: React.FC<{ current: EvalKpis; previous?: EvalKpis }> = ({
       help: i18n.translate('agentTraces.evalsPage.kpiTracesHelp', {
         defaultMessage: 'Distinct traces judged by at least one result (span or trace level).',
       }),
-      value: current.traces.toLocaleString(),
+      value: formatCount(current.traces),
       current: current.traces,
       previous: prev((k) => k.traces),
       kind: 'count',
@@ -204,7 +201,7 @@ export const KpiRow: React.FC<{ current: EvalKpis; previous?: EvalKpis }> = ({
       help: i18n.translate('agentTraces.evalsPage.kpiSessionsHelp', {
         defaultMessage: 'Distinct sessions (gen_ai.conversation.id) with at least one result.',
       }),
-      value: current.sessions.toLocaleString(),
+      value: formatCount(current.sessions),
       current: current.sessions,
       previous: prev((k) => k.sessions),
       kind: 'count',
@@ -212,9 +209,9 @@ export const KpiRow: React.FC<{ current: EvalKpis; previous?: EvalKpis }> = ({
     },
   ];
   return (
-    <EuiFlexGroup gutterSize="m" wrap responsive={false}>
+    <EuiFlexGroup gutterSize="s" wrap responsive={false}>
       {items.map((item) => (
-        <EuiFlexItem key={item.id} style={{ minWidth: 160 }}>
+        <EuiFlexItem key={item.id} style={{ minWidth: 150 }}>
           <KpiPanel
             title={item.title}
             value={item.value}
@@ -239,9 +236,9 @@ const directionOf = (results: EvalResult[]) =>
 
 /** Shades per outcome, so a failing label never reads as green. */
 const LABEL_SHADES: Record<EvalOutcome, string[]> = {
-  pass: ['#54B399', '#7DD3B6', '#A6E3CC'],
-  fail: ['#E7664C', '#F0907A', '#F6B8A8'],
-  neutral: ['#6092C0', '#98A2B3', '#C4CBD6'],
+  pass: [OUTCOME_CHART_COLOR.pass, '#9ADBC7', '#C6EDE1'],
+  fail: [OUTCOME_CHART_COLOR.fail, '#FFA996', '#FFD2C7'],
+  neutral: [OUTCOME_CHART_COLOR.neutral, '#B8C0CC', '#D3DAE6'],
 };
 const OTHER_SHADE = '#D3DAE6';
 
@@ -335,11 +332,11 @@ export const EvaluatorCard: React.FC<{
     <EuiPanel
       paddingSize="m"
       hasBorder
-      className="agtEvlCard"
+      className="agtEvlCard agtEvlStatCard"
       onClick={() => onSelect(summary.name)}
       data-test-subj="agtEvlEvaluatorCard"
       aria-label={i18n.translate('agentTraces.evalsPage.cardAria', {
-        defaultMessage: 'Show results of {name}',
+        defaultMessage: 'Where {name} fails',
         values: { name: summary.name },
       })}
     >
@@ -383,7 +380,7 @@ export const EvaluatorCard: React.FC<{
               </EuiToolTip>
             </EuiText>
             <EuiTitle size="s">
-              <p>{summary.mean?.toFixed(2)}</p>
+              <p>{formatValue(summary.mean)}</p>
             </EuiTitle>
           </EuiFlexItem>
         )}
@@ -392,22 +389,26 @@ export const EvaluatorCard: React.FC<{
             {i18n.translate('agentTraces.evalsPage.cardCount', { defaultMessage: 'Results' })}
           </EuiText>
           <EuiTitle size="s">
-            <p>{summary.count.toLocaleString()}</p>
+            <p>{formatCount(summary.count)}</p>
           </EuiTitle>
         </EuiFlexItem>
         <EuiFlexItem grow={false}>
-          <EuiText size="xs" color={summary.failCount > 0 ? 'danger' : 'subdued'}>
-            {i18n.translate('agentTraces.evalsPage.cardFailing', {
-              defaultMessage: '{count} failing',
-              values: { count: summary.failCount },
-            })}
+          <EuiText size="xs" color="subdued">
+            {i18n.translate('agentTraces.evalsPage.failing', { defaultMessage: 'Failing' })}
           </EuiText>
+          <EuiTitle size="s">
+            <p
+              style={summary.failCount > 0 ? { color: OUTCOME_CHART_COLOR.fail } : undefined}
+              data-test-subj="agtEvlCardFailing"
+            >
+              {formatCount(summary.failCount)}
+            </p>
+          </EuiTitle>
         </EuiFlexItem>
       </EuiFlexGroup>
       <DeltaText current={passRate} previous={prevPassRate} kind="rate" good="up" />
-      <EuiSpacer size="s" />
       <LabelDistribution summary={summary} results={results} />
-      <EuiSpacer size="s" />
+      <div className="agtEvlCard__spacer" />
       <OutcomeHistogram
         results={results}
         bounds={bounds}
@@ -525,18 +526,18 @@ export const OverviewTab: React.FC<{
     <div data-test-subj="agtEvlOverview">
       <KpiRow current={kpis} previous={previousKpis} />
       <EuiSpacer size="l" />
-      <EuiTitle size="xs">
-        <h2>
-          <FormattedMessage id="agentTraces.evalsPage.byEvaluation" defaultMessage="Evaluations" />{' '}
-          <EuiBadge color="hollow">{summaries.length}</EuiBadge>
-        </h2>
-      </EuiTitle>
-      <EuiText size="xs" color="subdued">
-        <FormattedMessage
-          id="agentTraces.evalsPage.byEvaluationHelp"
-          defaultMessage="Most failing first. Select a card to see its results."
-        />
-      </EuiText>
+      <SectionHeader
+        title={
+          <FormattedMessage id="agentTraces.evalsPage.byEvaluation" defaultMessage="Evaluations" />
+        }
+        count={summaries.length}
+        help={
+          <FormattedMessage
+            id="agentTraces.evalsPage.byEvaluationHelp"
+            defaultMessage="Most failing first. Select one to see where it fails."
+          />
+        }
+      />
       <EuiSpacer size="s" />
       <EuiFlexGrid columns={3} gutterSize="m">
         {summaries.map((s) => (
@@ -555,35 +556,41 @@ export const OverviewTab: React.FC<{
       <EuiSpacer size="l" />
       <EuiFlexGroup gutterSize="m">
         <EuiFlexItem grow={3}>
-          <EuiPanel hasBorder paddingSize="m">
-            <EuiTitle size="xs">
-              <h2>
+          <EuiPanel hasBorder paddingSize="m" className="agtEvlChartPanel">
+            <SectionHeader
+              title={
                 <FormattedMessage
                   id="agentTraces.evalsPage.trendTitle"
                   defaultMessage="Score trend"
                 />
-              </h2>
-            </EuiTitle>
-            <EuiText size="xs" color="subdued">
-              <FormattedMessage
-                id="agentTraces.evalsPage.trendHelp"
-                defaultMessage="Mean score per evaluation, scaled to its range so that 100% is best. Labels without a score count as 100% when passing and 0% when failing."
-              />
-            </EuiText>
+              }
+              help={
+                <FormattedMessage
+                  id="agentTraces.evalsPage.trendHelp"
+                  defaultMessage="Mean score per evaluation, scaled to its range (100% is best)."
+                />
+              }
+            />
             <EuiSpacer size="s" />
             <ScoreTrendChart results={results} bounds={bounds} interval={interval} />
           </EuiPanel>
         </EuiFlexItem>
         <EuiFlexItem grow={2}>
-          <EuiPanel hasBorder paddingSize="m">
-            <EuiTitle size="xs">
-              <h2>
+          <EuiPanel hasBorder paddingSize="m" className="agtEvlChartPanel">
+            <SectionHeader
+              title={
                 <FormattedMessage
                   id="agentTraces.evalsPage.resultsOverTime"
                   defaultMessage="Results over time"
                 />
-              </h2>
-            </EuiTitle>
+              }
+              help={
+                <FormattedMessage
+                  id="agentTraces.evalsPage.resultsOverTimeHelp"
+                  defaultMessage="Pass, fail and scored results per interval."
+                />
+              }
+            />
             <EuiSpacer size="s" />
             <OutcomeHistogram results={results} bounds={bounds} interval={interval} height={240} />
           </EuiPanel>
@@ -591,14 +598,14 @@ export const OverviewTab: React.FC<{
       </EuiFlexGroup>
       <EuiSpacer size="l" />
       <EuiPanel hasBorder paddingSize="m">
-        <EuiTitle size="xs">
-          <h2>
+        <SectionHeader
+          title={
             <FormattedMessage
               id="agentTraces.evalsPage.recentFailures"
               defaultMessage="Recent failures"
             />
-          </h2>
-        </EuiTitle>
+          }
+        />
         <EuiSpacer size="s" />
         <RecentFailures results={results} onOpenResult={onOpenResult} />
       </EuiPanel>
