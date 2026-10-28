@@ -56,6 +56,7 @@ export const TraceFlyoutProvider: React.FC<{ children: React.ReactNode }> = ({ c
         fullTree: undefined,
         isLoadingFullTree: true,
         fullTreeError: undefined,
+        initialTab: options?.initialTab,
       };
       setHistory((prev) =>
         options?.fromSession
@@ -156,6 +157,7 @@ export const TraceFlyoutProvider: React.FC<{ children: React.ReactNode }> = ({ c
           fullTree={view.fullTree}
           isLoadingFullTree={view.isLoadingFullTree}
           fullTreeError={view.fullTreeError}
+          initialTab={view.initialTab}
           onOpenSession={(session) => openSession(session, { fromTrace: true })}
           navigation={navigation}
         />

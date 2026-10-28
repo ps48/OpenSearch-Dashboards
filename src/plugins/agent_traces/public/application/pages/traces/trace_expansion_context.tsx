@@ -17,7 +17,8 @@ export interface TraceExpansionState {
   toggleExpansion: (e: React.MouseEvent, id: string, traceId: string) => void;
   traceLoadingState: Map<string, LoadingState>;
   getRowMeta: (hitId: string) => RowMeta | null;
-  onRowClick?: (hitId: string) => void;
+  /** Opens the row's trace flyout, on a given tab (`evaluations`) when set. */
+  onRowClick?: (hitId: string, options?: { initialTab?: string }) => void;
   wrapCellText?: boolean;
   hasExpandableRows?: boolean;
 }

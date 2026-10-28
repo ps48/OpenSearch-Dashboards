@@ -421,6 +421,21 @@ export const buildTraceEvalsQuery = (
   ].join(' | ');
 };
 
+/** Session-level results of a batch of sessions (Sessions table column). */
+export const buildSessionsEvalsQuery = (
+  sessionIds: string[],
+  limit = 1000,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string =>
+  [
+    `source = ${index}`,
+    `where ${EVAL_EVENT_WHERE}`,
+    `where ${field(EVAL_FIELDS.level)} = 'session'`,
+    `where ${sessionIds.map((id) => `${field(EVAL_FIELDS.sessionId)} = ${quote(id)}`).join(' or ')}`,
+    `sort - ${field(EVAL_FIELDS.time)}`,
+    `head ${limit}`,
+  ].join(' | ');
+
 /** Latest results for a batch of traces (Traces table column). */
 export const buildTracesEvalsQuery = (
   traceIds: string[],

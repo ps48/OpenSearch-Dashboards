@@ -44,7 +44,8 @@ import { FlyoutNavigation } from './trace_flyout_state';
 import { TraceLogsTab } from '../../../../../../explore/public';
 import { useTraceLogs } from './use_trace_logs';
 import { useTraceEvaluations } from './use_trace_evaluations';
-import { EvalBadgeGroup, TraceEvaluationsTab } from './trace_evaluations';
+import { EvalHeaderSummary, TraceEvaluationsTab } from './trace_evaluations';
+import { EvalResult } from '../../../evaluations/eval_data';
 import { TraceLogsNotices } from './trace_logs_notices';
 import { readAttribute } from '../hooks/genai_message_preview';
 import { SessionRow } from '../../sessions/session_utils';
@@ -61,6 +62,8 @@ export interface TraceDetailsProps {
   onOpenSession?: (session: SessionRow | string) => void;
   /** Back and Forward through the flyouts the user moved between. */
   navigation?: FlyoutNavigation;
+  /** Left tab to open on (`evaluations` from the Evaluations column). */
+  initialTab?: string;
 }
 
 /** The trace's session id: the first span carrying gen_ai.conversation.id. */
@@ -106,6 +109,7 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
   fullTreeError,
   onOpenSession,
   navigation,
+  initialTab,
 }) => {
   // Header span: the agent the row represents (see headerSpanOf), so name, latency and tokens
   // are that agent's own, also for parallel agents behind one HTTP root.
@@ -130,18 +134,20 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
   );
   // Evaluation results that judged this trace, its spans or its session.
   const traceEvals = useTraceEvaluations(rootTrace.traceId, sessionId);
-  const [leftTabId, setLeftTabId] = useState('trace-tree');
+  const [leftTabId, setLeftTabId] = useState(initialTab ?? 'trace-tree');
   const spanLabelOf = useCallback(
     (spanId: string) => flatNodes.find((node) => node.traceRow?.spanId === spanId)?.label,
     [flatNodes]
   );
-  const headerEvals = useMemo(
-    () =>
-      traceEvals.sessionResults.length + traceEvals.traceResults.length > 0
-        ? [...traceEvals.traceResults, ...traceEvals.sessionResults]
-        : traceEvals.results,
-    [traceEvals]
-  );
+  // Results judging a span of this trace (any level but session), for marks in the tree.
+  const evalsBySpanId = useMemo(() => {
+    const map: Record<string, EvalResult[]> = {};
+    traceEvals.results.forEach((r) => {
+      if (r.level === 'session' || !r.spanId || r.traceId !== rootTrace.traceId) return;
+      (map[r.spanId] = map[r.spanId] ?? []).push(r);
+    });
+    return map;
+  }, [traceEvals.results, rootTrace.traceId]);
 
   const initialIndex = flatNodes.findIndex((node) => node.id === trace.id);
   const [selectedNodeIndex, setSelectedNodeIndex] = useState(initialIndex >= 0 ? initialIndex : 0);
@@ -375,14 +381,19 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
             </EuiText>
           </div>
 
-          {headerEvals.length > 0 && (
+          {traceEvals.results.length > 0 && (
             <div className="agentTracesFlyout__metaItem" data-test-subj="agentTracesFlyoutEvals">
               <EuiText size="xs" className="agentTracesFlyout__metaLabel">
                 {i18n.translate('agentTraces.flyout.evaluations', {
                   defaultMessage: 'EVALUATIONS',
                 })}
               </EuiText>
-              <EvalBadgeGroup results={headerEvals} onClick={() => setLeftTabId('evaluations')} />
+              <EuiText size="xs" className="agentTracesFlyout__metaValue">
+                <EvalHeaderSummary
+                  results={traceEvals.results}
+                  onClick={() => setLeftTabId('evaluations')}
+                />
+              </EuiText>
             </div>
           )}
 
@@ -424,6 +435,7 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
                           onToggleExpanded={toggleExpanded}
                           onExpandAll={expandAll}
                           onCollapseAll={collapseAll}
+                          evalsBySpanId={evalsBySpanId}
                         />
                       ),
                     },

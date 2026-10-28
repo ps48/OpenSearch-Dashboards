@@ -23,6 +23,8 @@ export type FlyoutView =
       fullTree?: TraceRow[];
       isLoadingFullTree?: boolean;
       fullTreeError?: string;
+      /** Tab to open on (e.g. `evaluations`). */
+      initialTab?: string;
     }
   | {
       kind: 'session';
@@ -111,6 +113,8 @@ export interface OpenTraceOptions {
   fromSession?: SessionRow;
   /** The session flyout's view and tab when the trace was opened, restored on Back. */
   sessionView?: SessionViewState;
+  /** Flyout tab to open on, e.g. `evaluations`. */
+  initialTab?: string;
 }
 
 export interface OpenSessionOptions {

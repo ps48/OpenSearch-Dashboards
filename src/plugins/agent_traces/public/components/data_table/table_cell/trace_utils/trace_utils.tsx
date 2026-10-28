@@ -40,20 +40,29 @@ import {
   useRowEvaluations,
 } from '../../../../application/pages/traces/row_evaluations_context';
 import { BaseRow } from '../../../../application/pages/traces/hooks/tree_utils';
-import { EvalBadgeGroup } from '../../../../application/pages/traces/flyout/trace_evaluations';
-/** A row's evaluation results: a trace row shows its trace, session and span results, a span
- *  row its own. Failures first. */
-const AgentTracesEvaluationsCell: React.FC<{ traceRow: BaseRow; isRoot: boolean }> = ({
-  traceRow,
-  isRoot,
-}) => {
+import { EvalSummaryCell } from '../../../../application/pages/traces/flyout/trace_evaluations';
+/** A row's evaluation results as one summary chip: a trace row counts its trace, session and
+ *  span results, a span row its own. The chip lists them and opens the trace's Evaluations. */
+const AgentTracesEvaluationsCell: React.FC<{
+  traceRow: BaseRow;
+  isRoot: boolean;
+  hitId: string;
+}> = ({ traceRow, isRoot, hitId }) => {
   const value = useRowEvaluations();
+  const ctx = useTraceExpansion();
   const results =
     isRoot && value.mode === 'trace'
       ? rowResults(value, traceRow)
       : (value.bySpanId.get(traceRow.spanId) ?? []);
   if (results.length === 0) return <>—</>;
-  return <EvalBadgeGroup results={results} max={2} />;
+  return (
+    <EvalSummaryCell
+      results={results}
+      onOpen={
+        ctx?.onRowClick ? () => ctx.onRowClick?.(hitId, { initialTab: 'evaluations' }) : undefined
+      }
+    />
+  );
 };
 
 export const isOnTracesPage = (): boolean => {
@@ -538,7 +547,11 @@ export const AgentTracesVirtualCell: React.FC<AgentTracesVirtualCellProps> = ({
     }
     case 'evaluations':
       content = (
-        <AgentTracesEvaluationsCell traceRow={traceRow} isRoot={(meta?.level ?? 0) === 0} />
+        <AgentTracesEvaluationsCell
+          traceRow={traceRow}
+          isRoot={(meta?.level ?? 0) === 0}
+          hitId={hitId}
+        />
       );
       break;
     default:
@@ -567,9 +580,11 @@ export const AgentTracesVirtualCell: React.FC<AgentTracesVirtualCellProps> = ({
     !(colName === 'kind' && Array.isArray(filterValue) && filterValue.length === 0);
 
   const tdClassName =
-    colName === 'input' || colName === 'output' || colName === 'evaluations'
+    colName === 'input' || colName === 'output'
       ? 'agentTracesDocTableCell agentTracesDocTableCell--wideText'
-      : 'agentTracesDocTableCell';
+      : colName === 'evaluations'
+        ? 'agentTracesDocTableCell agentTracesDocTableCell--evals'
+        : 'agentTracesDocTableCell';
 
   return (
     <td className={tdClassName}>

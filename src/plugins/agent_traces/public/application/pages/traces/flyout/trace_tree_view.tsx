@@ -30,6 +30,8 @@ import {
   stepToMatch,
 } from './tree_helpers';
 import { TraceTreeToolbar } from './trace_tree_toolbar';
+import { SpanEvalMark } from './trace_evaluations';
+import { EvalResult } from '../../../evaluations/eval_data';
 import './trace_tree_view.scss';
 
 const TokenIcon: React.FC = () => (
@@ -64,6 +66,8 @@ export interface TraceTreeViewProps {
   onToggleExpanded: (nodeId: string) => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
+  /** Evaluation results per span id: a count badge, a red dot when one failed. */
+  evalsBySpanId?: Record<string, EvalResult[]>;
 }
 
 export const TraceTreeView: React.FC<TraceTreeViewProps> = ({
@@ -76,6 +80,7 @@ export const TraceTreeView: React.FC<TraceTreeViewProps> = ({
   onToggleExpanded,
   onExpandAll,
   onCollapseAll,
+  evalsBySpanId,
 }) => {
   const [query, setQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -144,6 +149,9 @@ export const TraceTreeView: React.FC<TraceTreeViewProps> = ({
 
                 <span className="agentTracesFlyout__treeRowLabelText" title={node.label}>
                   <span className="agentTracesFlyout__treeRowLabelName">{node.label}</span>
+                  {node.traceRow?.spanId && (
+                    <SpanEvalMark results={evalsBySpanId?.[node.traceRow.spanId]} />
+                  )}
                   {node.traceRow?.status === 'error' && (
                     <EuiToolTip
                       content={`Span error: ${node.traceRow?.statusMessage || 'Unknown error'}`}

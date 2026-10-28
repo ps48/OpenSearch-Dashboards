@@ -6,7 +6,13 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { EvalResult, outcomeOf } from '../../../evaluations/eval_data';
-import { EvalBadgeGroup, EvalResultItem, TraceEvaluationsTab } from './trace_evaluations';
+import {
+  EvalHeaderSummary,
+  EvalResultItem,
+  EvalSummaryCell,
+  SpanEvalMark,
+  TraceEvaluationsTab,
+} from './trace_evaluations';
 import { groupTraceEvaluations } from './use_trace_evaluations';
 import { indexRowEvaluations, rowResults } from '../row_evaluations_context';
 
@@ -113,34 +119,75 @@ describe('rowResults', () => {
   });
 });
 
-describe('EvalBadgeGroup', () => {
-  it('shows failures first, with the outcome in text, and collapses the rest', () => {
-    render(
-      <EvalBadgeGroup
-        max={2}
-        results={[
-          result({ name: 'good', value: 1 }),
-          result({ name: 'bad', label: 'fail' }),
-          result({ name: 'meh', value: 0.6 }),
-        ]}
-      />
-    );
-    const badges = screen.getAllByTestId('agentTracesEvalBadge');
-    expect(badges[0]).toHaveTextContent('bad: fail');
-    expect(badges).toHaveLength(2);
-    expect(screen.getByText('+1')).toBeInTheDocument();
+describe('EvalSummaryCell', () => {
+  const cellResults = [
+    result({ name: 'good', assessment: 'pass' }),
+    result({ name: 'bad', assessment: 'fail', explanation: 'Wrong tool.\nMore detail' }),
+    result({ name: 'meh', value: 0.6 }),
+    result({ name: 'good2', assessment: 'pass' }),
+  ];
+
+  it('shows one chip with fail, pass and scored counts, red when something failed', () => {
+    render(<EvalSummaryCell results={cellResults} />);
+    const chip = screen.getByTestId('agentTracesEvalSummary');
+    expect(chip).toHaveTextContent('✗ 1 · ✓ 2 · 1 scored');
+    expect(chip.className).toContain('euiBadge');
+  });
+
+  it('lists every result failures first, with the first explanation line, and opens the trace', () => {
+    const onOpen = jest.fn();
+    render(<EvalSummaryCell results={cellResults} onOpen={onOpen} />);
+    fireEvent.click(screen.getByTestId('agentTracesEvalSummary'));
+    const items = screen.getAllByTestId('agentTracesEvalListItem');
+    expect(items).toHaveLength(4);
+    expect(items[0]).toHaveTextContent('bad');
+    expect(items[0]).toHaveTextContent('Wrong tool.');
+    expect(items[0]).not.toHaveTextContent('More detail');
+    fireEvent.click(screen.getAllByTestId('agentTracesEvalListOpen')[0]);
+    expect(onOpen).toHaveBeenCalled();
   });
 
   it('renders nothing without results', () => {
-    const { container } = render(<EvalBadgeGroup results={[]} />);
+    const { container } = render(<EvalSummaryCell results={[]} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('EvalHeaderSummary and SpanEvalMark', () => {
+  it('counts failed, passed and scored results and opens the tab', () => {
+    const onClick = jest.fn();
+    render(
+      <EvalHeaderSummary
+        results={[
+          result({ name: 'a', assessment: 'fail' }),
+          result({ name: 'b', assessment: 'pass' }),
+          result({ name: 'c', value: 3 }),
+        ]}
+        onClick={onClick}
+      />
+    );
+    const link = screen.getByTestId('agentTracesFlyoutEvalSummary');
+    expect(link).toHaveTextContent('1 FAILED · 1 PASSED · 1 SCORED');
+    fireEvent.click(link);
+    expect(onClick).toHaveBeenCalled();
+  });
+
+  it('marks a span with its count and a red dot when one failed', () => {
+    render(<SpanEvalMark results={[result({ assessment: 'fail' }), result({ value: 1 })]} />);
+    const mark = screen.getByTestId('agentTracesSpanEvalMark');
+    expect(mark).toHaveTextContent('2');
+    expect(mark).toHaveAttribute('data-failed', 'true');
   });
 });
 
 describe('EvalResultItem', () => {
   it('shows the outcome word, score and an expandable explanation', () => {
     const long = 'x'.repeat(400);
-    render(<EvalResultItem result={result({ label: 'correct', value: 5, explanation: long })} />);
+    render(
+      <EvalResultItem
+        result={result({ label: 'correct', value: 5, assessment: 'pass', explanation: long })}
+      />
+    );
     expect(screen.getByText('Pass')).toBeInTheDocument();
     expect(screen.getByText('correct (5)')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('agentTracesEvalMore'));

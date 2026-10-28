@@ -324,12 +324,12 @@ export const TracesDataTable: React.FC = () => {
 
   // Open flyout for a row by its hit ID
   const handleRowClick = useCallback(
-    async (hitId: string) => {
+    async (hitId: string, options?: { initialTab?: string }) => {
       const meta = getRowMeta(hitId);
       if (!meta) return;
       const traceRow = meta.traceRow as TraceRow;
       flyoutTraceIdRef.current = traceRow.traceId;
-      openFlyout(traceRow);
+      openFlyout(traceRow, options);
 
       const cached = traceSpansCacheRef.current.get(traceRow.traceId);
       if (cached) {

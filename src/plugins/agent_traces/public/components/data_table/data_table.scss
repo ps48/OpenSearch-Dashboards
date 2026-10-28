@@ -191,6 +191,13 @@
       min-width: 200px;
     }
 
+    // Evaluations: one summary chip, so Input and Output keep the room
+    td.agentTracesDocTableCell--evals {
+      width: 1%;
+      min-width: 96px;
+      white-space: nowrap;
+    }
+
     // Allow expand/collapse column to be narrow
     th:first-child,
     td:first-child {

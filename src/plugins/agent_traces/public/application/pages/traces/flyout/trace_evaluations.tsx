@@ -11,9 +11,12 @@ import {
   EuiFlexGroup,
   EuiFlexItem,
   EuiHealth,
+  EuiIcon,
   EuiLink,
   EuiLoadingSpinner,
   EuiPanel,
+  EuiPopover,
+  EuiPopoverTitle,
   EuiSpacer,
   EuiText,
   EuiTitle,
@@ -34,7 +37,12 @@ import {
   OUTCOME_HEALTH_COLOR,
   OUTCOME_ICON,
   OUTCOME_TEXT,
+  VerdictBadge,
+  VerdictSummaryChip,
+  countVerdicts,
+  summaryAria,
 } from '../../../evaluations/eval_chips';
+import { ShowTracesMenu } from '../../../evaluations/eval_trace_filter';
 import { TraceEvaluations } from './use_trace_evaluations';
 import './trace_evaluations.scss';
 
@@ -62,7 +70,7 @@ const resultTooltip = (r: EvalResult) => (
   </div>
 );
 
-/** One result as a compact badge: `name: label (value)`, colored by outcome, with the word too. */
+/** One result as a compact badge: `name: label (value)`, colored by verdict. */
 export const EvalBadge: React.FC<{ result: EvalResult; onClick?: () => void }> = ({
   result,
   onClick,
@@ -74,45 +82,182 @@ export const EvalBadge: React.FC<{ result: EvalResult; onClick?: () => void }> =
       onClick={onClick}
       onClickAriaLabel={onClick ? `${result.name} ${OUTCOME_TEXT[result.outcome]}` : undefined}
       data-test-subj="agentTracesEvalBadge"
+      data-outcome={result.outcome}
     >
       {result.name}: {formatScore(result)}
     </EuiBadge>
   </EuiToolTip>
 );
 
-/** Badges for several results, failures first, collapsing to `+N`. */
-export const EvalBadgeGroup: React.FC<{
+/** First line of an explanation, for one-line previews. */
+export const firstLine = (text?: string, max = 140): string => {
+  const line = (text ?? '').split(/\r?\n/).find((l) => l.trim() !== '') ?? '';
+  return truncate(line.trim(), max);
+};
+
+/** Every result of a row, failures first: verdict chip, name, level, first explanation line. */
+export const EvalResultsList: React.FC<{
   results: EvalResult[];
-  max?: number;
-  onClick?: () => void;
-}> = ({ results, max = 3, onClick }) => {
+  onOpen?: (r: EvalResult) => void;
+}> = ({ results, onOpen }) => (
+  <ul className="agtEvlPopList" data-test-subj="agentTracesEvalList">
+    {failuresFirst(results).map((r) => (
+      <li key={r.id} className="agtEvlPopList__item" data-test-subj="agentTracesEvalListItem">
+        <EuiFlexGroup gutterSize="xs" alignItems="center" responsive={false} wrap={false}>
+          <EuiFlexItem grow={false}>
+            <VerdictBadge result={r} />
+          </EuiFlexItem>
+          <EuiFlexItem className="agtEvlPopList__name">
+            {onOpen ? (
+              <EuiLink
+                onClick={() => onOpen(r)}
+                className="eui-textTruncate"
+                data-test-subj="agentTracesEvalListOpen"
+              >
+                {r.name}
+              </EuiLink>
+            ) : (
+              <EuiText size="xs" className="eui-textTruncate">
+                {r.name}
+              </EuiText>
+            )}
+          </EuiFlexItem>
+          <EuiFlexItem grow={false}>
+            <LevelPill level={r.level} />
+          </EuiFlexItem>
+          <EuiFlexItem grow={false}>
+            <ShowTracesMenu name={r.name} label={r.label} value={r.value} />
+          </EuiFlexItem>
+        </EuiFlexGroup>
+        {r.explanation && (
+          <EuiText size="xs" color="subdued" className="agtEvlPopList__explanation">
+            {firstLine(r.explanation)}
+          </EuiText>
+        )}
+      </li>
+    ))}
+  </ul>
+);
+
+/**
+ * The Evaluations column: one chip per row, `✗ 2 · ✓ 4 · 3 scored`, red only when something
+ * failed. Clicking it lists every result; a result opens the trace on its Evaluations tab.
+ */
+export const EvalSummaryCell: React.FC<{
+  results: EvalResult[];
+  onOpen?: () => void;
+}> = ({ results, onOpen }) => {
+  const [open, setOpen] = useState(false);
   if (results.length === 0) return null;
-  const ordered = failuresFirst(results);
-  const shown = ordered.slice(0, max);
-  const rest = ordered.slice(max);
+  const counts = countVerdicts(results);
   return (
-    <EuiFlexGroup gutterSize="xs" wrap responsive={false} className="agtEvl__badgeGroup">
-      {shown.map((r) => (
-        <EuiFlexItem grow={false} key={r.id}>
-          <EvalBadge result={r} onClick={onClick} />
-        </EuiFlexItem>
+    <span
+      className="agtEvlSummaryCell"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+      role="presentation"
+    >
+      <EuiPopover
+        isOpen={open}
+        closePopover={() => setOpen(false)}
+        anchorPosition="downLeft"
+        panelPaddingSize="s"
+        button={
+          <VerdictSummaryChip
+            counts={counts}
+            onClick={() => setOpen(!open)}
+            data-test-subj="agentTracesEvalSummary"
+          />
+        }
+      >
+        <EuiPopoverTitle paddingSize="s">
+          {i18n.translate('agentTraces.evals.popoverTitle', {
+            defaultMessage: 'Evaluations ({count})',
+            values: { count: results.length },
+          })}
+        </EuiPopoverTitle>
+        <div className="agtEvlPopover" data-test-subj="agentTracesEvalPopover">
+          <EvalResultsList
+            results={results}
+            onOpen={
+              onOpen
+                ? () => {
+                    setOpen(false);
+                    onOpen();
+                  }
+                : undefined
+            }
+          />
+        </div>
+      </EuiPopover>
+    </span>
+  );
+};
+
+/** Trace flyout header: `2 FAILED · 6 PASSED · 3 SCORED`; opens the Evaluations tab. */
+export const EvalHeaderSummary: React.FC<{ results: EvalResult[]; onClick: () => void }> = ({
+  results,
+  onClick,
+}) => {
+  const counts = countVerdicts(results);
+  const parts = [
+    counts.fail &&
+      i18n.translate('agentTraces.flyout.evalsFailed', {
+        defaultMessage: '{count} FAILED',
+        values: { count: counts.fail },
+      }),
+    counts.pass &&
+      i18n.translate('agentTraces.flyout.evalsPassed', {
+        defaultMessage: '{count} PASSED',
+        values: { count: counts.pass },
+      }),
+    counts.error &&
+      i18n.translate('agentTraces.flyout.evalsErrored', {
+        defaultMessage: '{count} ERRORED',
+        values: { count: counts.error },
+      }),
+    counts.neutral &&
+      i18n.translate('agentTraces.flyout.evalsScored', {
+        defaultMessage: '{count} SCORED',
+        values: { count: counts.neutral },
+      }),
+  ].filter((p): p is string => !!p);
+  return (
+    <EuiLink
+      onClick={onClick}
+      color={counts.fail ? 'danger' : 'text'}
+      className="agtEvlHeaderSummary"
+      aria-label={summaryAria(counts)}
+      data-test-subj="agentTracesFlyoutEvalSummary"
+    >
+      {parts.join(' · ')}
+    </EuiLink>
+  );
+};
+
+/** A span's evaluations in the trace tree: a count, with a red dot when one failed. */
+export const SpanEvalMark: React.FC<{ results?: EvalResult[] }> = ({ results }) => {
+  if (!results || results.length === 0) return null;
+  const counts = countVerdicts(results);
+  return (
+    <EuiToolTip
+      content={results.map((r) => (
+        <div key={r.id}>
+          {r.name}: {OUTCOME_TEXT[r.outcome]} {formatScore(r)}
+        </div>
       ))}
-      {rest.length > 0 && (
-        <EuiFlexItem grow={false}>
-          <EuiToolTip
-            content={rest.map((r) => (
-              <div key={r.id}>
-                {r.name}: {OUTCOME_TEXT[r.outcome]} {formatScore(r)}
-              </div>
-            ))}
-          >
-            <EuiBadge color="hollow" onClick={onClick} onClickAriaLabel="More evaluations">
-              +{rest.length}
-            </EuiBadge>
-          </EuiToolTip>
-        </EuiFlexItem>
-      )}
-    </EuiFlexGroup>
+    >
+      <span
+        className="agtEvlSpanMark"
+        aria-label={summaryAria(counts)}
+        data-test-subj="agentTracesSpanEvalMark"
+        data-failed={counts.fail > 0 ? 'true' : 'false'}
+      >
+        {counts.fail > 0 && <span className="agtEvlSpanMark__dot" />}
+        <EuiIcon type="visGauge" size="s" />
+        {results.length}
+      </span>
+    </EuiToolTip>
   );
 };
 
@@ -156,6 +301,9 @@ export const EvalResultItem: React.FC<{
       </EuiFlexItem>
       <EuiFlexItem grow={false}>
         <LevelPill level={r.level} />
+      </EuiFlexItem>
+      <EuiFlexItem grow={false}>
+        <ShowTracesMenu name={r.name} label={r.label} value={r.value} />
       </EuiFlexItem>
       {targetLabel && (
         <EuiFlexItem grow={false}>
