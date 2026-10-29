@@ -14,6 +14,8 @@ import { ChangeKind, RunSummary, isRegression } from './eval_aggregations';
 /** A pass-rate drop smaller than this (1 point) is noise. */
 export const MIN_DROP = 0.01;
 export const MAX_FINDINGS = 5;
+/** "Lowest pass rate" is worth a finding below this pass rate, or after a drop. */
+export const LOW_PASS_RATE = 0.8;
 export const MAX_TOP_CHANGES = 6;
 
 export type Finding =
@@ -28,7 +30,8 @@ const passRateOfRun = (r?: RunSummary) => (r && r.cases > 0 ? r.casesPassed / r.
 
 /**
  * Up to five findings, most urgent first: the biggest pass-rate drop against the previous
- * period, the most regressed suite run in the range, the lowest pass rate, a failing label
+ * period, the most regressed suite run in the range, the lowest pass rate (when below 80% or
+ * down against the previous period), a failing label
  * not seen in the previous period, and evaluations that reported in the previous period but
  * not in this one.
  */
@@ -75,9 +78,12 @@ export const needsAttention = (
     findings.push({ kind: 'runRegression', run: regressed[0].run, previous: regressed[0].prev });
   }
 
-  // 3. Lowest pass rate (below 100%), not the evaluation already named for its drop.
+  // 3. Lowest pass rate, not the evaluation already named for its drop: only when it is below
+  //    80% or fell against the previous period (a steady 95% is not news).
+  const droppedNames = new Set(drops.map((d) => d.name));
   const lowest = current
     .filter((s) => decided(s) > 0 && s.failCount > 0 && s.name !== drop?.name)
+    .filter((s) => (summaryPassRate(s) ?? 1) < LOW_PASS_RATE || droppedNames.has(s.name))
     .sort((a, b) => (summaryPassRate(a) ?? 1) - (summaryPassRate(b) ?? 1) || b.count - a.count)[0];
   if (lowest) {
     findings.push({

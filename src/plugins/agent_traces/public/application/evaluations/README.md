@@ -142,7 +142,8 @@ the previous range of the same length (no LLM), most urgent first:
 1. the biggest pass-rate drop (at least 1 point), linked to its drill-down;
 2. the most regressed evaluation run in the range (largest drop in passing test cases, then
    most regressed evaluations, against the previous run of its suite), linked to the run;
-3. the lowest pass rate below 100% (another evaluation than the drop);
+3. the lowest pass rate, when it is below 80% or fell against the previous range (another
+   evaluation than the drop);
 4. a failing label the evaluation did not report in the previous range;
 5. evaluations with results in the previous range and none in this one ("no results in this
    period"), linked to the previous range.
@@ -187,11 +188,14 @@ Each run other than the baseline gets one word, from the same changes, no LLM:
 1. Evaluations whose mean got better or worse by more than 5% of its range.
 2. Some better and some worse: **Tradeoff**. Only better: **Improvement**. Only worse:
    **Regression**.
-3. No mean moved: more improved than regressed test cases is an Improvement, fewer a
-   Regression, as many a **Tie**.
+3. No mean moved: test cases decide only by a margin. Regressed cases outnumbering improved
+   ones by at least 2, or by at least 10% of the cases both runs have, is a Regression; the
+   other way round an Improvement; anything less a **Tie** (one regressed case among twelve,
+   with no mean moved, is a Tie).
 
 The evidence sentence names the evaluations ("Better on answer_quality, worse on
-latency_budget") or the case counts.
+latency_budget") or the changed cases, up to three by name ("1 case regressed (Unknown
+destination)").
 
 ## From a chart to its results
 
@@ -219,5 +223,7 @@ The Verdict filter (Pass, Fail, Evaluator error, Scored) is in the filter bar.
   Results, Recent failures and the drill-down) open Agent Traces with
   `#/?_g=(time:(...))&_a=(ui:(activeTabId:traces))&openSessionId=<id>`: the session view
   (its traces and session results) opens once and the parameter leaves the URL, like
-  `openTraceId` for traces.
+  `openTraceId` for traces. Either link clears a persisted "traces where it fails" filter
+  first, so the flyout opens over the unfiltered table; a link that should keep the filter
+  adds `keepEvalTraceFilter=1`.
 - Evaluation drill-down on Overview: `_a=(evaluation:'<gen_ai.evaluation.name>')`.

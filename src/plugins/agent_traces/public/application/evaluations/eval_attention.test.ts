@@ -43,6 +43,36 @@ describe('needsAttention', () => {
     ]);
   });
 
+  it('names the lowest pass rate only below 80% or after a drop', () => {
+    const nine = (fails: number) => [
+      ...results('accuracy', Array(10 - fails).fill(0.9)),
+      ...results('accuracy', Array(fails).fill(0.2)),
+    ];
+    const steady = summarizeByEvaluator(nine(1));
+    // 90% in both periods: not news.
+    expect(needsAttention(steady, steady)).toEqual([]);
+    // 90%, no previous period: not news either.
+    expect(needsAttention(steady, undefined)).toEqual([]);
+    // 70%: below 80%.
+    expect(needsAttention(summarizeByEvaluator(nine(3)), undefined)).toEqual([
+      expect.objectContaining({ kind: 'lowest', name: 'accuracy', passRate: 0.7 }),
+    ]);
+    // 85% after 95%, behind a bigger drop elsewhere: named for its drop.
+    const previous = summarizeByEvaluator([
+      ...results('helpfulness', Array(20).fill(0.9)),
+      ...results('tool_diversity', Array(19).fill(0.9)),
+      ...results('tool_diversity', [0.2]),
+    ]);
+    const current = summarizeByEvaluator([
+      ...results('helpfulness', [...Array(10).fill(0.9), ...Array(10).fill(0.2)]),
+      ...results('tool_diversity', [...Array(17).fill(0.9), ...Array(3).fill(0.2)]),
+    ]);
+    expect(needsAttention(current, previous).map((f) => [f.kind, 'name' in f && f.name])).toEqual([
+      ['drop', 'helpfulness'],
+      ['lowest', 'tool_diversity'],
+    ]);
+  });
+
   it('finds nothing in a steady range', () => {
     const same = summarizeByEvaluator(results('accuracy', [0.9, 0.9]));
     expect(needsAttention(same, same)).toEqual([]);

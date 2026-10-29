@@ -17,6 +17,7 @@ import {
   runVerdictOf,
   sortCases,
 } from './eval_compare';
+import { verdictEvidence } from './compare_runs';
 
 describe('buildCompareGrid', () => {
   it('letters the runs, marks the baseline and counts changes against it', () => {
@@ -212,6 +213,54 @@ describe('runVerdictOf', () => {
     expect(
       verdict([grade('r1', 'accuracy', 'a', 0.5), grade('r2', 'accuracy', 'a', 0.52)])?.verdict
     ).toBe('tie');
+  });
+
+  /**
+   * `size` shared cases at 0.9; `drops` fall to 0.8 in r2 and `rises` come up from 0.8: each
+   * case moves by 0.1 (a case change), the mean by 0.1 / size (no mean move from a few).
+   */
+  const suite = (drops: string[], rises: string[] = [], size = 12) =>
+    Array.from({ length: size }, (_, i) => `c${i}`).flatMap((caseId) => [
+      grade('r1', 'accuracy', caseId, rises.includes(caseId) ? 0.8 : 0.9),
+      grade('r2', 'accuracy', caseId, drops.includes(caseId) ? 0.8 : 0.9),
+    ]);
+  const named = (results: Array<ReturnType<typeof grade>>) =>
+    results.map((r) => (r.caseId === 'c0' ? { ...r, caseName: 'Unknown destination' } : r));
+
+  it('calls a single regressed case with no mean move a tie, naming the case', () => {
+    const v = verdict(named(suite(['c0'])));
+    expect(v).toMatchObject({
+      verdict: 'tie',
+      regressedCases: 1,
+      improvedCases: 0,
+      sharedCases: 12,
+      regressedCaseNames: ['Unknown destination'],
+    });
+    expect(verdictEvidence(v!)).toBe('1 case regressed (Unknown destination)');
+  });
+
+  it('calls it a regression once regressed cases exceed improved by 2', () => {
+    const v = verdict(suite(['c0', 'c1', 'c2'], ['c3']));
+    expect(v).toMatchObject({ regressedCases: 3, improvedCases: 1, worse: [] });
+    expect(v?.verdict).toBe('regression');
+    expect(verdictEvidence(v!)).toBe(
+      'No evaluation mean moved more than 5% of its range; 3 cases regressed (c0, c1, c2); 1 case improved (c3)'
+    );
+  });
+
+  it('calls one regressed case of 5 shared a regression (10% of the shared cases)', () => {
+    const v = verdict(suite(['c0'], [], 5));
+    expect(v).toMatchObject({ better: [], worse: [], sharedCases: 5, regressedCases: 1 });
+    expect(v?.verdict).toBe('regression');
+    expect(verdict(suite([], ['c0'], 5))?.verdict).toBe('improvement');
+  });
+
+  it('says when no test case changed', () => {
+    const v = verdict(suite([]));
+    expect(v?.verdict).toBe('tie');
+    expect(verdictEvidence(v!)).toBe(
+      'No evaluation mean moved more than 5% of its range; no test case changed'
+    );
   });
 
   it('has no verdict for the baseline', () => {

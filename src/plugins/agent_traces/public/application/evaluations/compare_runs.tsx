@@ -282,12 +282,36 @@ const VERDICT_ICON: Record<RunVerdict, string | undefined> = {
   tie: undefined,
 };
 
-/** The evidence sentence of a verdict: which evaluations moved, else how many cases. */
+/** Up to three case names, `(Unknown destination, Rome)`; more as `, …`. */
+const caseNames = (names: string[]) =>
+  names.length ? ` (${names.slice(0, 3).join(', ')}${names.length > 3 ? ', …' : ''})` : '';
+
+/** `1 case regressed (Unknown destination); 2 improved (A, B)`; empty when no case changed. */
+export const caseChangesText = (v: RunVerdictResult): string =>
+  [
+    v.regressedCases > 0
+      ? i18n.translate('agentTraces.evalsPage.verdictCasesRegressed', {
+          defaultMessage: '{count, plural, one {# case} other {# cases}} regressed{names}',
+          values: { count: v.regressedCases, names: caseNames(v.regressedCaseNames) },
+        })
+      : undefined,
+    v.improvedCases > 0
+      ? i18n.translate('agentTraces.evalsPage.verdictCasesImproved', {
+          defaultMessage: '{count, plural, one {# case} other {# cases}} improved{names}',
+          values: { count: v.improvedCases, names: caseNames(v.improvedCaseNames) },
+        })
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join('; ');
+
+/** The evidence sentence of a verdict: which evaluations moved, else which cases changed. */
 export const verdictEvidence = (v: RunVerdictResult): string => {
-  const cases = i18n.translate('agentTraces.evalsPage.verdictCases', {
-    defaultMessage: '{improved} test cases improved, {regressed} regressed',
-    values: { improved: v.improvedCases, regressed: v.regressedCases },
-  });
+  const cases =
+    caseChangesText(v) ||
+    i18n.translate('agentTraces.evalsPage.verdictNoCaseChanged', {
+      defaultMessage: 'no test case changed',
+    });
   if (v.better.length && v.worse.length) {
     return i18n.translate('agentTraces.evalsPage.verdictTradeoffWhy', {
       defaultMessage: 'Better on {better}, worse on {worse}',
@@ -306,6 +330,8 @@ export const verdictEvidence = (v: RunVerdictResult): string => {
       values: { worse: v.worse.join(', '), cases },
     });
   }
+  // A tie with a few changed cases: the cases are the whole story.
+  if (v.verdict === 'tie' && (v.regressedCases > 0 || v.improvedCases > 0)) return cases;
   return i18n.translate('agentTraces.evalsPage.verdictCasesWhy', {
     defaultMessage: 'No evaluation mean moved more than 5% of its range; {cases}',
     values: { cases },
@@ -321,7 +347,7 @@ export const RunVerdictCell: React.FC<{ run: GridRun }> = ({ run }) => {
       <EuiToolTip
         content={i18n.translate('agentTraces.evalsPage.verdictRuleTip', {
           defaultMessage:
-            'From the evaluation means against the baseline: some better and some worse is a Tradeoff, only better an Improvement, only worse a Regression (a move under 5% of the range does not count). When no mean moved, more improved than regressed test cases is an Improvement, fewer a Regression, as many a Tie.',
+            'From the evaluation means against the baseline: some better and some worse is a Tradeoff, only better an Improvement, only worse a Regression (a move under 5% of the range does not count). When no mean moved, regressed test cases outnumbering improved ones by at least 2 (or 10% of the shared cases) is a Regression, the other way round an Improvement, anything less a Tie.',
         })}
       >
         <EuiBadge color={VERDICT_COLOR[v.verdict]} iconType={VERDICT_ICON[v.verdict]}>

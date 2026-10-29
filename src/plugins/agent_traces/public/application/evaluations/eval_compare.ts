@@ -419,7 +419,19 @@ export interface RunVerdictResult {
   worse: string[];
   improvedCases: number;
   regressedCases: number;
+  /** Names (else ids) of the test cases that improved or regressed, as listed in the grid. */
+  improvedCaseNames: string[];
+  regressedCaseNames: string[];
+  /** Test cases in both the run and the baseline. */
+  sharedCases: number;
 }
+
+/** Case changes decide a verdict only by a margin: at least 2 cases or 10% of shared cases. */
+export const CASE_MARGIN_COUNT = 2;
+export const CASE_MARGIN_SHARE = 0.1;
+
+const caseMarginMet = (margin: number, shared: number) =>
+  margin >= CASE_MARGIN_COUNT || (shared > 0 && margin >= CASE_MARGIN_SHARE * shared);
 
 /**
  * The verdict of a run against the baseline, from the same changes the grid shows:
@@ -427,8 +439,9 @@ export interface RunVerdictResult {
  * 1. `better` / `worse`: evaluations whose mean (normalized to its range, direction applied)
  *    moved by more than `CHANGE_THRESHOLD` (5% of the range) up / down.
  * 2. Some better and some worse: Tradeoff. Only better: Improvement. Only worse: Regression.
- * 3. No mean moved: more improved than regressed test cases is an Improvement, fewer a
- *    Regression, as many a Tie.
+ * 3. No mean moved: regressed test cases outnumbering improved ones by at least 2, or by at
+ *    least 10% of the shared cases, is a Regression (and the other way round an Improvement);
+ *    anything less, a single regressed case for one, is a Tie.
  *
  * Undefined for the baseline and for runs without data.
  */
@@ -442,12 +455,25 @@ export const runVerdictOf = (run: GridRun): RunVerdictResult | undefined => {
     .map((e) => e.name);
   const improvedCases = run.changes?.improved ?? 0;
   const regressedCases = run.changes?.regressed ?? 0;
+  const sharedCases = run.changes?.shared ?? 0;
+  const namesOf = (change: 'improved' | 'regressed') =>
+    run.comparison?.cases.filter((c) => c.change === change).map((c) => c.caseName ?? c.caseId) ??
+    [];
   let verdict: RunVerdict;
   if (better.length && worse.length) verdict = 'tradeoff';
   else if (better.length) verdict = 'improvement';
   else if (worse.length) verdict = 'regression';
-  else if (improvedCases > regressedCases) verdict = 'improvement';
-  else if (regressedCases > improvedCases) verdict = 'regression';
+  else if (caseMarginMet(improvedCases - regressedCases, sharedCases)) verdict = 'improvement';
+  else if (caseMarginMet(regressedCases - improvedCases, sharedCases)) verdict = 'regression';
   else verdict = 'tie';
-  return { verdict, better, worse, improvedCases, regressedCases };
+  return {
+    verdict,
+    better,
+    worse,
+    improvedCases,
+    regressedCases,
+    improvedCaseNames: namesOf('improved'),
+    regressedCaseNames: namesOf('regressed'),
+    sharedCases,
+  };
 };
