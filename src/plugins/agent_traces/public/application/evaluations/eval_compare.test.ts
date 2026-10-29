@@ -12,6 +12,7 @@ import {
   formatAggregateDelta,
   formatDurationDelta,
   formatPointsDelta,
+  formatValueDelta,
   passRateChange,
   runVerdictOf,
   sortCases,
@@ -82,6 +83,8 @@ describe('delta formats', () => {
     ).toBe('↓25 pp');
     expect(formatAggregateDelta(undefined, agg(1))).toBeUndefined();
     expect(formatPointsDelta(0)).toBe('±0 pp');
+    expect(formatValueDelta(0.004)).toBe('±0.00');
+    expect(formatValueDelta(-0.126)).toBe('↓0.13');
   });
   it('formats durations and says whether they got better', () => {
     expect(formatDurationDelta(-1200)).toBe('↓1.20 s');

@@ -22,6 +22,7 @@ jest.mock('../pages/traces/flow/trace_flow_view', () => ({
     decorateNode?: (s: unknown) => { className?: string; badge?: React.ReactNode } | undefined;
   }) => (
     <div>
+      <button data-test-subj="node-none" onClick={() => onSelectSpan(null)} />
       {spanTree.map((s) => {
         const d = decorateNode?.(s);
         return (
@@ -85,6 +86,9 @@ describe('GraphComparison', () => {
     expect(screen.getByTestId('agtEvlStepsComparison')).toHaveTextContent('search_flights');
     fireEvent.click(screen.getByTestId('node-b2'));
     expect(screen.getByTestId('node-a1')).not.toHaveClass('agtEvlGraphNode--selected');
+    // A click on the background (null) keeps the selection.
+    fireEvent.click(screen.getAllByTestId('node-none')[0]);
+    expect(screen.getByTestId('node-b2')).toHaveClass('agtEvlGraphNode--selected');
     expect(screen.getByTestId('agtEvlStepRow-candidate_only')).toHaveTextContent('2');
   });
 });

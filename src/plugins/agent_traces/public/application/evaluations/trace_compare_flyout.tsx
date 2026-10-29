@@ -524,13 +524,21 @@ export const GraphComparison: React.FC<{
     [marks, selected]
   );
   const selectBaseline = useCallback(
-    (span: TraceRow | null) =>
-      setSelected(span ? marks.baseline.get(span.spanId)?.index : undefined),
+    (span: TraceRow | null) => {
+      // The map also reports a click on its background as null (it reaches the pane
+      // around the nodes): keep the selection, like the trace flyout does.
+      const mark = span ? marks.baseline.get(span.spanId) : undefined;
+      if (mark) setSelected(mark.index);
+    },
     [marks]
   );
   const selectCandidate = useCallback(
-    (span: TraceRow | null) =>
-      setSelected(span ? marks.candidate.get(span.spanId)?.index : undefined),
+    (span: TraceRow | null) => {
+      // The map also reports a click on its background as null (it reaches the pane
+      // around the nodes): keep the selection, like the trace flyout does.
+      const mark = span ? marks.candidate.get(span.spanId) : undefined;
+      if (mark) setSelected(mark.index);
+    },
     [marks]
   );
   const row = selected !== undefined ? aligned[selected] : undefined;

@@ -360,6 +360,7 @@
 .agtEvlGridHead {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: $euiSizeXS;
   min-width: 0;
   font-weight: $euiFontWeightRegular;
@@ -426,21 +427,21 @@
 
 // Trace compare graph: two node maps side by side; marks in non-verdict accents.
 .agtEvlGraphPanel {
-  height: 480px;
+  height: 560px;
   overflow: hidden;
 }
 
 .agtEvlGraphNode {
   &--only {
-    outline: $euiBorderWidthThick dashed $euiColorVis3;
+    outline: 4px dashed $euiColorVis3;
   }
 
   &--changed {
-    outline: $euiBorderWidthThick solid $euiColorVis1;
+    outline: 4px solid $euiColorVis1;
   }
 
   &--selected {
-    outline: 3px solid $euiColorPrimary;
+    outline: 4px solid $euiColorPrimary;
     box-shadow: 0 0 0 6px transparentize($euiColorPrimary, 0.8);
   }
 }

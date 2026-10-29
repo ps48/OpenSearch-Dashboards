@@ -214,12 +214,18 @@ export const formatAggregateDelta = (
   if (baseline.mean !== undefined && candidate.mean !== undefined) {
     const d = candidate.mean - baseline.mean;
     if (unitScale(baseline, candidate)) return formatPointsDelta(d);
-    return `${arrow(d)}${Math.abs(d).toFixed(2)}`;
+    return formatValueDelta(d);
   }
   if (baseline.passRate !== undefined && candidate.passRate !== undefined) {
     return formatPointsDelta(candidate.passRate - baseline.passRate);
   }
   return undefined;
+};
+
+/** A score difference in its unit, two decimals: `↑0.25`, `±0.00` (the arrow follows the rounding). */
+export const formatValueDelta = (d: number): string => {
+  const rounded = Math.round(d * 100) / 100;
+  return `${arrow(rounded)}${Math.abs(rounded).toFixed(2)}`;
 };
 
 /** A 0..1 difference as percentage points: `↓8 pp`, `±0 pp`. */

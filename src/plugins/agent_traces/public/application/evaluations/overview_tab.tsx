@@ -35,7 +35,7 @@ import {
   parseEvalTime,
 } from './eval_aggregations';
 import { Finding, TopChange, needsAttention, topChanges } from './eval_attention';
-import { formatPointsDelta } from './eval_compare';
+import { formatPointsDelta, formatValueDelta } from './eval_compare';
 import { ChangeDelta } from './compare_runs';
 import type { EvalAggregates } from './use_eval_data';
 import { ShowTracesMenu, useShowTraces } from './eval_trace_filter';
@@ -758,9 +758,7 @@ export const TopChangesRow: React.FC<{
               ? undefined
               : c.metric === 'passRate'
                 ? formatPointsDelta(c.value - c.previous)
-                : `${c.value - c.previous > 0 ? '↑' : c.value - c.previous < 0 ? '↓' : '±'}${Math.abs(
-                    c.value - c.previous
-                  ).toFixed(2)}`;
+                : formatValueDelta(c.value - c.previous);
           return (
             <EuiFlexItem key={c.name} grow={false} style={{ minWidth: 150, maxWidth: 220 }}>
               <EuiPanel
