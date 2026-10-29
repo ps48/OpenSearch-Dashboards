@@ -19,7 +19,7 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { AGENT_EVALS_INDEX_PATTERN, EVALS_INDEX_SETTING } from '../../../common';
+import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { EvalOutcome, EvalResult } from './eval_data';
 import { LevelPill, SourcePill, VerdictBadge } from './eval_chips';
 import { CaseStatus, EvaluatorAggregate, parseEvalTime } from './eval_aggregations';
@@ -267,8 +267,16 @@ export const NoEvalIndexPrompt: React.FC<{ index?: string }> = ({
         <p>
           <FormattedMessage
             id="agentTraces.evalsPage.noIndexSetting"
-            defaultMessage="Results in another index? Set {setting} in Advanced settings."
-            values={{ setting: <EuiCode>{EVALS_INDEX_SETTING}</EuiCode> }}
+            defaultMessage="Results in another index? Select its dataset in {settings}."
+            values={{
+              settings: (
+                <strong>
+                  {i18n.translate('agentTraces.evalsPage.noIndexSettingsName', {
+                    defaultMessage: 'Settings',
+                  })}
+                </strong>
+              ),
+            }}
           />
         </p>
       </EuiText>

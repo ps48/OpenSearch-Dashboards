@@ -6,6 +6,17 @@
   }
 }
 
+.agtEvlEmpty {
+  &__body {
+    max-width: 640px;
+  }
+}
+
+.agtEvlEmptyIllustration {
+  max-width: 100%;
+  height: auto;
+}
+
 .agtEvlCard {
   height: 100%;
   cursor: pointer;
@@ -452,4 +463,15 @@
   height: $euiSizeS;
   border: 3px solid $euiColorPrimary;
   border-radius: $euiBorderRadius;
+}
+
+// The time labels under a card's mini chart: start, middle, end.
+.agtEvlMiniAxis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: $euiColorDarkShade;
+  font-variant-numeric: tabular-nums;
 }

@@ -20,7 +20,8 @@ export const renderEvaluationsApp = (
   core: CoreStart,
   plugins: AgentTracesStartDependencies
 ) => {
-  const services: EvaluationsServices = { ...core, ...plugins };
+  // The `savedObjects` plugin's start contract would shadow core's (and its client).
+  const services: EvaluationsServices = { ...core, ...plugins, savedObjects: core.savedObjects };
   ReactDOM.render(
     <I18nProvider>
       <OpenSearchDashboardsContextProvider services={services}>

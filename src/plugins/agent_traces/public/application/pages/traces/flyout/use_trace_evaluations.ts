@@ -13,7 +13,7 @@ import {
   failuresFirst,
   fetchEvalResults,
 } from '../../../evaluations/eval_data';
-import { getEvalsIndexPattern } from '../../../evaluations/eval_settings';
+import { useEvalsIndexPattern } from '../../../evaluations/eval_dataset';
 
 export interface TraceEvaluations {
   /** Every result that judged the trace, one of its spans, or its session. */
@@ -82,7 +82,7 @@ export const useTraceEvaluations = (
   sessionId?: string
 ): TraceEvaluations => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
-  const index = getEvalsIndexPattern(services?.uiSettings);
+  const index = useEvalsIndexPattern();
   const [state, setState] = useState<{ results: EvalResult[]; isLoading: boolean; error?: string }>(
     { results: [], isLoading: false }
   );
@@ -90,6 +90,11 @@ export const useTraceEvaluations = (
   useEffect(() => {
     if (!traceId || !services?.data) {
       setState({ results: [], isLoading: false });
+      return;
+    }
+    // The evaluations dataset is still loading.
+    if (!index) {
+      setState({ results: [], isLoading: true });
       return;
     }
     const key = `${index}|${traceId}|${sessionId ?? ''}`;

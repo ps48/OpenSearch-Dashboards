@@ -18,7 +18,7 @@ import {
   fetchConditionTraces,
 } from '../../evaluations/eval_trace_filter';
 import { setEvalTraceFilter, useEvalTraceFilter } from '../../evaluations/eval_trace_filter_store';
-import { getEvalsIndexPattern } from '../../evaluations/eval_settings';
+import { currentEvalsIndexPattern } from '../../evaluations/eval_dataset';
 
 /**
  * On Agent Traces, "Show traces where this fails" filters the page itself: the matching
@@ -44,7 +44,7 @@ export const TracesEvalFilterProvider: React.FC = ({ children }) => {
         services.data,
         condition,
         { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-        getEvalsIndexPattern(services.uiSettings)
+        currentEvalsIndexPattern()
       )
         .then((filter) => {
           setEvalTraceFilter(filter);

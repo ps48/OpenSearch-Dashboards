@@ -23,8 +23,6 @@ import {
   EuiSuperDatePicker,
   EuiTab,
   EuiTabs,
-  EuiText,
-  EuiTitle,
   OnRefreshChangeProps,
   OnTimeChangeProps,
 } from '@elastic/eui';
@@ -48,6 +46,7 @@ import {
   EvalTab,
   compactAppState,
   filtersOf,
+  hasActiveFilters,
   normalizeAppState,
   runsTimeOf,
 } from './eval_url_state';
@@ -72,9 +71,13 @@ import {
   QueryErrorCallout,
   AggregateLimitNotice,
   formatEvalTime,
+  shortId,
 } from './eval_components';
 import { OpenSessionContext, openSessionInAgentTraces, openTraceInAgentTraces } from './eval_links';
-import { getEvalsIndexPattern } from './eval_settings';
+import { useEvalsDataset } from './eval_dataset';
+import { EvalSettingsModal } from './eval_settings_modal';
+import { EvalHeader, EvalSettingsButton } from './eval_header';
+import { LAST_24H, LAST_7D, NoEvalsDatasetPrompt, NoResultsInRange } from './eval_empty_states';
 import { RunDetailPage } from './run_detail';
 import { ChartActions, ChartActionsContext, ChartPoint } from './eval_charts';
 import { EvaluatorDrilldownFlyout } from './evaluator_drilldown';
@@ -250,18 +253,21 @@ const formatScope = (bounds: TimeBoundsMs) =>
     },
   });
 
-export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ params }) => {
+type AppStateUpdate = (patch: Partial<EvalAppState>, options?: { push?: boolean }) => void;
+
+/**
+ * The tabs, the filter bar and everything that queries the evaluations dataset: mounted once
+ * the dataset is known, so no query runs against a guessed index.
+ */
+const EvaluationsBody: React.FC<{
+  index: string;
+  state: EvalAppState;
+  setState: AppStateUpdate;
+  time: ReturnType<typeof useTimeRange>;
+  runsTime: ReturnType<typeof useRunsTimeRange>;
+  onLoadingChange: (loading: boolean) => void;
+}> = ({ index, state, setState, time, runsTime, onLoadingChange }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
-  const [state, setState] = useAppState(params, services);
-  const index = getEvalsIndexPattern(services.uiSettings);
-  const time = useTimeRange(services);
-  const runsTimeValue = runsTimeOf(state);
-  const runsTime = useRunsTimeRange(services, runsTimeValue, (next) =>
-    setState({
-      runsTime:
-        next.from === DEFAULT_RUNS_TIME.from && next.to === DEFAULT_RUNS_TIME.to ? undefined : next,
-    })
-  );
   const filters = useMemo(() => filtersOf(state), [state]);
   const data = useEvalData(
     services.data,
@@ -412,11 +418,6 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
   const runPageOpen = runsActive && !!state.run && !state.compare;
   const [flyoutResult, setFlyoutResult] = useState<EvalResult | undefined>();
 
-  useEffect(() => {
-    services.chrome.docTitle.change(PAGE_TITLE);
-    services.chrome.setBreadcrumbs([{ text: PAGE_TITLE }]);
-  }, [services.chrome]);
-
   // A shared link may name a result: open it once it is loaded.
   useEffect(() => {
     if (!state.result) {
@@ -452,6 +453,26 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     (sessionId: string, aroundMs: number) =>
       openSessionInAgentTraces(services.application, sessionId, aroundMs),
     [services.application]
+  );
+
+  // Empty states: one click to a wider range, or to no filters.
+  const selectRange = useCallback(
+    (from: string) => services.data.query.timefilter.timefilter.setTime({ from, to: 'now' }),
+    [services.data.query.timefilter.timefilter]
+  );
+  const filtersActive = hasActiveFilters(state);
+  const clearFilters = useCallback(
+    () =>
+      setState({
+        names: [],
+        levels: [],
+        sources: [],
+        failing: false,
+        verdicts: [],
+        runIds: [],
+        q: '',
+      }),
+    [setState]
   );
 
   const renderTab = () => {
@@ -493,6 +514,9 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             }
             onOpenTrace={openTrace}
             onOpenRun={(run) => setState({ run, compare: undefined }, { push: true })}
+            onSelectRange={(from) =>
+              runsTime.onTimeChange({ start: from, end: 'now' } as OnTimeChangeProps)
+            }
             backLabel={
               state.run
                 ? i18n.translate('agentTraces.evalsPage.backToRun', {
@@ -528,6 +552,18 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
       </>
     ) : null;
     if (state.tab === 'results') {
+      if (data.total === 0 && !data.loading) {
+        return (
+          <>
+            {lagNote}
+            <NoResultsInRange
+              ranges={[LAST_24H, LAST_7D]}
+              onSelectRange={selectRange}
+              onClearFilters={filtersActive ? clearFilters : undefined}
+            />
+          </>
+        );
+      }
       return (
         <>
           {lagNote}
@@ -571,6 +607,8 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             });
             setState({ evaluation: name });
           }}
+          onSelectRange={selectRange}
+          onClearFilters={filtersActive ? clearFilters : undefined}
         />
       </>
     );
@@ -580,6 +618,143 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     state.tab === 'runs'
       ? runs.loading || runDetail.loading || compareData.loading || previousDetail.loading
       : data.loading;
+  useEffect(() => onLoadingChange(loading), [loading, onLoadingChange]);
+
+  return (
+    <ShowTracesContext.Provider value={showTraces}>
+      <ChartActionsContext.Provider value={chartActions}>
+        <OpenSessionContext.Provider value={openSession}>
+          {!runPageOpen && (
+            <>
+              <EvalFiltersBar state={state} facets={data.facets} onChange={setState} />
+              <EuiSpacer size="m" />
+            </>
+          )}
+          <EuiTabs size="s">
+            {(Object.keys(TAB_LABELS) as EvalTab[]).map((tab) => (
+              <EuiTab
+                key={tab}
+                isSelected={state.tab === tab}
+                onClick={() =>
+                  setState(
+                    tab === state.tab && tab === 'runs'
+                      ? { run: undefined, compare: undefined, baseline: undefined }
+                      : { tab }
+                  )
+                }
+                data-test-subj={`agtEvlTab-${tab}`}
+              >
+                {TAB_LABELS[tab]}
+                {counts[tab] !== undefined && !data.loading && (
+                  <>
+                    {' '}
+                    <EuiNotificationBadge color="subdued">{counts[tab]}</EuiNotificationBadge>
+                  </>
+                )}
+              </EuiTab>
+            ))}
+          </EuiTabs>
+          <div className="agtEvlPage__tabBody">
+            {loading && <EuiProgress size="xs" color="accent" position="absolute" />}
+            <EuiSpacer size="m" />
+            {renderTab()}
+          </div>
+          {drilldownName && !flyoutResult && (
+            <EvaluatorDrilldownFlyout
+              name={drilldownName}
+              results={drilldown.results}
+              loading={drilldown.loading}
+              error={drilldown.error}
+              scope={formatScope(time.bounds)}
+              bounds={time.bounds}
+              onClose={() => setState({ evaluation: undefined })}
+              onOpenResult={openResult}
+              onOpenTrace={openTrace}
+              onViewAllResults={() =>
+                setState({ names: [drilldownName], tab: 'results', evaluation: undefined })
+              }
+            />
+          )}
+          {flyoutResult && (
+            <ResultFlyout
+              result={flyoutResult}
+              onClose={() => {
+                setFlyoutResult(undefined);
+                setState({ result: undefined });
+              }}
+              onOpenResult={openResult}
+            />
+          )}
+        </OpenSessionContext.Provider>
+      </ChartActionsContext.Provider>
+    </ShowTracesContext.Provider>
+  );
+};
+
+const DESCRIPTION = (
+  <FormattedMessage
+    id="agentTraces.evalsPage.description"
+    defaultMessage="Scores and judgments on your agents' spans, traces and sessions, from online evaluators and offline evaluation runs."
+  />
+);
+
+export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ params }) => {
+  const { services } = useOpenSearchDashboards<EvaluationsServices>();
+  const [state, setState] = useAppState(params, services);
+  const time = useTimeRange(services);
+  const runsTimeValue = runsTimeOf(state);
+  const runsTime = useRunsTimeRange(services, runsTimeValue, (next) =>
+    setState({
+      runsTime:
+        next.from === DEFAULT_RUNS_TIME.from && next.to === DEFAULT_RUNS_TIME.to ? undefined : next,
+    })
+  );
+  // The evaluations dataset from its correlation, read again on every visit to the page.
+  const dataset = useEvalsDataset({ force: true });
+  const datasetLoading =
+    !dataset.unavailable && (dataset.status === 'idle' || dataset.status === 'loading');
+  const config = dataset.config;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const runsActive = state.tab === 'runs';
+
+  useEffect(() => {
+    services.chrome.docTitle.change(PAGE_TITLE);
+    const runCrumb =
+      runsActive && (state.run || state.compare)
+        ? [
+            {
+              text: state.compare
+                ? i18n.translate('agentTraces.evalsPage.crumbCompare', {
+                    defaultMessage: 'Compare runs',
+                  })
+                : i18n.translate('agentTraces.evalsPage.crumbRun', {
+                    defaultMessage: 'Run {runId}',
+                    values: { runId: shortId(state.run ?? '', 16) },
+                  }),
+            },
+          ]
+        : [];
+    services.chrome.setBreadcrumbs([
+      {
+        text: PAGE_TITLE,
+        ...(runCrumb.length
+          ? {
+              onClick: (e: React.MouseEvent) => {
+                e.preventDefault();
+                setState(
+                  { tab: 'runs', run: undefined, compare: undefined, baseline: undefined },
+                  { push: true }
+                );
+              },
+              href: '#',
+            }
+          : {}),
+      },
+      ...runCrumb,
+    ]);
+  }, [services.chrome, runsActive, state.run, state.compare, setState]);
+
   // A json setting: no default override (it would be JSON-parsed).
   const quickRanges = useMemo(
     () =>
@@ -589,154 +764,103 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     [services.uiSettings]
   );
 
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const settingsButton = <EvalSettingsButton key="settings" onClick={openSettings} />;
+  // On the Runs tab the header holds the runs' own range (7 / 30 days and a picker), else
+  // the global range shared with Explore and Agent Traces.
+  const datePicker = runsActive ? (
+    <EuiFlexGroup
+      key="runsTime"
+      gutterSize="s"
+      alignItems="center"
+      responsive={false}
+      data-test-subj="agtEvlRunsTimePicker"
+    >
+      <EuiFlexItem grow={false}>
+        <EuiFilterGroup>
+          {RUNS_QUICK_RANGES.map((r) => (
+            <EuiFilterButton
+              key={r.from}
+              hasActiveFilters={runsTime.time.from === r.from && runsTime.time.to === 'now'}
+              onClick={() =>
+                runsTime.onTimeChange({ start: r.from, end: 'now' } as OnTimeChangeProps)
+              }
+              data-test-subj={`agtEvlRunsRange-${r.from}`}
+            >
+              {r.label}
+            </EuiFilterButton>
+          ))}
+        </EuiFilterGroup>
+      </EuiFlexItem>
+      <EuiFlexItem grow={false}>
+        <EuiSuperDatePicker
+          compressed
+          start={runsTime.time.from}
+          end={runsTime.time.to}
+          onTimeChange={runsTime.onTimeChange}
+          onRefresh={runsTime.onRefresh}
+          isLoading={loading}
+          dateFormat={services.uiSettings.get('dateFormat')}
+          commonlyUsedRanges={quickRanges}
+          data-test-subj="agtEvlRunsDatePicker"
+        />
+      </EuiFlexItem>
+    </EuiFlexGroup>
+  ) : (
+    <EuiSuperDatePicker
+      key="time"
+      compressed
+      start={time.time.from}
+      end={time.time.to}
+      isPaused={time.refreshInterval.pause}
+      refreshInterval={time.refreshInterval.value}
+      onTimeChange={time.onTimeChange}
+      onRefresh={time.onRefresh}
+      onRefreshChange={time.onRefreshChange}
+      isLoading={loading}
+      dateFormat={services.uiSettings.get('dateFormat')}
+      commonlyUsedRanges={quickRanges}
+      data-test-subj="agtEvlDatePicker"
+    />
+  );
+  // Without a dataset there is nothing to pick a range for: Settings only.
+  const controls = config ? [datePicker, settingsButton] : [settingsButton];
+
+  const renderContent = () => {
+    if (datasetLoading && !config) return <EuiLoadingContent lines={6} />;
+    if (!config) {
+      return <NoEvalsDatasetPrompt onGetStarted={openSettings} error={dataset.error} />;
+    }
+    return (
+      <EvaluationsBody
+        index={config.index}
+        state={state}
+        setState={setState}
+        time={time}
+        runsTime={runsTime}
+        onLoadingChange={setLoading}
+      />
+    );
+  };
+
   return (
     <EuiErrorBoundary>
-      <ShowTracesContext.Provider value={showTraces}>
-        <ChartActionsContext.Provider value={chartActions}>
-          <OpenSessionContext.Provider value={openSession}>
-            <EuiPage paddingSize="m" className="agtEvlPage" data-test-subj="agtEvlPage">
-              <EuiPageBody>
-                <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" wrap>
-                  <EuiFlexItem grow={false}>
-                    {/* The new navigation header already shows the app title. */}
-                    {!services.chrome.navGroup?.getNavGroupEnabled() && (
-                      <EuiTitle size="m">
-                        <h1>{PAGE_TITLE}</h1>
-                      </EuiTitle>
-                    )}
-                    <EuiText size="s" color="subdued">
-                      <FormattedMessage
-                        id="agentTraces.evalsPage.description"
-                        defaultMessage="Scores and judgments on your agents' spans, traces and sessions, from online evaluators and offline evaluation runs."
-                      />
-                    </EuiText>
-                  </EuiFlexItem>
-                  <EuiFlexItem grow={false}>
-                    {runsActive ? (
-                      <EuiFlexGroup
-                        gutterSize="s"
-                        alignItems="center"
-                        responsive={false}
-                        data-test-subj="agtEvlRunsTimePicker"
-                      >
-                        <EuiFlexItem grow={false}>
-                          <EuiFilterGroup>
-                            {RUNS_QUICK_RANGES.map((r) => (
-                              <EuiFilterButton
-                                key={r.from}
-                                hasActiveFilters={
-                                  runsTime.time.from === r.from && runsTime.time.to === 'now'
-                                }
-                                onClick={() =>
-                                  runsTime.onTimeChange({
-                                    start: r.from,
-                                    end: 'now',
-                                  } as OnTimeChangeProps)
-                                }
-                                data-test-subj={`agtEvlRunsRange-${r.from}`}
-                              >
-                                {r.label}
-                              </EuiFilterButton>
-                            ))}
-                          </EuiFilterGroup>
-                        </EuiFlexItem>
-                        <EuiFlexItem grow={false}>
-                          <EuiSuperDatePicker
-                            start={runsTime.time.from}
-                            end={runsTime.time.to}
-                            onTimeChange={runsTime.onTimeChange}
-                            onRefresh={runsTime.onRefresh}
-                            isLoading={loading}
-                            dateFormat={services.uiSettings.get('dateFormat')}
-                            commonlyUsedRanges={quickRanges}
-                            data-test-subj="agtEvlRunsDatePicker"
-                          />
-                        </EuiFlexItem>
-                      </EuiFlexGroup>
-                    ) : (
-                      <EuiSuperDatePicker
-                        start={time.time.from}
-                        end={time.time.to}
-                        isPaused={time.refreshInterval.pause}
-                        refreshInterval={time.refreshInterval.value}
-                        onTimeChange={time.onTimeChange}
-                        onRefresh={time.onRefresh}
-                        onRefreshChange={time.onRefreshChange}
-                        isLoading={loading}
-                        dateFormat={services.uiSettings.get('dateFormat')}
-                        commonlyUsedRanges={quickRanges}
-                        data-test-subj="agtEvlDatePicker"
-                      />
-                    )}
-                  </EuiFlexItem>
-                </EuiFlexGroup>
-                <EuiSpacer size="m" />
-                {!runPageOpen && (
-                  <>
-                    <EvalFiltersBar state={state} facets={data.facets} onChange={setState} />
-                    <EuiSpacer size="m" />
-                  </>
-                )}
-                <EuiTabs size="s">
-                  {(Object.keys(TAB_LABELS) as EvalTab[]).map((tab) => (
-                    <EuiTab
-                      key={tab}
-                      isSelected={state.tab === tab}
-                      onClick={() =>
-                        setState(
-                          tab === state.tab && tab === 'runs'
-                            ? { run: undefined, compare: undefined, baseline: undefined }
-                            : { tab }
-                        )
-                      }
-                      data-test-subj={`agtEvlTab-${tab}`}
-                    >
-                      {TAB_LABELS[tab]}
-                      {counts[tab] !== undefined && !data.loading && (
-                        <>
-                          {' '}
-                          <EuiNotificationBadge color="subdued">{counts[tab]}</EuiNotificationBadge>
-                        </>
-                      )}
-                    </EuiTab>
-                  ))}
-                </EuiTabs>
-                <div className="agtEvlPage__tabBody">
-                  {loading && <EuiProgress size="xs" color="accent" position="absolute" />}
-                  <EuiSpacer size="m" />
-                  {renderTab()}
-                </div>
-              </EuiPageBody>
-            </EuiPage>
-            {drilldownName && !flyoutResult && (
-              <EvaluatorDrilldownFlyout
-                name={drilldownName}
-                results={drilldown.results}
-                loading={drilldown.loading}
-                error={drilldown.error}
-                scope={formatScope(time.bounds)}
-                bounds={time.bounds}
-                onClose={() => setState({ evaluation: undefined })}
-                onOpenResult={openResult}
-                onOpenTrace={openTrace}
-                onViewAllResults={() =>
-                  setState({ names: [drilldownName], tab: 'results', evaluation: undefined })
-                }
-              />
-            )}
-            {flyoutResult && (
-              <ResultFlyout
-                result={flyoutResult}
-                onClose={() => {
-                  setFlyoutResult(undefined);
-                  setState({ result: undefined });
-                }}
-                onOpenResult={openResult}
-              />
-            )}
-          </OpenSessionContext.Provider>
-        </ChartActionsContext.Provider>
-      </ShowTracesContext.Provider>
+      <EuiPage paddingSize="m" className="agtEvlPage" data-test-subj="agtEvlPage">
+        <EuiPageBody>
+          <EvalHeader title={PAGE_TITLE} description={DESCRIPTION} controls={controls} />
+          {!services.chrome.navGroup?.getNavGroupEnabled() && <EuiSpacer size="m" />}
+          {renderContent()}
+        </EuiPageBody>
+      </EuiPage>
+      {settingsOpen && (
+        <EvalSettingsModal
+          config={config}
+          onClose={(saved) => {
+            setSettingsOpen(false);
+            if (saved) dataset.refresh();
+          }}
+        />
+      )}
     </EuiErrorBoundary>
   );
 };

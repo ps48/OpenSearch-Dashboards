@@ -5,7 +5,6 @@
 
 import React, { useMemo } from 'react';
 import {
-  EuiEmptyPrompt,
   EuiFlexGrid,
   EuiFlexGroup,
   EuiFlexItem,
@@ -40,6 +39,7 @@ import { ChangeDelta } from './compare_runs';
 import type { EvalAggregates } from './use_eval_data';
 import { ShowTracesMenu, useShowTraces } from './eval_trace_filter';
 import { OutcomeHistogram, ScoreTrendChart } from './eval_charts';
+import { LAST_24H, LAST_7D, NoResultsInRange } from './eval_empty_states';
 import {
   LevelBadge,
   OUTCOME_CHART_COLOR,
@@ -496,7 +496,7 @@ export const EvaluatorCard: React.FC<{
             buckets={buckets}
             bounds={bounds}
             interval={interval}
-            height={72}
+            height={56}
             compact
             name={summary.name}
             data-test-subj="agtEvlCardHistogram"
@@ -827,6 +827,10 @@ export const OverviewTab: React.FC<{
   onOpenRun?: (runId: string) => void;
   /** Opens the previous period (an evaluation that stopped reporting). */
   onShowPrevious?: (name: string) => void;
+  /** Empty range: sets the time range (`now-24h`, `now-7d`) to now. */
+  onSelectRange?: (from: string) => void;
+  /** Empty range under filters: clears them. */
+  onClearFilters?: () => void;
 }> = ({
   current,
   previous,
@@ -838,6 +842,8 @@ export const OverviewTab: React.FC<{
   runs,
   onOpenRun,
   onShowPrevious,
+  onSelectRange,
+  onClearFilters,
 }) => {
   const findings = useMemo(
     () => needsAttention(current.summaries, previous?.summaries, runs),
@@ -854,25 +860,11 @@ export const OverviewTab: React.FC<{
 
   if (current.kpis.results === 0) {
     return (
-      <EuiEmptyPrompt
-        iconType="search"
+      <NoResultsInRange
         data-test-subj="agtEvlOverviewEmpty"
-        title={
-          <h3>
-            <FormattedMessage
-              id="agentTraces.evalsPage.noResultsTitle"
-              defaultMessage="No results match"
-            />
-          </h3>
-        }
-        body={
-          <EuiText size="s">
-            <FormattedMessage
-              id="agentTraces.evalsPage.noResultsBody"
-              defaultMessage="No evaluation results in this time range under these filters. Widen the time range or clear filters."
-            />
-          </EuiText>
-        }
+        ranges={[LAST_24H, LAST_7D]}
+        onSelectRange={onSelectRange}
+        onClearFilters={onClearFilters}
       />
     );
   }

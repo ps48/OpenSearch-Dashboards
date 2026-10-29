@@ -41,7 +41,7 @@ import {
   failuresFirst,
   recordToEvalResult,
 } from './eval_data';
-import { useEvalsIndexPattern } from './eval_settings';
+import { useEvalsIndexPattern } from './eval_dataset';
 import { ShowTracesMenu } from './eval_trace_filter';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { parseEvalTime } from './eval_aggregations';
@@ -283,7 +283,8 @@ export const ResultFlyout: React.FC<{
   onOpenResult: (r: EvalResult) => void;
 }> = ({ result, onClose, onOpenResult }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
-  const index = useEvalsIndexPattern();
+  // Shown on the Evaluations page, where the dataset is already loaded.
+  const index = useEvalsIndexPattern() ?? AGENT_EVALS_INDEX_PATTERN;
   const [target, setTarget] = useState<Loadable<JudgedTarget>>({ loading: true });
   const [others, setOthers] = useState<Loadable<EvalResult[]>>({ loading: true });
 

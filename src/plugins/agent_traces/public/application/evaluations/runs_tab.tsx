@@ -9,7 +9,6 @@ import {
   EuiBasicTableColumn,
   EuiButton,
   EuiCode,
-  EuiEmptyPrompt,
   EuiFlexGroup,
   EuiFlexItem,
   EuiInMemoryTable,
@@ -34,33 +33,35 @@ import {
 } from './eval_components';
 import { ChangeDelta, CompareRuns, agentModelOf, agentVersionOf, shortModel } from './compare_runs';
 import { MAX_COMPARE_RUNS } from './eval_url_state';
+import { LAST_30D, NoResultsInRange } from './eval_empty_states';
 import type { RunsDetailState } from './use_eval_data';
 
-export const NoRunsPrompt: React.FC = () => (
-  <EuiEmptyPrompt
+/** No runs in the runs range: what runs are, and one click to the last 30 days. */
+export const NoRunsPrompt: React.FC<{ onSelectRange?: (from: string) => void }> = ({
+  onSelectRange,
+}) => (
+  <NoResultsInRange
     iconType="beaker"
     data-test-subj="agtEvlNoRuns"
+    ranges={[LAST_30D]}
+    onSelectRange={onSelectRange}
     title={
-      <h3>
-        <FormattedMessage
-          id="agentTraces.evalsPage.noRunsTitle"
-          defaultMessage="No evaluation runs in this time range"
-        />
-      </h3>
+      <FormattedMessage
+        id="agentTraces.evalsPage.noRunsTitle"
+        defaultMessage="No evaluation runs in this range"
+      />
     }
     body={
-      <EuiText size="s">
-        <p>
-          <FormattedMessage
-            id="agentTraces.evalsPage.noRunsBody"
-            defaultMessage="Runs are offline experiments: a test suite run against your agent, each test case scored, grouped by {runId}. Widen the time range, or run a suite with the OpenSearch GenAI SDK ({evaluate})."
-            values={{
-              runId: <EuiCode>test.suite.run.id</EuiCode>,
-              evaluate: <EuiCode>evaluate()</EuiCode>,
-            }}
-          />
-        </p>
-      </EuiText>
+      <p>
+        <FormattedMessage
+          id="agentTraces.evalsPage.noRunsBody"
+          defaultMessage="Runs are offline experiments: a test suite run against your agent, each test case scored, grouped by {runId}. Widen the time range, or run a suite with the OpenSearch GenAI SDK ({evaluate})."
+          values={{
+            runId: <EuiCode>test.suite.run.id</EuiCode>,
+            evaluate: <EuiCode>evaluate()</EuiCode>,
+          }}
+        />
+      </p>
     }
   />
 );
@@ -215,6 +216,8 @@ export const RunsTab: React.FC<{
   onOpenRun?: (runId: string) => void;
   /** Label of the back link of a comparison (the run page it was opened from). */
   backLabel?: string;
+  /** Sets the runs range (`now-30d` to now) from the empty state. */
+  onSelectRange?: (from: string) => void;
 }> = ({
   runs,
   compare,
@@ -224,6 +227,7 @@ export const RunsTab: React.FC<{
   onOpenTrace,
   onOpenRun,
   backLabel,
+  onSelectRange,
 }) => {
   const [selection, setSelection] = useState<RunSummary[]>([]);
   const evaluatorNames = useMemo(
@@ -257,7 +261,7 @@ export const RunsTab: React.FC<{
     );
   }
 
-  if (runs.length === 0) return <NoRunsPrompt />;
+  if (runs.length === 0) return <NoRunsPrompt onSelectRange={onSelectRange} />;
   const byId = new Map(runs.map((r) => [r.runId, r]));
 
   const sameSuite = selection.every((r) => (r.suiteName ?? '') === (selection[0]?.suiteName ?? ''));

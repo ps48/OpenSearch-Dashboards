@@ -12,7 +12,7 @@ import {
   createEvalsPplService,
   fetchEvalResults,
 } from '../../evaluations/eval_data';
-import { getEvalsIndexPattern } from '../../evaluations/eval_settings';
+import { useEvalsIndexPattern } from '../../evaluations/eval_dataset';
 
 /** Sessions looked up at once; the table renders its rows lazily. */
 const MAX_SESSION_IDS = 200;
@@ -34,14 +34,14 @@ export const groupBySession = (results: EvalResult[]): Map<string, EvalResult[]>
  */
 export const useSessionEvaluations = (sessionIds: string[]): Map<string, EvalResult[]> => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
-  const index = getEvalsIndexPattern(services?.uiSettings);
+  const index = useEvalsIndexPattern();
   const [value, setValue] = useState<Map<string, EvalResult[]>>(new Map());
   const key = useMemo(
     () => Array.from(new Set(sessionIds)).slice(0, MAX_SESSION_IDS).sort().join('\u0000'),
     [sessionIds]
   );
   useEffect(() => {
-    if (!key || !services?.data) {
+    if (!key || !services?.data || !index) {
       setValue(new Map());
       return;
     }

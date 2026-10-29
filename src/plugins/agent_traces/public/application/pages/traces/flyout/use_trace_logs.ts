@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { i18n } from '@osd/i18n';
 import {
   CorrelationService,
   LogHit,
@@ -15,6 +16,36 @@ import { Dataset } from '../../../../../../data/common';
 import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../../types';
 import { useDatasetContext } from '../../../context/dataset_context/dataset_context';
+import {
+  EvalsDatasetConfig,
+  evalsConfigForTraces,
+  useEvalsDataset,
+} from '../../../evaluations/eval_dataset';
+
+/** The evaluations dataset in the logs list: its events are the trace's evaluation results. */
+export const EVALUATIONS_LOGS_LABEL = i18n.translate('agentTraces.flyout.evaluationEvents', {
+  defaultMessage: 'Evaluations',
+});
+
+type CorrelationServiceLike = Pick<CorrelationService, 'fetchLogDataset'>;
+
+/**
+ * The evaluation events of a trace, from the evaluations dataset correlated with the traces
+ * dataset (a `trace-to-evaluations-*` correlation): a logs dataset like the others, matched on
+ * trace id, shown as "Evaluations".
+ */
+export const fetchEvaluationEvents = async (
+  correlationService: CorrelationServiceLike,
+  data: AgentTracesServices['data'],
+  config: EvalsDatasetConfig,
+  traceId: string,
+  limit: number
+): Promise<{ dataset: Dataset; logs: LogHit[] }> => {
+  const fetched = await correlationService.fetchLogDataset(config.evaluationsDataset.id);
+  const dataset: Dataset = { ...fetched, displayName: EVALUATIONS_LOGS_LABEL };
+  const response = await fetchTraceLogsByTraceId(data, { traceId, dataset, limit });
+  return { dataset, logs: transformLogsResponseToHits(response) };
+};
 
 /**
  * Logs fetched per correlated logs dataset. Higher than Explore traces' 10: an agent trace
@@ -70,13 +101,17 @@ export const clearTraceLogsCache = () => cache.clear();
 
 /**
  * Logs correlated with a trace, through the same correlations saved objects Explore traces
- * uses (trace dataset -> logs datasets, matched on trace id). Nothing is fetched when the
- * traces dataset has no logs correlation.
+ * uses (trace dataset -> logs datasets, matched on trace id), plus the trace's evaluation
+ * events when an evaluations dataset is correlated with the traces dataset. Nothing is
+ * fetched when the traces dataset has neither correlation.
  */
 export const useTraceLogs = (traceId: string | undefined): TraceLogs => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const { dataset } = useDatasetContext();
   const [state, setState] = useState<TraceLogs>({ ...EMPTY, isLoading: false });
+  const evals = useEvalsDataset();
+  const evalsKnown = evals.status === 'ready' || evals.status === 'error' || evals.unavailable;
+  const evalsConfig = evalsKnown ? evalsConfigForTraces(evals, dataset?.id) : undefined;
 
   // Correlations reference the traces dataset by id; logs are matched on trace id.
   const traceDataset = useMemo<Dataset | null>(
@@ -105,7 +140,12 @@ export const useTraceLogs = (traceId: string | undefined): TraceLogs => {
       setState({ ...EMPTY, isLoading: false });
       return;
     }
-    const key = `${traceDataset.id}:${traceId}`;
+    // Wait for the evaluations correlation, so the logs are fetched once.
+    if (!evalsKnown) {
+      setState({ ...EMPTY, isLoading: true });
+      return;
+    }
+    const key = `${traceDataset.id}:${traceId}:${evalsConfig?.correlationId ?? ''}`;
     const cached = cacheGet(key);
     if (cached) {
       setState({ ...cached, isLoading: false });
@@ -113,8 +153,40 @@ export const useTraceLogs = (traceId: string | undefined): TraceLogs => {
     }
     let cancelled = false;
     setState({ ...EMPTY, isLoading: true });
-    correlationService
-      .checkCorrelationsAndFetchLogs(traceDataset, services.data, traceId, TRACE_LOGS_LIMIT)
+    const withEvaluations = async () => {
+      const logs = await correlationService.checkCorrelationsAndFetchLogs(
+        traceDataset,
+        services.data,
+        traceId,
+        TRACE_LOGS_LIMIT
+      );
+      const evalsId = evalsConfig?.evaluationsDataset.id;
+      if (!evalsConfig || !evalsId || logs.logDatasets.some((d) => d.id === evalsId)) return logs;
+      try {
+        const events = await fetchEvaluationEvents(
+          correlationService,
+          services.data,
+          evalsConfig,
+          traceId,
+          TRACE_LOGS_LIMIT
+        );
+        return {
+          ...logs,
+          logDatasets: [...logs.logDatasets, events.dataset],
+          datasetLogs: { ...logs.datasetLogs, [events.dataset.id]: events.logs },
+          logHitCount: logs.logHitCount + events.logs.length,
+        };
+      } catch (error) {
+        return {
+          ...logs,
+          errors: [
+            ...(logs.errors ?? []),
+            `${EVALUATIONS_LOGS_LABEL}: ${error instanceof Error ? error.message : String(error)}`,
+          ],
+        };
+      }
+    };
+    withEvaluations()
       .then(({ logDatasets, datasetLogs, logHitCount, errors }) => {
         const result: TraceLogsResult = {
           logDatasets,
@@ -140,7 +212,7 @@ export const useTraceLogs = (traceId: string | undefined): TraceLogs => {
     return () => {
       cancelled = true;
     };
-  }, [traceId, traceDataset, correlationService, services?.data]);
+  }, [traceId, traceDataset, correlationService, services?.data, evalsKnown, evalsConfig]);
 
   return { ...state, traceDataset };
 };

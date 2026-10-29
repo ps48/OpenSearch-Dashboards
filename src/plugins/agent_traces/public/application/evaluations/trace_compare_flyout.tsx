@@ -68,7 +68,8 @@ import {
   formatTokens,
   shortId,
 } from './eval_components';
-import { useEvalsIndexPattern } from './eval_settings';
+import { useEvalsIndexPattern } from './eval_dataset';
+import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { errorMessage } from './use_eval_data';
 import type { EvaluationsServices } from '.';
 
@@ -130,7 +131,8 @@ const fetchSide = async (
 /** Spans and grades of both traces, fetched once per pair. */
 export const useTraceCompare = (baselineTraceId: string, candidateTraceId: string) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
-  const index = useEvalsIndexPattern();
+  // Shown on the Evaluations page, where the dataset is already loaded.
+  const index = useEvalsIndexPattern() ?? AGENT_EVALS_INDEX_PATTERN;
   const [state, setState] = useState<CompareState>({ loading: true });
   useEffect(() => {
     const controller = new AbortController();

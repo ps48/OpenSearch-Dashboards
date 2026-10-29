@@ -15,6 +15,7 @@ import { makeResult, twoRunFixture } from './eval_test_fixtures';
 import { EvalAggregates, EvalData, RunData, RunDetailState } from './use_eval_data';
 import { EMPTY_RUN_EVENTS, summarizeByEvaluator } from './eval_data';
 import { computeKpis, summarizeRuns } from './eval_aggregations';
+import { EvalsDatasetConfig, resetEvalsDatasetState } from './eval_dataset';
 
 jest.mock('../../../../data/public', () => ({
   syncQueryStateWithUrl: () => ({ stop: jest.fn() }),
@@ -79,6 +80,7 @@ let settings: Record<string, unknown> = {};
 
 /** Bounds per relative range, so tests can tell which range a hook received. */
 const BOUNDS: Record<string, [number, number]> = {
+  'now-30d': [Date.UTC(2026, 8, 27, 0), Date.UTC(2026, 9, 27, 0)],
   'now-7d': [Date.UTC(2026, 9, 20, 0), Date.UTC(2026, 9, 27, 0)],
   'now-24h': [Date.UTC(2026, 9, 26, 0), Date.UTC(2026, 9, 27, 0)],
 };
@@ -113,13 +115,25 @@ const makeServices = () => {
   };
 };
 
-let services: ReturnType<typeof makeServices>;
+let services: ReturnType<typeof makeServices> & Record<string, unknown>;
 
-const renderApp = (hash = '') => {
+const configOf = (index: string): EvalsDatasetConfig => ({
+  correlationId: 'corr-1',
+  tracesDataset: { id: 'tr', title: 'otel-v1-apm-span*' },
+  evaluationsDataset: { id: 'ev', title: index },
+  index,
+});
+/** The correlation is loaded already (the services have no saved objects client to reload). */
+const configure = (index = 'otel-v1-genai-evaluation*') => {
+  const config = configOf(index);
+  resetEvalsDatasetState({ status: 'ready', config, configs: [config] });
+};
+
+const renderApp = (hash = '', extra: Record<string, unknown> = {}) => {
   window.history.replaceState({}, '', `/app/agentTraces/evaluations${hash}`);
   const history = createBrowserHistory();
   const params = { history } as unknown as AppMountParameters;
-  services = makeServices();
+  services = { ...makeServices(), ...extra };
   render(
     <I18nProvider>
       <OpenSearchDashboardsContextProvider services={services}>
@@ -150,6 +164,7 @@ beforeEach(() => {
   };
   runDetail = { loading: false, results: [], events: EMPTY_RUN_EVENTS };
   settings = {};
+  configure();
   mockUseEvalData.mockClear();
   mockUseRunResults.mockClear();
   mockUseRunDetail.mockClear();
@@ -325,8 +340,8 @@ describe('EvaluationsApp', () => {
     expect(screen.getByTestId('agtEvlResultsTable')).toBeInTheDocument();
   });
 
-  it('reads every query from the configured evaluation index', () => {
-    settings = { 'agentTraces:evaluationsIndexPattern': 'my-evals-*' };
+  it('reads every query from the correlated evaluations dataset', () => {
+    configure('my-evals-*');
     renderApp('#/?_a=(tab:runs)');
     const evalCall = mockUseEvalData.mock.calls[mockUseEvalData.mock.calls.length - 1];
     expect((evalCall as unknown[])[4]).toBe('my-evals-*');
@@ -334,5 +349,98 @@ describe('EvaluationsApp', () => {
     expect((runsCall as unknown[])[5]).toBe('my-evals-*');
     const detailCall = mockUseRunDetail.mock.calls[mockUseRunDetail.mock.calls.length - 1];
     expect((detailCall as unknown[])[3]).toBe('my-evals-*');
+  });
+
+  it('puts the date picker and Settings in the application header with the new navigation', () => {
+    const mounted: unknown[][] = [];
+    const HeaderControl = ({ controls }: { controls: Array<{ renderComponent: unknown }> }) => {
+      mounted.push(controls.map((c) => c.renderComponent));
+      return <div data-test-subj="headerControlStub">{controls.map((c) => c.renderComponent)}</div>;
+    };
+    renderApp('', {
+      chrome: {
+        docTitle: { change: jest.fn() },
+        setBreadcrumbs: jest.fn(),
+        navGroup: { getNavGroupEnabled: () => true },
+      },
+      navigation: { ui: { HeaderControl } },
+      application: { navigateToApp: jest.fn(), setAppRightControls: jest.fn() },
+    });
+    const header = screen.getByTestId('headerControlStub');
+    expect(header.querySelector('.euiSuperDatePicker')).not.toBeNull();
+    expect(within(header).getByTestId('agtEvlSettingsButton')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlInPageHeader')).not.toBeInTheDocument();
+    expect(mounted.length).toBeGreaterThan(0);
+  });
+
+  it('holds the runs range in the header slot on the Runs tab', () => {
+    renderApp('#/?_a=(tab:runs)');
+    const header = screen.getByTestId('agtEvlInPageHeader');
+    expect(within(header).getByTestId('agtEvlRunsTimePicker')).toBeInTheDocument();
+    expect(within(header).queryByTestId('agtEvlDatePicker')).not.toBeInTheDocument();
+  });
+
+  it('explains evaluations and opens the settings without an evaluations dataset', async () => {
+    resetEvalsDatasetState();
+    const client = {
+      find: jest.fn(async () => ({ savedObjects: [] })),
+      get: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    };
+    renderApp('', {
+      savedObjects: { client },
+      application: { navigateToApp: jest.fn(), getUrlForApp: () => '/app/management' },
+    });
+    expect(await screen.findByTestId('agtEvlNoDataset')).toBeInTheDocument();
+    expect(document.querySelector('.euiSuperDatePicker')).toBeNull();
+    expect(screen.getByTestId('agtEvlSdkDocsLink')).toHaveTextContent('score()');
+    expect(screen.getByTestId('agtEvlAgentCoreLink')).toBeInTheDocument();
+    expect(mockUseEvalData).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('agtEvlGetStarted'));
+    expect(await screen.findByTestId('agtEvlSettingsModal')).toBeInTheDocument();
+    expect(await screen.findByTestId('agtEvlSettingsCreateDataset')).toBeInTheDocument();
+  });
+
+  it('offers a wider range when the range holds no results', () => {
+    evalData = { ...evalData, current: aggOf([]), results: [], total: 0 };
+    renderApp();
+    fireEvent.click(screen.getByTestId('agtEvlEmptyRange-now-7d'));
+    expect(services.data.query.timefilter.timefilter.setTime).toHaveBeenCalledWith({
+      from: 'now-7d',
+      to: 'now',
+    });
+  });
+
+  it('offers a wider range and clearing filters on an empty Results tab', () => {
+    evalData = { ...evalData, current: aggOf([]), results: [], total: 0 };
+    renderApp('#/?_a=(names:!(tool_diversity),tab:results)');
+    expect(screen.getByTestId('agtEvlNoResultsInRange')).toHaveTextContent(
+      'No evaluation results in this time range'
+    );
+    fireEvent.click(screen.getByTestId('agtEvlEmptyRange-now-24h'));
+    expect(services.data.query.timefilter.timefilter.setTime).toHaveBeenCalledWith({
+      from: 'now-24h',
+      to: 'now',
+    });
+    fireEvent.click(screen.getByTestId('agtEvlEmptyClearFilters'));
+    const filters = (
+      mockUseEvalData.mock.calls[mockUseEvalData.mock.calls.length - 1] as unknown[]
+    )[2];
+    expect(filters).toMatchObject({ names: [] });
+  });
+
+  it('offers the last 30 days when the runs range holds no run', () => {
+    runData = { ...runData, runs: [] };
+    renderApp('#/?_a=(tab:runs)');
+    expect(screen.getByTestId('agtEvlNoRuns')).toHaveTextContent(
+      'No evaluation runs in this range'
+    );
+    fireEvent.click(screen.getByTestId('agtEvlEmptyRange-now-30d'));
+    const lastCall = mockUseRunResults.mock.calls[mockUseRunResults.mock.calls.length - 1];
+    expect((lastCall as unknown[])[1]).toEqual({
+      from: BOUNDS['now-30d'][0],
+      to: BOUNDS['now-30d'][1],
+    });
   });
 });

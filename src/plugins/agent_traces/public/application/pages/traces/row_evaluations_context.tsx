@@ -12,7 +12,7 @@ import {
   createEvalsPplService,
   fetchEvalResults,
 } from '../../evaluations/eval_data';
-import { getEvalsIndexPattern } from '../../evaluations/eval_settings';
+import { useEvalsIndexPattern } from '../../evaluations/eval_dataset';
 
 export interface RowEvaluations {
   /** Trace- and session-level results by trace id, plus span results of that trace. */
@@ -77,7 +77,7 @@ export const RowEvaluationsProvider: React.FC<{
   mode?: RowEvaluations['mode'];
 }> = ({ traceIds, mode = 'trace', children }) => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
-  const index = getEvalsIndexPattern(services?.uiSettings);
+  const index = useEvalsIndexPattern();
   const [value, setValue] = useState<RowEvaluations>(EMPTY);
   const key = useMemo(
     () => Array.from(new Set(traceIds)).slice(0, MAX_TRACE_IDS).sort().join(','),
@@ -90,7 +90,7 @@ export const RowEvaluationsProvider: React.FC<{
   }, [traceIds]);
 
   useEffect(() => {
-    if (!key || !services?.data) {
+    if (!key || !services?.data || !index) {
       setValue({ ...EMPTY, mode });
       return;
     }

@@ -9,11 +9,10 @@ export const AGENT_TRACES_NAV_ID = 'agentTraces/traces';
 export const AGENT_SPANS_NAV_ID = 'agentTraces/spans';
 export const AGENT_EVALS_NAV_ID = 'agentTraces/evaluations';
 /** Index pattern of GenAI evaluation results (`gen_ai.evaluation.result` events), one doc per
- *  result. Data Prepper routes the events here from the OTLP logs path. */
+ *  result. Data Prepper routes the events here from the OTLP logs path. The Evaluations page
+ *  reads the evaluations dataset correlated with the traces dataset instead; Agent Traces
+ *  falls back to this pattern without that correlation. */
 export const AGENT_EVALS_INDEX_PATTERN = 'otel-v1-genai-evaluation-*';
-/** Advanced setting: index pattern every evaluation query reads (Evaluations page, the
- *  Evaluations column and the trace flyout). Defaults to `AGENT_EVALS_INDEX_PATTERN`. */
-export const EVALS_INDEX_SETTING = 'agentTraces:evaluationsIndexPattern';
 /** Advanced setting: pass rules per evaluation name (JSON). See the evaluations README. */
 export const EVALS_RULES_SETTING = 'agentTraces:evaluationRules';
 export const DEFAULT_COLUMNS_SETTING = 'defaultColumns';
