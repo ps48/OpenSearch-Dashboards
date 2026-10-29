@@ -344,7 +344,7 @@ export const RunDetailPage: React.FC<{
   error?: string;
   onBack: () => void;
   onOpenRun: (runId: string) => void;
-  onCompare: (compare: [string, string]) => void;
+  onCompare: (compare: string[]) => void;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
 }> = ({ runId, results, events, loading, error, onBack, onOpenRun, onCompare, onOpenTrace }) => {
   const runs = useMemo(() => summarizeRuns(results, events), [results, events]);

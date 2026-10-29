@@ -420,6 +420,83 @@ export const useRunDetail = (
   return state;
 };
 
+export interface RunsDetailState extends RunDetailData {
+  loading: boolean;
+  error?: string;
+  /** Runs with no grade, test case or run event (deleted, or a wrong id). */
+  missing: string[];
+}
+
+/**
+ * Every grade, test case event and run event of several runs (a comparison), whatever their
+ * time: one query per run, so each run is read up to `RUN_RESULTS_LIMIT` events.
+ */
+export const useRunsDetail = (
+  data: DataPublicPluginStart,
+  runIds: string[] | undefined,
+  refreshKey: number,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): RunsDetailState => {
+  const [state, setState] = useState<RunsDetailState>({
+    loading: false,
+    results: [],
+    events: EMPTY_RUN_EVENTS,
+    missing: [],
+  });
+  const key = JSON.stringify([runIds, refreshKey, index]);
+  useEffect(() => {
+    if (!runIds?.length) {
+      setState({ loading: false, results: [], events: EMPTY_RUN_EVENTS, missing: [] });
+      return;
+    }
+    const controller = new AbortController();
+    setState((s) => ({ ...s, loading: true, error: undefined }));
+    const ppl = createEvalsPplService(data, undefined, controller.signal);
+    Promise.all(
+      runIds.map((runId) =>
+        ppl
+          .executeQuery(
+            withoutTimeRange(evalsDataset(index)),
+            buildRunDetailQuery(runId, RUN_RESULTS_LIMIT, index)
+          )
+          .then((response) => recordsToRunDetail(pplResponseToRecords(response)))
+      )
+    )
+      .then((parts) => {
+        if (controller.signal.aborted) return;
+        setState({
+          loading: false,
+          results: parts.flatMap((p) => p.results),
+          events: {
+            cases: parts.flatMap((p) => p.events.cases),
+            runs: parts.flatMap((p) => p.events.runs),
+          },
+          missing: runIds.filter(
+            (_id, i) =>
+              parts[i].results.length +
+                parts[i].events.cases.length +
+                parts[i].events.runs.length ===
+              0
+          ),
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setState({
+          loading: false,
+          results: [],
+          events: EMPTY_RUN_EVENTS,
+          missing: [],
+          error: errorMessage(error),
+        });
+      });
+    return () => controller.abort();
+    // `key` captures the run ids by value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, key]);
+  return state;
+};
+
 export interface EvaluationResultsState {
   loading: boolean;
   error?: string;

@@ -20,6 +20,7 @@ import {
   filtersOf,
   hasActiveFilters,
   normalizeAppState,
+  baselineOf,
   runsTimeOf,
 } from './eval_url_state';
 import { traceDeepLinkPath, traceToOpen } from './eval_links';
@@ -211,6 +212,19 @@ describe('url state', () => {
     expect(normalizeAppState({ tab: 'bogus', compare: ['only-one'] })).toEqual(
       normalizeAppState({})
     );
+  });
+  it('keeps 2-run compare links and reads up to five runs with a baseline', () => {
+    const two = normalizeAppState({ compare: ['x', 'y'] });
+    expect(baselineOf(two)).toBe('x');
+    expect(compactAppState(two)).toEqual({ compare: ['x', 'y'] });
+    const many = normalizeAppState({
+      compare: ['a', 'b', 'c', 'b', 'd', 'e', 'f'],
+      baseline: 'c',
+    });
+    expect(many.compare).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(baselineOf(many)).toBe('c');
+    expect(compactAppState(many)).toMatchObject({ baseline: 'c' });
+    expect(normalizeAppState({ compare: ['a', 'b'], baseline: 'z' }).baseline).toBeUndefined();
   });
   it('compacts to non-default keys and derives filters', () => {
     const s = normalizeAppState({ names: ['a'], q: 'x' });

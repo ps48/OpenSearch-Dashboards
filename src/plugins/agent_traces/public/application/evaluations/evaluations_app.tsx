@@ -58,6 +58,7 @@ import {
   useEvaluationResults,
   useRunDetail,
   useRunResults,
+  useRunsDetail,
 } from './use_eval_data';
 import { EvalFiltersBar } from './eval_filters_bar';
 import { OverviewTab } from './overview_tab';
@@ -330,6 +331,12 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     time.refreshKey,
     index
   );
+  const compareData = useRunsDetail(
+    services.data,
+    runsActive ? state.compare : undefined,
+    runsTime.refreshKey,
+    index
+  );
   const runPageOpen = runsActive && !!state.run && !state.compare;
   const [flyoutResult, setFlyoutResult] = useState<EvalResult | undefined>();
 
@@ -383,7 +390,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             error={runDetail.error}
             onBack={() => setState({ run: undefined }, { push: true })}
             onOpenRun={(run) => setState({ run }, { push: true })}
-            onCompare={(compare) => setState({ compare }, { push: true })}
+            onCompare={(compare) => setState({ compare, baseline: undefined }, { push: true })}
             onOpenTrace={openTrace}
           />
         );
@@ -397,7 +404,11 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             results={runData.results}
             events={runData.events}
             compare={state.compare}
-            onCompareChange={(compare) => setState({ compare }, { push: true })}
+            baseline={state.baseline}
+            compareData={compareData}
+            onCompareChange={(compare, baseline) =>
+              setState({ compare, baseline: compare ? baseline : undefined }, { push: true })
+            }
             onOpenTrace={openTrace}
             onOpenRun={(run) => setState({ run, compare: undefined }, { push: true })}
             backLabel={
@@ -474,7 +485,8 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     );
   };
 
-  const loading = state.tab === 'runs' ? runs.loading || runDetail.loading : data.loading;
+  const loading =
+    state.tab === 'runs' ? runs.loading || runDetail.loading || compareData.loading : data.loading;
   // A json setting: no default override (it would be JSON-parsed).
   const quickRanges = useMemo(
     () =>
@@ -550,7 +562,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
                   onClick={() =>
                     setState(
                       tab === state.tab && tab === 'runs'
-                        ? { run: undefined, compare: undefined }
+                        ? { run: undefined, compare: undefined, baseline: undefined }
                         : { tab }
                     )
                   }

@@ -7,8 +7,8 @@ import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import { RunsTab } from './runs_tab';
-import { formatDelta } from './compare_runs';
-import { twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
+import { EMPTY_RUN_EVENTS } from './eval_data';
+import { makeResult, twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
 
 const renderRuns = (props: Partial<React.ComponentProps<typeof RunsTab>> = {}) => {
   const onCompareChange = jest.fn();
@@ -62,31 +62,86 @@ describe('RunsTab', () => {
     expect(onCompareChange).toHaveBeenCalledWith(['run-1', 'run-2']);
   });
 
-  it('shows the comparison with filter chips and per-case deltas', () => {
+  it('shows the comparison as a grid against the baseline', () => {
     const { onCompareChange } = renderRuns({ compare: ['run-1', 'run-2'] });
     const compare = screen.getByTestId('agtEvlCompare');
     expect(within(compare).getByText('Compare runs: travel-suite')).toBeInTheDocument();
-    const evaluator = screen.getByTestId('agtEvlCompareEvaluator');
-    expect(evaluator).toHaveTextContent('0.65 → 0.57');
-    expect(evaluator).toHaveTextContent('1 improved, 1 regressed, 0 unchanged');
+    const a = screen.getByTestId('agtEvlRunSummary-A');
+    const b = screen.getByTestId('agtEvlRunSummary-B');
+    expect(within(a).getByTestId('agtEvlBaselinePill')).toBeInTheDocument();
+    expect(within(a).getByTestId('agtEvlChangesReference')).toHaveTextContent('Reference');
+    expect(within(b).getByTestId('agtEvlChanges')).toHaveTextContent('↓1 ↑1 of 2');
+    expect(within(b).getByTestId('agtEvlRunMean')).toHaveTextContent('0.57');
+    expect(screen.getByTestId('agtEvlCasesTitle')).toHaveTextContent(
+      '2 test cases shared by all runs'
+    );
     const cases = () =>
       within(screen.getByTestId('agtEvlCompareCases')).getAllByRole('row').slice(1);
     expect(cases()).toHaveLength(3);
+    // Biggest regression first.
+    expect(cases()[0]).toHaveTextContent('Case b');
+    expect(cases()[0]).toHaveTextContent('1 evaluation regressed');
+    const delta = within(cases()[0]).getByTestId('agtEvlCellDelta');
+    expect(delta).toHaveTextContent('↓70 pp');
+    expect(delta).toHaveAttribute('data-change', 'regressed');
+    fireEvent.change(screen.getByTestId('agtEvlCaseSort'), { target: { value: 'improvement' } });
+    expect(cases()[0]).toHaveTextContent('Case a');
     fireEvent.click(screen.getByTestId('agtEvlCaseFilter-regressed'));
     expect(cases()).toHaveLength(1);
-    expect(cases()[0]).toHaveTextContent('Case b');
-    expect(within(cases()[0]).getByTestId('agtEvlDeltaChip-regressed')).toHaveTextContent('-0.70');
     fireEvent.click(screen.getByTestId('agtEvlCaseFilter-new'));
     expect(cases()[0]).toHaveTextContent('Case c');
-    fireEvent.click(screen.getByTestId('agtEvlCompareSwap'));
-    expect(onCompareChange).toHaveBeenCalledWith(['run-2', 'run-1']);
+    expect(within(cases()[0]).getByTestId('agtEvlCellMissing')).toBeInTheDocument();
+    expect(screen.getAllByTestId('agtEvlRemoveRun')[0]).toBeDisabled();
+    fireEvent.click(screen.getByTestId('agtEvlSetBaseline'));
+    expect(onCompareChange).toHaveBeenCalledWith(['run-1', 'run-2'], 'run-2');
     fireEvent.click(screen.getByTestId('agtEvlCompareBack'));
     expect(onCompareChange).toHaveBeenCalledWith(undefined);
   });
 
-  it('warns when a compared run is outside the time range', () => {
-    renderRuns({ compare: ['run-1', 'gone'] });
-    expect(screen.getByTestId('agtEvlCompareMissing')).toBeInTheDocument();
+  it('compares three runs with any of them as the baseline, and removes one', () => {
+    const results = [
+      ...twoRunFixture(),
+      makeResult({
+        runId: 'run-3',
+        suiteName: 'travel-suite',
+        caseId: 'a',
+        caseName: 'Case a',
+        name: 'accuracy',
+        value: 0.1,
+        scoreMin: 0,
+        scoreMax: 1,
+        time: '2026-10-27 10:00:00.000',
+      }),
+    ];
+    const { onCompareChange } = renderRuns({
+      results,
+      compare: ['run-1', 'run-2', 'run-3'],
+      baseline: 'run-2',
+    });
+    expect(
+      within(screen.getByTestId('agtEvlRunSummary-B')).getByTestId('agtEvlBaselinePill')
+    ).toBeInTheDocument();
+    // run-3 against run-2: case a dropped from 0.8 to 0.1.
+    expect(
+      within(screen.getByTestId('agtEvlRunSummary-C')).getByTestId('agtEvlChanges')
+    ).toHaveTextContent('↓1 ↑0 of 1');
+    expect(screen.getByTestId('agtEvlCasesTitle')).toHaveTextContent('1 test case shared');
+    expect(screen.getByTestId('agtEvlAddRun')).toBeDisabled();
+    fireEvent.click(screen.getAllByTestId('agtEvlRemoveRun')[1]);
+    expect(onCompareChange).toHaveBeenCalledWith(['run-1', 'run-3'], 'run-1');
+  });
+
+  it('warns when a compared run has no results', () => {
+    renderRuns({
+      compare: ['run-1', 'gone'],
+      compareData: {
+        loading: false,
+        results: twoRunFixture(),
+        events: EMPTY_RUN_EVENTS,
+        missing: ['gone'],
+      },
+    });
+    expect(screen.getByTestId('agtEvlCompareMissing')).toHaveTextContent('gone');
   });
 });
 
@@ -121,7 +176,7 @@ describe('RunsTab with test case and run events', () => {
   it('compares case status from the events, with the error badge and missing cases', () => {
     renderRuns({ events: twoRunEventsFixture(), compare: ['run-1', 'run-2'] });
     const d = caseRow('Case d');
-    expect(d).toHaveTextContent('Regressed');
+    expect(within(d).getByTestId('agtEvlCaseChangeLine')).toHaveTextContent('Regressed');
     // Compact in the table: the error type is in the badge's tooltip.
     expect(within(d).getByTestId('agtEvlCaseErrorBadge')).toHaveTextContent(/^Errored$/);
     expect(screen.getByTestId('agtEvlCaseFilter-missing')).toBeInTheDocument();
@@ -159,26 +214,5 @@ describe('RunsTab with test case and run events', () => {
     expect(within(flyout).getByTestId('agtEvlCaseInput')).toHaveTextContent('Not recorded');
     fireEvent.click(within(flyout).getByTestId('agtEvlCaseTrace-candidate'));
     expect(onOpenTrace).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('formatDelta', () => {
-  const agg = (mean?: number, passRate?: number) => ({ name: 'x', count: 1, mean, passRate });
-  it('uses score points when both runs have scores', () => {
-    expect(formatDelta({ baseline: agg(0.5), candidate: agg(0.75), change: 'improved' })).toBe(
-      '+0.25'
-    );
-  });
-  it('uses pass-rate points for labels', () => {
-    expect(
-      formatDelta({
-        baseline: agg(undefined, 0.5),
-        candidate: agg(undefined, 0.25),
-        change: 'regressed',
-      })
-    ).toBe('-25 pts');
-  });
-  it('has no delta for a new value', () => {
-    expect(formatDelta({ candidate: agg(1), change: 'new' })).toBeUndefined();
   });
 });

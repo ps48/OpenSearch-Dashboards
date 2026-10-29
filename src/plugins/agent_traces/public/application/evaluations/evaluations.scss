@@ -286,3 +286,119 @@
     outline: $euiFocusRingSize solid $euiFocusRingColor;
   }
 }
+
+// Compare grid ------------------------------------------------------------------------
+
+// A run's letter: outlined in its run color (a non-verdict hue).
+.agtEvlRunLetter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: $euiSizeL;
+  height: $euiSizeL;
+  border: $euiBorderWidthThick solid;
+  border-radius: $euiBorderRadius;
+  font-weight: $euiFontWeightBold;
+  font-size: $euiFontSizeXS;
+  line-height: 1;
+}
+
+.agtEvlBaselinePill {
+  font-variant-numeric: tabular-nums;
+}
+
+.agtEvlRunsSummary__baseline {
+  background: transparentize($euiColorPrimary, 0.96);
+}
+
+.agtEvlDelta {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.agtEvlChanges {
+  &__down {
+    color: $euiColorDangerText;
+  }
+
+  &__up {
+    color: $euiColorSuccessText;
+  }
+
+  &__of {
+    color: $euiTextSubduedColor;
+  }
+
+  &__bar {
+    display: flex;
+    width: 96px;
+    height: 4px;
+    margin-top: 2px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: $euiColorLightShade;
+  }
+
+  &__seg {
+    display: inline-block;
+    height: 100%;
+
+    &--down {
+      background: $euiColorDanger;
+    }
+
+    &--up {
+      background: $euiColorSuccess;
+    }
+
+    &--same {
+      background: $euiColorMediumShade;
+    }
+  }
+}
+
+.agtEvlGridHead {
+  display: flex;
+  flex-direction: column;
+  gap: $euiSizeXS;
+  min-width: 0;
+  font-weight: $euiFontWeightRegular;
+}
+
+.agtEvlCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+
+  &__line {
+    display: flex;
+    align-items: center;
+    gap: $euiSizeXS;
+    min-width: 0;
+  }
+
+  &__name {
+    flex: 0 1 auto;
+    max-width: 112px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: $euiTextSubduedColor;
+    font-size: $euiFontSizeXS;
+  }
+
+  &__foot {
+    display: flex;
+    align-items: center;
+    gap: $euiSizeXS;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 2px;
+  }
+}

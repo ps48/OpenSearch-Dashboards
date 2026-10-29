@@ -24,8 +24,13 @@ export interface EvalAppState {
   q: string;
   /** Id of the result open in the flyout. */
   result?: string;
-  /** Runs compared: [baseline, candidate]. */
-  compare?: [string, string];
+  /**
+   * Runs compared (2 to `MAX_COMPARE_RUNS`), in column order. Links from before the grid hold
+   * `[baseline, candidate]`: without `baseline`, the first run is the baseline.
+   */
+  compare?: string[];
+  /** The compared run the others are measured against; one of `compare`. */
+  baseline?: string;
   /**
    * `test.suite.run.id` of the run whose page is open. External links (a CI job that ran the
    * suite) open `_a=(tab:runs,run:'<id>')`: keep this key.
@@ -51,6 +56,9 @@ export const DEFAULT_APP_STATE: EvalAppState = {
 
 export const APP_STATE_KEY = '_a';
 
+/** Runs a comparison holds at most (columns A to E). */
+export const MAX_COMPARE_RUNS = 5;
+
 const strings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
 
@@ -59,7 +67,12 @@ export const normalizeAppState = (raw: unknown): EvalAppState => {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_APP_STATE };
   const r = raw as Record<string, unknown>;
   const tab = EVAL_TABS.includes(r.tab as EvalTab) ? (r.tab as EvalTab) : 'overview';
-  const compare = strings(r.compare);
+  const compare = Array.from(new Set(strings(r.compare))).slice(0, MAX_COMPARE_RUNS);
+  const validCompare = compare.length >= 2;
+  const baseline =
+    validCompare && typeof r.baseline === 'string' && compare.includes(r.baseline)
+      ? r.baseline
+      : undefined;
   const runsTime = r.runsTime as { from?: unknown; to?: unknown } | undefined;
   const validRunsTime =
     runsTime && typeof runsTime.from === 'string' && typeof runsTime.to === 'string'
@@ -73,12 +86,19 @@ export const normalizeAppState = (raw: unknown): EvalAppState => {
     failing: r.failing === true || r.failing === 'true',
     q: typeof r.q === 'string' ? r.q : '',
     ...(typeof r.result === 'string' && r.result ? { result: r.result } : {}),
-    ...(compare.length === 2 ? { compare: [compare[0], compare[1]] as [string, string] } : {}),
+    ...(validCompare ? { compare } : {}),
+    ...(baseline ? { baseline } : {}),
     ...(typeof r.run === 'string' && r.run ? { run: r.run } : {}),
     ...(validRunsTime ? { runsTime: validRunsTime } : {}),
     ...(typeof r.evaluation === 'string' && r.evaluation ? { evaluation: r.evaluation } : {}),
   };
 };
+
+/** The baseline of a comparison: `baseline` when it is one of the runs, else the first run. */
+export const baselineOf = (state: Pick<EvalAppState, 'compare' | 'baseline'>) =>
+  state.compare && state.baseline && state.compare.includes(state.baseline)
+    ? state.baseline
+    : state.compare?.[0];
 
 /** The runs tab's time range: from the URL, else the last 7 days. */
 export const runsTimeOf = (state: EvalAppState) => state.runsTime ?? DEFAULT_RUNS_TIME;
@@ -94,6 +114,10 @@ export const compactAppState = (state: EvalAppState): Partial<EvalAppState> => {
   if (state.q) out.q = state.q;
   if (state.result) out.result = state.result;
   if (state.compare) out.compare = state.compare;
+  // The first run is the baseline by default: keep 2-run links as they were.
+  if (state.compare && state.baseline && state.baseline !== state.compare[0]) {
+    out.baseline = state.baseline;
+  }
   if (state.run) out.run = state.run;
   if (
     state.runsTime &&

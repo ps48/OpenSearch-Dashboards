@@ -31,6 +31,8 @@ import {
   shortId,
 } from './eval_components';
 import { CompareRuns } from './compare_runs';
+import { MAX_COMPARE_RUNS } from './eval_url_state';
+import type { RunsDetailState } from './use_eval_data';
 
 export const NoRunsPrompt: React.FC = () => (
   <EuiEmptyPrompt
@@ -122,8 +124,12 @@ export const RunsTab: React.FC<{
   results: EvalResult[];
   /** Test case and run events of the runs; empty for runs from older producers. */
   events?: RunEvents;
-  compare?: [string, string];
-  onCompareChange: (compare?: [string, string]) => void;
+  /** Compared runs in column order, and the baseline (the first by default). */
+  compare?: string[];
+  baseline?: string;
+  /** Grades and events of the compared runs, read by run id (any time). */
+  compareData?: RunsDetailState;
+  onCompareChange: (compare?: string[], baseline?: string) => void;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
   /** Opens the run's page. */
   onOpenRun?: (runId: string) => void;
@@ -133,6 +139,8 @@ export const RunsTab: React.FC<{
   results,
   events = EMPTY_RUN_EVENTS,
   compare,
+  baseline,
+  compareData,
   onCompareChange,
   onOpenTrace,
   onOpenRun,
@@ -146,19 +154,22 @@ export const RunsTab: React.FC<{
   );
 
   if (compare) {
-    const [baselineId, candidateId] = compare;
-    const byId = new Map(runs.map((r) => [r.runId, r]));
+    const baselineId = baseline && compare.includes(baseline) ? baseline : compare[0];
+    // Without data read by id (tests, older callers), the runs in range are compared.
+    const data = compareData ?? { results, events, loading: false, missing: [] };
     return (
       <CompareRuns
-        results={results}
-        events={events}
-        baseline={byId.get(baselineId)}
-        candidate={byId.get(candidateId)}
+        runIds={compare}
         baselineId={baselineId}
-        candidateId={candidateId}
+        results={data.results}
+        events={data.events}
+        loading={data.loading}
+        error={data.error}
+        missing={data.missing}
+        available={runs}
+        onChange={(runIds, next) => onCompareChange(runIds, next)}
         onBack={() => onCompareChange(undefined)}
         backLabel={backLabel}
-        onSwap={() => onCompareChange([candidateId, baselineId])}
         onOpenTrace={onOpenTrace}
       />
     );
@@ -166,19 +177,19 @@ export const RunsTab: React.FC<{
 
   if (runs.length === 0) return <NoRunsPrompt />;
 
-  const sameSuite =
-    selection.length === 2 && (selection[0].suiteName ?? '') === (selection[1].suiteName ?? '');
-  const canCompare = selection.length === 2 && sameSuite;
-  const compareHint =
-    selection.length !== 2
-      ? i18n.translate('agentTraces.evalsPage.compareHintCount', {
-          defaultMessage: 'Select two runs of the same suite.',
+  const sameSuite = selection.every((r) => (r.suiteName ?? '') === (selection[0]?.suiteName ?? ''));
+  const countOk = selection.length >= 2 && selection.length <= MAX_COMPARE_RUNS;
+  const canCompare = countOk && sameSuite;
+  const compareHint = !countOk
+    ? i18n.translate('agentTraces.evalsPage.compareHintCount', {
+        defaultMessage: 'Select 2 to {max} runs of the same suite.',
+        values: { max: MAX_COMPARE_RUNS },
+      })
+    : !sameSuite
+      ? i18n.translate('agentTraces.evalsPage.compareHintSuite', {
+          defaultMessage: 'The runs must belong to the same suite.',
         })
-      : !sameSuite
-        ? i18n.translate('agentTraces.evalsPage.compareHintSuite', {
-            defaultMessage: 'The two runs must belong to the same suite.',
-          })
-        : undefined;
+      : undefined;
 
   const columns: Array<EuiBasicTableColumn<RunSummary>> = [
     {
@@ -299,7 +310,7 @@ export const RunsTab: React.FC<{
         count={runs.length}
         help={i18n.translate('agentTraces.evalsPage.runsHelp', {
           defaultMessage:
-            'Open a run for its test cases, or select two runs of a suite to compare.',
+            'Open a run for its test cases, or select 2 to 5 runs of a suite to compare.',
         })}
         actions={
           <EuiToolTip content={compareHint}>
@@ -309,8 +320,9 @@ export const RunsTab: React.FC<{
               iconType="merge"
               isDisabled={!canCompare}
               onClick={() => {
-                const [a, b] = [...selection].sort((x, y) => x.started - y.started);
-                onCompareChange([a.runId, b.runId]);
+                // Oldest first: the oldest run is the baseline (A).
+                const ordered = [...selection].sort((x, y) => x.started - y.started);
+                onCompareChange(ordered.map((r) => r.runId));
               }}
               data-test-subj="agtEvlCompareButton"
             >
