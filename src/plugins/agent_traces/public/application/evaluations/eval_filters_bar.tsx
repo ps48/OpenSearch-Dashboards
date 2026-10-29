@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  EuiBadge,
   EuiButtonEmpty,
   EuiComboBox,
   EuiComboBoxOptionOption,
@@ -14,10 +15,14 @@ import {
   EuiSwitch,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { LEVEL_LABEL, SOURCE_LABEL } from './eval_data';
+import { EvalOutcome, LEVEL_LABEL, SOURCE_LABEL } from './eval_data';
 import { EvalAppState, hasActiveFilters } from './eval_url_state';
 import { Facet } from './use_eval_data';
-import { levelLabel, sourceLabel } from './eval_components';
+import { OUTCOME_TEXT, levelLabel, shortId, sourceLabel } from './eval_components';
+
+const VERDICT_OPTIONS: Array<EuiComboBoxOptionOption<string>> = (
+  ['fail', 'pass', 'error', 'neutral'] as EvalOutcome[]
+).map((o) => ({ label: OUTCOME_TEXT[o], value: o }));
 
 type Patch = Partial<EvalAppState>;
 
@@ -126,6 +131,42 @@ export const EvalFiltersBar: React.FC<{
           data-test-subj="agtEvlFilterSources"
         />
       </EuiFlexItem>
+      <EuiFlexItem grow={2} style={{ minWidth: 150 }}>
+        <EuiComboBox<string>
+          compressed
+          fullWidth
+          placeholder={i18n.translate('agentTraces.evalsPage.filterVerdicts', {
+            defaultMessage: 'All verdicts',
+          })}
+          aria-label={i18n.translate('agentTraces.evalsPage.filterVerdictsLabel', {
+            defaultMessage: 'Verdict',
+          })}
+          options={VERDICT_OPTIONS}
+          selectedOptions={selected(VERDICT_OPTIONS, state.verdicts)}
+          onChange={(options) => onChange({ verdicts: values(options) as EvalOutcome[] })}
+          data-test-subj="agtEvlFilterVerdicts"
+        />
+      </EuiFlexItem>
+      {state.runIds.length > 0 && (
+        <EuiFlexItem grow={false}>
+          <EuiBadge
+            color="hollow"
+            iconType="cross"
+            iconSide="right"
+            iconOnClick={() => onChange({ runIds: [] })}
+            iconOnClickAriaLabel={i18n.translate('agentTraces.evalsPage.removeRunFilter', {
+              defaultMessage: 'Remove the run filter',
+            })}
+            title={state.runIds.join(', ')}
+            data-test-subj="agtEvlRunFilterPill"
+          >
+            {i18n.translate('agentTraces.evalsPage.runFilter', {
+              defaultMessage: 'Run: {runs}',
+              values: { runs: state.runIds.map((id) => shortId(id, 28)).join(', ') },
+            })}
+          </EuiBadge>
+        </EuiFlexItem>
+      )}
       <EuiFlexItem grow={3} style={{ minWidth: 200 }}>
         <EuiFieldSearch
           compressed
@@ -156,7 +197,17 @@ export const EvalFiltersBar: React.FC<{
           <EuiButtonEmpty
             size="xs"
             iconType="cross"
-            onClick={() => onChange({ names: [], levels: [], sources: [], failing: false, q: '' })}
+            onClick={() =>
+              onChange({
+                names: [],
+                levels: [],
+                sources: [],
+                failing: false,
+                verdicts: [],
+                runIds: [],
+                q: '',
+              })
+            }
             data-test-subj="agtEvlClearFilters"
           >
             {i18n.translate('agentTraces.evalsPage.clearFilters', {

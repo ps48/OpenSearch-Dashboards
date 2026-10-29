@@ -205,6 +205,8 @@ describe('url state', () => {
       levels: [],
       sources: [],
       failing: true,
+      verdicts: [],
+      runIds: [],
       q: '',
       result: 'r1',
       compare: ['x', 'y'],
@@ -232,6 +234,11 @@ describe('url state', () => {
     expect(filtersOf(s)).toMatchObject({ names: ['a'], search: 'x', failingOnly: false });
     expect(hasActiveFilters(s)).toBe(true);
     expect(hasActiveFilters(normalizeAppState({}))).toBe(false);
+    const fromChart = normalizeAppState({ verdicts: ['pass', 'bogus'], runIds: ['run-1'] });
+    expect(fromChart).toMatchObject({ verdicts: ['pass'], runIds: ['run-1'] });
+    expect(filtersOf(fromChart)).toMatchObject({ outcomes: ['pass'], runIds: ['run-1'] });
+    expect(compactAppState(fromChart)).toEqual({ verdicts: ['pass'], runIds: ['run-1'] });
+    expect(hasActiveFilters(fromChart)).toBe(true);
   });
 });
 

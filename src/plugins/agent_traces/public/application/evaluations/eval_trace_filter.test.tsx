@@ -36,6 +36,20 @@ describe('trace conditions', () => {
     });
   });
 
+  it('maps the results behind a chart point: evaluation, verdict and run', () => {
+    expect(
+      conditionFilters({ kind: 'results', name: 'q', outcome: 'pass', runId: 'run-1' })
+    ).toEqual({ names: ['q'], outcomes: ['pass'], runIds: ['run-1'] });
+    expect(conditionFilters({ kind: 'results' })).toEqual({});
+    expect(
+      conditionText({
+        kind: 'results',
+        outcome: 'fail',
+        timeRange: { from: Date.UTC(2026, 9, 28, 14), to: Date.UTC(2026, 9, 28, 15) },
+      })
+    ).toMatch(/^All evaluations · fail · Oct 28, \d\d:00 to Oct 28, \d\d:00$/);
+  });
+
   it('offers label and value conditions when the result has them', () => {
     expect(conditionsFor({ name: 'q' }).map((c) => c.kind)).toEqual(['fail']);
     expect(conditionsFor({ name: 'q', label: 'x', value: 1 }).map((c) => c.kind)).toEqual([

@@ -14,24 +14,49 @@ import {
 import { i18n } from '@osd/i18n';
 import { DataPublicPluginStart } from '../../../../data/public';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
-import { EvalFilters, createEvalsPplService } from './eval_data';
+import { EvalFilters, EvalOutcome, createEvalsPplService } from './eval_data';
 import { buildMatchingTraceIdsQuery, executeEvalPpl, probeIndexGroups } from './eval_ppl';
-import { formatValue } from './eval_components';
+import { OUTCOME_TEXT, formatEvalTime, formatValue, shortId } from './eval_components';
 import { EvalTraceFilter, setEvalTraceFilter, useEvalTraceFilter } from './eval_trace_filter_store';
 
 /** A condition on one evaluation's results whose traces Agent Traces can list. */
 export interface TraceCondition {
-  name: string;
-  kind: 'fail' | 'label' | 'below' | 'above';
+  /** The evaluation; absent for a chart of all evaluations (kind `results`). */
+  name?: string;
+  /** `results`: the results behind a chart point (an evaluation, a verdict, a bucket). */
+  kind: 'fail' | 'label' | 'below' | 'above' | 'results';
   label?: string;
   value?: number;
+  /** `results`: only this verdict. */
+  outcome?: EvalOutcome;
+  /** `results`: only this evaluation run. */
+  runId?: string;
+  /** A time range of its own (a chart bucket), epoch millis; else the page's range. */
+  timeRange?: { from: number; to: number };
 }
 
 /** Trace ids read for a condition; the pill says "first 500" when more matched. */
 export const MAX_FILTER_TRACES = 500;
 
+const bucketText = (range?: { from: number; to: number }) =>
+  range
+    ? `${formatEvalTime(range.from, 'MMM D, HH:mm')} to ${formatEvalTime(range.to, 'MMM D, HH:mm')}`
+    : '';
+
 export const conditionText = (c: TraceCondition): string => {
   switch (c.kind) {
+    case 'results':
+      return [
+        c.name ??
+          i18n.translate('agentTraces.evals.conditionAll', {
+            defaultMessage: 'All evaluations',
+          }),
+        c.outcome ? OUTCOME_TEXT[c.outcome].toLowerCase() : undefined,
+        c.runId ? shortId(c.runId, 28) : undefined,
+        bucketText(c.timeRange) || undefined,
+      ]
+        .filter(Boolean)
+        .join(' · ');
     case 'fail':
       return i18n.translate('agentTraces.evals.conditionFail', {
         defaultMessage: '{name}: fail',
@@ -50,7 +75,9 @@ export const conditionText = (c: TraceCondition): string => {
 };
 
 export const conditionFilters = (c: TraceCondition): EvalFilters => ({
-  names: [c.name],
+  ...(c.name ? { names: [c.name] } : {}),
+  ...(c.kind === 'results' && c.outcome ? { outcomes: [c.outcome] } : {}),
+  ...(c.kind === 'results' && c.runId ? { runIds: [c.runId] } : {}),
   ...(c.kind === 'fail' ? { outcomes: ['fail' as const] } : {}),
   ...(c.kind === 'label' && c.label ? { labels: [c.label] } : {}),
   ...(c.kind === 'below' ? { valueBelow: c.value } : {}),
@@ -68,8 +95,15 @@ export const fetchConditionTraces = async (
   index: string = AGENT_EVALS_INDEX_PATTERN,
   signal?: AbortSignal
 ): Promise<EvalTraceFilter> => {
-  const ppl = createEvalsPplService(data, timeRange, signal);
-  const groups = await probeIndexGroups(data, index, timeRange, signal);
+  // A chart point carries its own bucket.
+  const range = condition.timeRange
+    ? {
+        from: new Date(condition.timeRange.from).toISOString(),
+        to: new Date(condition.timeRange.to).toISOString(),
+      }
+    : timeRange;
+  const ppl = createEvalsPplService(data, range, signal);
+  const groups = await probeIndexGroups(data, index, range, signal);
   const rows = await executeEvalPpl(
     ppl,
     index,
@@ -122,6 +156,10 @@ export const conditionsFor = (target: {
 
 const menuText = (c: TraceCondition): string => {
   switch (c.kind) {
+    case 'results':
+      return i18n.translate('agentTraces.evals.menuResults', {
+        defaultMessage: 'Show these traces',
+      });
     case 'fail':
       return i18n.translate('agentTraces.evals.menuFail', {
         defaultMessage: 'Show traces where {name} fails',

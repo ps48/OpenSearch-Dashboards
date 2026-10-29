@@ -875,6 +875,7 @@ export const RunDetailPage: React.FC<{
             defaultMessage: 'Run {runId}',
             values: { runId: run.runId },
           })}
+          runId={run.runId}
           onClose={() => setDrilldown(undefined)}
           onOpenTrace={onOpenTrace}
         />

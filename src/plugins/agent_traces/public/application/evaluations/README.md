@@ -194,6 +194,20 @@ Each run other than the baseline gets one word, from the same changes, no LLM:
 The evidence sentence names the evaluations ("Better on answer_quality, worse on
 latency_budget") or the case counts.
 
+## From a chart to its results
+
+Click a bar or point in Results over time, the Score trend, a card's mini chart, the
+drill-down's trend and histogram, or a run's score histogram: a small menu offers
+
+- **Show these results**: the Results tab for that time bucket (the global time range is set
+  to it), the evaluation and, for a bar, its verdict (`_a.verdicts`); a run's histogram adds
+  the run (`_a.runIds`, a removable "Run:" pill) over the time its results span;
+- **Show these traces**: Agent Traces filtered to the traces those results judged (as the
+  result menus do), its time range opened from an hour before the bucket (traces precede
+  their grades).
+
+The Verdict filter (Pass, Fail, Evaluator error, Scored) is in the filter bar.
+
 ## Links
 
 - Compare: `_a=(tab:runs,compare:!('<run A>','<run B>',...),baseline:'<run>')`; without

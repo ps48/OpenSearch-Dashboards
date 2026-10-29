@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo } from 'react';
+import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
+import { EuiContextMenuItem, EuiContextMenuPanel, EuiPopover, EuiPopoverTitle } from '@elastic/eui';
 import {
   AnnotationDomainType,
   Axis,
@@ -28,6 +29,7 @@ import {
   TrendPoint,
   TimeBoundsMs,
   bucketOutcomes,
+  parseEvalTime,
   scoreTrend,
 } from './eval_aggregations';
 import {
@@ -48,6 +50,117 @@ const useChartThemes = () => {
   return { chartsTheme, baseTheme };
 };
 
+/** The results behind a chart point: a time bucket, an evaluation, a verdict, a run. */
+export interface ChartPoint {
+  /** Bucket start and end, epoch millis. */
+  from: number;
+  to: number;
+  name?: string;
+  outcome?: EvalOutcome;
+  runId?: string;
+}
+
+/** What a chart point leads to. Absent: points are not clickable. */
+export interface ChartActions {
+  showResults: (point: ChartPoint) => void;
+  showTraces: (point: ChartPoint) => void;
+}
+
+export const ChartActionsContext = createContext<ChartActions | undefined>(undefined);
+
+export const pointTitle = (p: ChartPoint): string =>
+  [
+    p.name ??
+      i18n.translate('agentTraces.evalsPage.pointAll', { defaultMessage: 'All evaluations' }),
+    p.outcome ? OUTCOME_TEXT[p.outcome] : undefined,
+    `${formatEvalTime(p.from, 'MMM D, HH:mm')} to ${formatEvalTime(p.to, 'MMM D, HH:mm')}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+/**
+ * Click a bar or point: a small menu at the pointer with Show these results and Show these
+ * traces. The pointer position is taken on mouse down, before the chart reports the element.
+ */
+const useChartPoint = () => {
+  const actions = useContext(ChartActionsContext);
+  const [open, setOpen] = useState<{ point: ChartPoint; x: number; y: number }>();
+  const last = useRef({ x: 0, y: 0 });
+  const wrapperProps = {
+    style: { position: 'relative' as const },
+    onMouseDownCapture: (e: React.MouseEvent<HTMLDivElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      last.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    },
+  };
+  const select = (point: ChartPoint | undefined) => {
+    if (actions && point) setOpen({ point, ...last.current });
+  };
+  const close = () => setOpen(undefined);
+  const popover =
+    actions && open ? (
+      <EuiPopover
+        isOpen
+        closePopover={close}
+        panelPaddingSize="none"
+        anchorPosition="downCenter"
+        display="block"
+        style={{ position: 'absolute', left: open.x, top: open.y, width: 1, height: 1 }}
+        button={<span className="agtEvlChartAnchor" />}
+        data-test-subj="agtEvlChartPopover"
+      >
+        <EuiPopoverTitle paddingSize="s">
+          <span className="agtEvlNum">{pointTitle(open.point)}</span>
+        </EuiPopoverTitle>
+        <EuiContextMenuPanel
+          size="s"
+          items={[
+            <EuiContextMenuItem
+              key="results"
+              icon="visTable"
+              onClick={() => {
+                close();
+                actions.showResults(open.point);
+              }}
+              data-test-subj="agtEvlChartShowResults"
+            >
+              {i18n.translate('agentTraces.evalsPage.showTheseResults', {
+                defaultMessage: 'Show these results',
+              })}
+            </EuiContextMenuItem>,
+            <EuiContextMenuItem
+              key="traces"
+              icon="apmTrace"
+              onClick={() => {
+                close();
+                actions.showTraces(open.point);
+              }}
+              data-test-subj="agtEvlChartShowTraces"
+            >
+              {i18n.translate('agentTraces.evalsPage.showTheseTraces', {
+                defaultMessage: 'Show these traces',
+              })}
+            </EuiContextMenuItem>,
+          ]}
+        />
+      </EuiPopover>
+    ) : null;
+  return { clickable: !!actions, wrapperProps, select, popover };
+};
+
+/** The datum under a click on an XY chart. */
+const datumOf = <T,>(elements: unknown[]): T | undefined => {
+  const [first] = elements as XYChartElementEvent[];
+  return (first?.[0] as { datum?: T } | undefined)?.datum;
+};
+
+/** Points of the results over time: one per bucket start, a click names its bucket. */
+export const bucketPoint = (
+  x: number,
+  interval: number,
+  extra: Omit<ChartPoint, 'from' | 'to'> = {}
+): ChartPoint => ({ from: x, to: x + interval, ...extra });
+
 const OUTCOMES: EvalOutcome[] = ['fail', 'error', 'neutral', 'pass'];
 
 /** Results per time bucket, stacked by outcome (fail at the bottom, where the eye starts). */
@@ -59,16 +172,23 @@ export const OutcomeHistogram: React.FC<{
   interval: number;
   height: number;
   compact?: boolean;
+  /** The evaluation the chart is about, carried by a clicked bar. */
+  name?: string;
   'data-test-subj'?: string;
-}> = ({ results, buckets, bounds, interval, height, compact, ...rest }) => {
+}> = ({ results, buckets, bounds, interval, height, compact, name, ...rest }) => {
   const { chartsTheme, baseTheme } = useChartThemes();
+  const point = useChartPoint();
   const data = useMemo(
     () => buckets ?? bucketOutcomes(results ?? [], interval),
     [buckets, results, interval]
   );
   const formatter = useMemo(() => niceTimeFormatter([bounds.from, bounds.to]), [bounds]);
   return (
-    <div style={{ height }} data-test-subj={rest['data-test-subj'] ?? 'agtEvlOutcomeHistogram'}>
+    <div
+      {...point.wrapperProps}
+      style={{ ...point.wrapperProps.style, height }}
+      data-test-subj={rest['data-test-subj'] ?? 'agtEvlOutcomeHistogram'}
+    >
       <Chart size={{ height }}>
         <Settings
           theme={chartsTheme}
@@ -76,6 +196,14 @@ export const OutcomeHistogram: React.FC<{
           showLegend={!compact}
           legendPosition={Position.Right}
           xDomain={{ min: bounds.from, max: bounds.to, minInterval: interval }}
+          onElementClick={
+            point.clickable
+              ? (elements) => {
+                  const d = datumOf<OutcomeBucket>(elements);
+                  if (d) point.select(bucketPoint(d.x, interval, { name, outcome: d.outcome }));
+                }
+              : undefined
+          }
         />
         {!compact && (
           <Axis id="time" position={Position.Bottom} tickFormat={formatter} showOverlappingTicks />
@@ -96,6 +224,7 @@ export const OutcomeHistogram: React.FC<{
           />
         ))}
       </Chart>
+      {point.popover}
     </div>
   );
 };
@@ -110,6 +239,7 @@ export const ScoreTrendChart: React.FC<{
   height?: number;
 }> = ({ results, trend, bounds, interval, height = 240 }) => {
   const { chartsTheme, baseTheme } = useChartThemes();
+  const point = useChartPoint();
   const points = useMemo(
     () => trend ?? scoreTrend(results ?? [], interval),
     [trend, results, interval]
@@ -117,7 +247,11 @@ export const ScoreTrendChart: React.FC<{
   const names = useMemo(() => Array.from(new Set(points.map((p) => p.name))).sort(), [points]);
   const formatter = useMemo(() => niceTimeFormatter([bounds.from, bounds.to]), [bounds]);
   return (
-    <div style={{ height }} data-test-subj="agtEvlScoreTrend">
+    <div
+      {...point.wrapperProps}
+      style={{ ...point.wrapperProps.style, height }}
+      data-test-subj="agtEvlScoreTrend"
+    >
       <Chart size={{ height }}>
         <Settings
           theme={chartsTheme}
@@ -125,6 +259,14 @@ export const ScoreTrendChart: React.FC<{
           showLegend
           legendPosition={Position.Right}
           xDomain={{ min: bounds.from, max: bounds.to }}
+          onElementClick={
+            point.clickable
+              ? (elements) => {
+                  const d = datumOf<TrendPoint>(elements);
+                  if (d) point.select(bucketPoint(d.x, interval, { name: d.name }));
+                }
+              : undefined
+          }
         />
         <Axis id="time" position={Position.Bottom} tickFormat={formatter} showOverlappingTicks />
         <Axis
@@ -152,6 +294,7 @@ export const ScoreTrendChart: React.FC<{
           />
         ))}
       </Chart>
+      {point.popover}
     </div>
   );
 };
@@ -178,20 +321,43 @@ export const scoreBins = (results: EvalResult[], bins = 10) => {
 };
 
 /** How the scores of one evaluation spread: normalized score bins colored by outcome. */
-export const ScoreDistributionChart: React.FC<{ results: EvalResult[]; height?: number }> = ({
-  results,
-  height = 160,
-}) => {
+export const ScoreDistributionChart: React.FC<{
+  results: EvalResult[];
+  height?: number;
+  /** The evaluation and run the bins are about, carried by a clicked bar. */
+  name?: string;
+  runId?: string;
+}> = ({ results, height = 160, name, runId }) => {
   const { chartsTheme, baseTheme } = useChartThemes();
   const data = useMemo(() => scoreBins(results), [results]);
+  const point = useChartPoint();
+  // A bar of a run's histogram: its verdict over the time the run's results span.
+  const span = useMemo(() => {
+    const times = results.map((r) => parseEvalTime(r.time)).filter(Number.isFinite);
+    return times.length
+      ? { from: Math.min(...times) - 1000, to: Math.max(...times) + 1000 }
+      : undefined;
+  }, [results]);
   return (
-    <div style={{ height }} data-test-subj="agtEvlScoreDistribution">
+    <div
+      {...point.wrapperProps}
+      style={{ ...point.wrapperProps.style, height }}
+      data-test-subj="agtEvlScoreDistribution"
+    >
       <Chart size={{ height }}>
         <Settings
           theme={chartsTheme}
           baseTheme={baseTheme}
           showLegend={false}
           xDomain={{ min: 0, max: 0.9, minInterval: 0.1 }}
+          onElementClick={
+            point.clickable && span
+              ? (elements) => {
+                  const d = datumOf<{ outcome: EvalOutcome }>(elements);
+                  if (d) point.select({ ...span, name, runId, outcome: d.outcome });
+                }
+              : undefined
+          }
         />
         <Axis
           id="score"
@@ -217,6 +383,7 @@ export const ScoreDistributionChart: React.FC<{ results: EvalResult[]; height?: 
           />
         ))}
       </Chart>
+      {point.popover}
     </div>
   );
 };

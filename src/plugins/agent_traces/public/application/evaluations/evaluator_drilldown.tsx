@@ -240,6 +240,8 @@ export const EvaluatorDrilldownFlyout: React.FC<{
   scope: string;
   /** Time bounds of the scope: shows the trend over time; without, the score distribution. */
   bounds?: TimeBoundsMs;
+  /** The run the results belong to (run page): a histogram bar shows that run's results. */
+  runId?: string;
   onClose: () => void;
   onOpenResult?: (r: EvalResult) => void;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
@@ -251,6 +253,7 @@ export const EvaluatorDrilldownFlyout: React.FC<{
   error,
   scope,
   bounds,
+  runId,
   onClose,
   onOpenResult,
   onOpenTrace,
@@ -410,11 +413,12 @@ export const EvaluatorDrilldownFlyout: React.FC<{
                 bounds={bounds}
                 interval={pickInterval(bounds)}
                 height={180}
+                name={name}
               />
             </EuiFlexItem>
           </EuiFlexGroup>
         ) : (
-          <ScoreDistributionChart results={results} />
+          <ScoreDistributionChart results={results} name={name} runId={runId} />
         )}
         <EuiSpacer size="l" />
         <EuiTitle size="xs">

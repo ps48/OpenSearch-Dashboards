@@ -22,6 +22,7 @@ jest.mock('../../../../data/public', () => ({
 jest.mock('./eval_charts', () => ({
   OutcomeHistogram: () => <div />,
   ScoreTrendChart: () => <div />,
+  ChartActionsContext: jest.requireActual('react').createContext(undefined),
 }));
 jest.mock('./result_flyout', () => ({
   ResultFlyout: ({ result }: { result: { name: string } }) => (

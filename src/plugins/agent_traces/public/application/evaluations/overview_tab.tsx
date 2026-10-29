@@ -489,14 +489,19 @@ export const EvaluatorCard: React.FC<{
         )}
         <LabelDistribution labels={summary.labels} />
         <div className="agtEvlCard__spacer" />
-        <OutcomeHistogram
-          buckets={buckets}
-          bounds={bounds}
-          interval={interval}
-          height={56}
-          compact
-          data-test-subj="agtEvlCardHistogram"
-        />
+        {/* A bar opens its own menu, not the drill-down. */}
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <OutcomeHistogram
+            buckets={buckets}
+            bounds={bounds}
+            interval={interval}
+            height={56}
+            compact
+            name={summary.name}
+            data-test-subj="agtEvlCardHistogram"
+          />
+        </div>
       </EuiPanel>
     </div>
   );

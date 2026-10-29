@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EvalFilters } from './eval_data';
+import { EvalFilters, EvalOutcome } from './eval_data';
+
+const OUTCOMES: EvalOutcome[] = ['pass', 'fail', 'error', 'neutral'];
 
 /**
  * Page state kept in the URL (`_a` in the hash, rison encoded, next to the global `_g` time)
@@ -20,6 +22,10 @@ export interface EvalAppState {
   sources: string[];
   /** Only failing results. */
   failing: boolean;
+  /** Only results with these verdicts (a chart bar's series). */
+  verdicts: EvalOutcome[];
+  /** Only results of these evaluation runs (`test.suite.run.id`). */
+  runIds: string[];
   /** Free-text search. */
   q: string;
   /** Id of the result open in the flyout. */
@@ -51,6 +57,8 @@ export const DEFAULT_APP_STATE: EvalAppState = {
   levels: [],
   sources: [],
   failing: false,
+  verdicts: [],
+  runIds: [],
   q: '',
 };
 
@@ -84,6 +92,10 @@ export const normalizeAppState = (raw: unknown): EvalAppState => {
     levels: strings(r.levels),
     sources: strings(r.sources),
     failing: r.failing === true || r.failing === 'true',
+    verdicts: strings(r.verdicts).filter((v): v is EvalOutcome =>
+      OUTCOMES.includes(v as EvalOutcome)
+    ),
+    runIds: strings(r.runIds),
     q: typeof r.q === 'string' ? r.q : '',
     ...(typeof r.result === 'string' && r.result ? { result: r.result } : {}),
     ...(validCompare ? { compare } : {}),
@@ -111,6 +123,8 @@ export const compactAppState = (state: EvalAppState): Partial<EvalAppState> => {
   if (state.levels.length) out.levels = state.levels;
   if (state.sources.length) out.sources = state.sources;
   if (state.failing) out.failing = true;
+  if (state.verdicts.length) out.verdicts = state.verdicts;
+  if (state.runIds.length) out.runIds = state.runIds;
   if (state.q) out.q = state.q;
   if (state.result) out.result = state.result;
   if (state.compare) out.compare = state.compare;
@@ -135,6 +149,8 @@ export const filtersOf = (state: EvalAppState): EvalFilters => ({
   sources: state.sources,
   search: state.q,
   failingOnly: state.failing,
+  ...(state.verdicts.length ? { outcomes: state.verdicts } : {}),
+  ...(state.runIds.length ? { runIds: state.runIds } : {}),
 });
 
 export const hasActiveFilters = (state: EvalAppState): boolean =>
@@ -142,4 +158,6 @@ export const hasActiveFilters = (state: EvalAppState): boolean =>
   state.levels.length > 0 ||
   state.sources.length > 0 ||
   state.failing ||
+  state.verdicts.length > 0 ||
+  state.runIds.length > 0 ||
   state.q.trim() !== '';
