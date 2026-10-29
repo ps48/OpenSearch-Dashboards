@@ -256,3 +256,146 @@ export const passRateChange = (delta?: number): ChangeKind | undefined =>
       : delta < -0.005
         ? 'regressed'
         : 'unchanged';
+
+// ---------------------------------------------------------------------------------------
+// Comparability: what differs between the compared runs besides the agent
+// ---------------------------------------------------------------------------------------
+
+export interface CaseCoverage {
+  shared: number;
+  /** Cases only one run has, by run letter. */
+  onlyIn: Array<{ letter: string; count: number }>;
+  /** Cases a run lacks that other runs have (not counted in `onlyIn`), by run letter. */
+  missingFrom: Array<{ letter: string; count: number }>;
+}
+
+export interface EvaluatorDifference {
+  name: string;
+  what: 'version' | 'judge' | 'evaluator';
+  /** Value per run letter, in column order; `undefined` when the run did not record it. */
+  values: Array<{ letter: string; value?: string }>;
+}
+
+export interface MissingRule {
+  letter: string;
+  /** Evaluations the run has results for but no pass rule decided any of them. */
+  names: string[];
+}
+
+export interface ConfigChange {
+  what: 'agentVersion' | 'model';
+  values: Array<{ letter: string; value?: string }>;
+}
+
+export interface Comparability {
+  coverage?: CaseCoverage;
+  evaluators: EvaluatorDifference[];
+  missingRules: MissingRule[];
+  /** Agent version and model changes: informational (usually the point of comparing). */
+  changes: ConfigChange[];
+  /** Anything that makes the deltas less meaningful (all but `changes`). */
+  hasWarnings: boolean;
+}
+
+const distinctValues = (values: Array<{ value?: string }>) =>
+  new Set(values.map((v) => v.value ?? '')).size;
+
+/**
+ * What differs between the runs of a grid: test case coverage, evaluator versions, judge
+ * models and evaluator identity per evaluation, evaluations without pass rules in some runs,
+ * and the agent version and model from the run metadata.
+ */
+export const comparabilityOf = (
+  grid: CompareGrid,
+  results: EvalResult[],
+  meta: (s?: RunSummary) => { agentVersion?: string; model?: string }
+): Comparability => {
+  const runs = grid.runs.filter((r) => !!r.summary);
+  const letterOf = new Map(grid.runs.map((r) => [r.runId, r.letter]));
+
+  let coverage: CaseCoverage | undefined;
+  if (grid.cases.some((c) => !c.shared)) {
+    const only = new Map<string, number>();
+    const missing = new Map<string, number>();
+    grid.cases
+      .filter((c) => !c.shared)
+      .forEach((c) => {
+        const present = runs.filter((r) => !!c.cells[r.runId]);
+        if (present.length === 1) {
+          only.set(present[0].letter, (only.get(present[0].letter) ?? 0) + 1);
+          return;
+        }
+        runs
+          .filter((r) => !c.cells[r.runId])
+          .forEach((r) => missing.set(r.letter, (missing.get(r.letter) ?? 0) + 1));
+      });
+    const list = (m: Map<string, number>) =>
+      Array.from(m.entries())
+        .map(([letter, count]) => ({ letter, count }))
+        .sort((a, b) => a.letter.localeCompare(b.letter));
+    coverage = { shared: grid.shared, onlyIn: list(only), missingFrom: list(missing) };
+  }
+
+  const evaluators: EvaluatorDifference[] = [];
+  grid.evaluatorNames.forEach((name) => {
+    const perRun = runs
+      .map((r) => ({
+        letter: r.letter,
+        grades: results.filter((x) => x.runId === r.runId && x.name === name),
+      }))
+      .filter((r) => r.grades.length > 0);
+    if (perRun.length < 2) return;
+    const pick = (f: (x: EvalResult) => string | undefined) =>
+      perRun.map((r) => {
+        const set = Array.from(new Set(r.grades.map(f).filter((v): v is string => !!v))).sort();
+        return { letter: r.letter, value: set.length ? set.join(', ') : undefined };
+      });
+    const check = (what: EvaluatorDifference['what'], f: (x: EvalResult) => string | undefined) => {
+      const values = pick(f);
+      // Nothing recorded anywhere is no difference.
+      if (values.every((v) => v.value === undefined)) return;
+      if (distinctValues(values) > 1) evaluators.push({ name, what, values });
+    };
+    check('evaluator', (x) => x.evaluator);
+    check('version', (x) => x.evaluatorVersion);
+    check('judge', (x) => x.judgeModel);
+  });
+
+  const missingRules: MissingRule[] = [];
+  const decidedSomewhere = new Set(
+    grid.evaluatorNames.filter((name) =>
+      runs.some((r) => {
+        const e = r.summary?.evaluators[name];
+        return !!e && (e.passCount ?? 0) + (e.failCount ?? 0) > 0;
+      })
+    )
+  );
+  runs.forEach((r) => {
+    const names = Array.from(decidedSomewhere).filter((name) => {
+      const e = r.summary?.evaluators[name];
+      return !!e && e.count > 0 && (e.passCount ?? 0) + (e.failCount ?? 0) === 0;
+    });
+    if (names.length) missingRules.push({ letter: r.letter, names: names.sort() });
+  });
+
+  const changes: ConfigChange[] = [];
+  const configValues = (
+    pickMeta: (m: { agentVersion?: string; model?: string }) => string | undefined
+  ) =>
+    runs.map((r) => ({
+      letter: letterOf.get(r.runId) ?? r.letter,
+      value: pickMeta(meta(r.summary)),
+    }));
+  const versions = configValues((m) => m.agentVersion);
+  if (distinctValues(versions) > 1) changes.push({ what: 'agentVersion', values: versions });
+  const models = configValues((m) => m.model);
+  if (distinctValues(models) > 1) changes.push({ what: 'model', values: models });
+
+  return {
+    coverage,
+    evaluators,
+    missingRules,
+    changes,
+    hasWarnings: !!coverage || evaluators.length > 0 || missingRules.length > 0,
+  };
+};

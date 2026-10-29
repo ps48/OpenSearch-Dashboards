@@ -108,6 +108,8 @@ export interface EvalResult {
   scoreMin?: number;
   scoreMax?: number;
   judgeTraceId?: string;
+  /** Model of an LLM judge, when the producer says (`opensearch.evaluation.judge.model`). */
+  judgeModel?: string;
   agentName?: string;
   /** service.name of the producer (the agent for AgentCore, the evaluator for SDK evals). */
   serviceName?: string;
@@ -255,6 +257,8 @@ export const recordToEvalResult = (row: PplRecord): EvalResult => {
     scoreMin: num(a('opensearch.evaluation.score.min')),
     scoreMax: num(a('opensearch.evaluation.score.max')),
     judgeTraceId: str(a('opensearch.evaluation.judge.trace_id')),
+    judgeModel:
+      str(a('opensearch.evaluation.judge.model')) ?? str(a('gen_ai.evaluation.judge.model')),
     agentName: str(a('gen_ai.agent.name')),
     serviceName: str(get(get(resource, 'attributes'), 'service.name')) ?? str(row.serviceName),
     suiteName: str(a('test.suite.name')),

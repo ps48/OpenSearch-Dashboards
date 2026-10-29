@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
+import { makeResult, makeRunEvent, twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
 import {
   buildCompareGrid,
+  comparabilityOf,
   durationChange,
   filterCases,
   formatAggregateDelta,
@@ -89,5 +90,74 @@ describe('delta formats', () => {
     expect(durationChange(1000, 1300)).toBe('regressed');
     expect(passRateChange(-0.08)).toBe('regressed');
     expect(passRateChange(0)).toBe('unchanged');
+  });
+});
+
+describe('comparabilityOf', () => {
+  const meta = (s?: { metadata?: Record<string, string> }) => ({
+    agentVersion: s?.metadata?.['agent.version'],
+    model: s?.metadata?.['agent.model'],
+  });
+
+  it('reports test cases only one run has', () => {
+    const results = twoRunFixture();
+    const grid = buildCompareGrid(results, undefined, ['run-1', 'run-2'], 'run-1');
+    const c = comparabilityOf(grid, results, meta);
+    expect(c.coverage).toEqual({ shared: 2, onlyIn: [{ letter: 'B', count: 1 }], missingFrom: [] });
+    expect(c.hasWarnings).toBe(true);
+  });
+
+  it('reports evaluator versions, missing pass rules and agent changes', () => {
+    const grade = (runId: string, extra: Record<string, unknown>) =>
+      makeResult({
+        runId,
+        suiteName: 's',
+        caseId: 'a',
+        name: 'tone',
+        value: 3,
+        time: runId === 'r1' ? '2026-10-25 10:00:00.000' : '2026-10-26 10:00:00.000',
+        ...extra,
+      });
+    const results = [
+      grade('r1', { evaluatorVersion: '1.0' }),
+      grade('r2', { evaluatorVersion: '1.1', assessment: 'pass' }),
+    ];
+    const events = {
+      cases: [],
+      runs: [
+        makeRunEvent({ runId: 'r1', suiteName: 's', metadata: { 'agent.version': 'v1' } }),
+        makeRunEvent({ runId: 'r2', suiteName: 's', metadata: { 'agent.version': 'v2' } }),
+      ],
+    };
+    const grid = buildCompareGrid(results, events, ['r1', 'r2'], 'r1');
+    const c = comparabilityOf(grid, results, meta);
+    expect(c.coverage).toBeUndefined();
+    expect(c.evaluators).toEqual([
+      {
+        name: 'tone',
+        what: 'version',
+        values: [
+          { letter: 'A', value: '1.0' },
+          { letter: 'B', value: '1.1' },
+        ],
+      },
+    ]);
+    expect(c.missingRules).toEqual([{ letter: 'A', names: ['tone'] }]);
+    expect(c.changes).toEqual([
+      {
+        what: 'agentVersion',
+        values: [
+          { letter: 'A', value: 'v1' },
+          { letter: 'B', value: 'v2' },
+        ],
+      },
+    ]);
+  });
+
+  it('has nothing to say about identical runs', () => {
+    const results = twoRunFixture().filter((r) => r.caseId !== 'c');
+    const grid = buildCompareGrid(results, undefined, ['run-1', 'run-2'], 'run-1');
+    const c = comparabilityOf(grid, results, meta);
+    expect(c).toMatchObject({ evaluators: [], missingRules: [], changes: [], hasWarnings: false });
   });
 });

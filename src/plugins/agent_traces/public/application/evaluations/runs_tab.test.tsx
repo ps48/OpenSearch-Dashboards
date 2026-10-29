@@ -75,6 +75,9 @@ describe('RunsTab', () => {
     expect(screen.getByTestId('agtEvlCasesTitle')).toHaveTextContent(
       '2 test cases shared by all runs'
     );
+    expect(screen.getByTestId('agtEvlComparability')).toHaveTextContent(
+      'The runs cover different test cases: 2 shared · 1 only in B'
+    );
     const cases = () =>
       within(screen.getByTestId('agtEvlCompareCases')).getAllByRole('row').slice(1);
     expect(cases()).toHaveLength(3);

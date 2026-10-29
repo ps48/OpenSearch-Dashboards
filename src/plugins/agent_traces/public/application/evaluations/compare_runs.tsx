@@ -42,10 +42,11 @@ import {
 import {
   CaseFilter,
   CaseSort,
-  CompareGrid,
+  Comparability,
   GridCase,
   GridRun,
   buildCompareGrid,
+  comparabilityOf,
   durationChange,
   evaluatorVs,
   filterCases,
@@ -528,6 +529,125 @@ const AddRunPicker: React.FC<{
   );
 };
 
+const NOT_RECORDED = i18n.translate('agentTraces.evalsPage.notRecorded', {
+  defaultMessage: 'not recorded',
+});
+
+/** `v1 → v2` for two runs; `A v1 · B v2 · C v2` for more. */
+const changeText = (values: Array<{ letter: string; value?: string }>) =>
+  values.length === 2
+    ? values.map((v) => v.value ?? NOT_RECORDED).join(' → ')
+    : values.map((v) => `${v.letter} ${v.value ?? NOT_RECORDED}`).join(' · ');
+
+const perRunText = (values: Array<{ letter: string; value?: string }>) =>
+  values.map((v) => `${v.value ?? NOT_RECORDED} (${v.letter})`).join(' → ');
+
+/**
+ * Says when the runs are not comparable as is (different test cases, evaluator versions or
+ * judge models, missing pass rules), and, neutrally, what changed in the agent.
+ */
+export const ComparabilityNotice: React.FC<{ comparability: Comparability }> = ({
+  comparability: c,
+}) => {
+  const items: Array<{ id: string; text: string }> = [];
+  if (c.coverage) {
+    const parts = [
+      i18n.translate('agentTraces.evalsPage.coverageShared', {
+        defaultMessage: '{count} shared',
+        values: { count: c.coverage.shared },
+      }),
+      ...c.coverage.onlyIn.map(({ letter, count }) =>
+        i18n.translate('agentTraces.evalsPage.coverageOnly', {
+          defaultMessage: '{count} only in {letter}',
+          values: { count, letter },
+        })
+      ),
+      ...c.coverage.missingFrom.map(({ letter, count }) =>
+        i18n.translate('agentTraces.evalsPage.coverageMissing', {
+          defaultMessage: '{count} missing from {letter}',
+          values: { count, letter },
+        })
+      ),
+    ];
+    items.push({
+      id: 'coverage',
+      text: i18n.translate('agentTraces.evalsPage.coverage', {
+        defaultMessage: 'The runs cover different test cases: {parts}. Changes count shared cases.',
+        values: { parts: parts.join(' · ') },
+      }),
+    });
+  }
+  c.evaluators.forEach((e) => {
+    const what =
+      e.what === 'version'
+        ? i18n.translate('agentTraces.evalsPage.diffVersion', {
+            defaultMessage: 'evaluator version',
+          })
+        : e.what === 'judge'
+          ? i18n.translate('agentTraces.evalsPage.diffJudge', { defaultMessage: 'judge model' })
+          : i18n.translate('agentTraces.evalsPage.diffEvaluator', {
+              defaultMessage: 'scored by',
+            });
+    items.push({ id: `${e.name}|${e.what}`, text: `${e.name}: ${what} ${perRunText(e.values)}` });
+  });
+  c.missingRules.forEach((m) =>
+    items.push({
+      id: `rule|${m.letter}`,
+      text: i18n.translate('agentTraces.evalsPage.missingRule', {
+        defaultMessage: 'Run {letter} has no pass rules for {names}; its verdicts show as Scored.',
+        values: { letter: m.letter, names: m.names.join(', ') },
+      }),
+    })
+  );
+  const changes = c.changes.map((ch) => ({
+    id: ch.what,
+    text:
+      ch.what === 'agentVersion'
+        ? i18n.translate('agentTraces.evalsPage.changeAgentVersion', {
+            defaultMessage: 'Agent version: {change}',
+            values: { change: changeText(ch.values) },
+          })
+        : i18n.translate('agentTraces.evalsPage.changeModel', {
+            defaultMessage: 'Model: {change}',
+            values: { change: changeText(ch.values) },
+          }),
+  }));
+  if (!items.length && !changes.length) return null;
+  return (
+    <>
+      <EuiCallOut
+        size="s"
+        color={c.hasWarnings ? 'warning' : 'primary'}
+        iconType={c.hasWarnings ? 'alert' : 'iInCircle'}
+        data-test-subj="agtEvlComparability"
+        title={
+          c.hasWarnings
+            ? i18n.translate('agentTraces.evalsPage.notComparable', {
+                defaultMessage: 'Read the deltas with care: the runs differ in more than the agent',
+              })
+            : i18n.translate('agentTraces.evalsPage.whatChanged', {
+                defaultMessage: 'What changed between the runs',
+              })
+        }
+      >
+        <ul className="agtEvlComparability">
+          {items.map((i) => (
+            <li key={i.id} data-test-subj="agtEvlComparabilityItem">
+              {i.text}
+            </li>
+          ))}
+          {changes.map((i) => (
+            <li key={i.id} data-test-subj="agtEvlComparabilityChange">
+              {i.text}
+            </li>
+          ))}
+        </ul>
+      </EuiCallOut>
+      <EuiSpacer size="m" />
+    </>
+  );
+};
+
 const SORT_OPTIONS: Array<{ value: CaseSort; text: string }> = [
   {
     value: 'regression',
@@ -565,8 +685,6 @@ export interface CompareRunsProps {
   /** Back link text; the runs list by default. */
   backLabel?: string;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
-  /** Rendered above the test cases (comparability warnings). */
-  notices?: (grid: CompareGrid) => React.ReactNode;
 }
 
 export const CompareRuns: React.FC<CompareRunsProps> = ({
@@ -582,11 +700,18 @@ export const CompareRuns: React.FC<CompareRunsProps> = ({
   onBack,
   backLabel,
   onOpenTrace,
-  notices,
 }) => {
   const grid = useMemo(
     () => buildCompareGrid(results, events, runIds, baselineId),
     [results, events, runIds, baselineId]
+  );
+  const comparability = useMemo(
+    () =>
+      comparabilityOf(grid, results, (summary) => ({
+        agentVersion: agentVersionOf(summary),
+        model: agentModelOf(summary),
+      })),
+    [grid, results]
   );
   const [filter, setFilter] = useState<CaseFilter>('all');
   const [sort, setSort] = useState<CaseSort>('regression');
@@ -955,7 +1080,7 @@ export const CompareRuns: React.FC<CompareRunsProps> = ({
             data-test-subj="agtEvlRunsSummary"
           />
           <EuiSpacer size="m" />
-          {notices?.(grid)}
+          <ComparabilityNotice comparability={comparability} />
           <EuiFlexGroup alignItems="center" responsive={false} gutterSize="s" wrap>
             <EuiFlexItem grow={false}>
               <EuiTitle size="xs">
