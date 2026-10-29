@@ -162,6 +162,47 @@ describe('TraceFlowView', () => {
     expect(mockMapNodeClick).toHaveBeenCalledTimes(1);
   });
 
+  it('renders nodes as in the trace flyout without decorations', () => {
+    (categorizeSpanTree as jest.Mock).mockReturnValue([{ ...mockTrace, spanId: 'span-1' }]);
+    (spansToFlow as jest.Mock).mockReturnValue({ nodes: [], edges: [] });
+    mockNodeId = 'span-1';
+    try {
+      render(<TraceFlowView {...defaultProps} />);
+    } finally {
+      mockNodeId = undefined;
+    }
+    expect(screen.getByTestId('mock-agent-card-node')).toBeInTheDocument();
+    expect(screen.queryByTestId('agentTracesFlowDecoratedNode')).not.toBeInTheDocument();
+  });
+
+  it('decorates nodes with a class and a badge from the caller, and can hide the minimap', () => {
+    const span = { ...mockTrace, spanId: 'span-1' };
+    (categorizeSpanTree as jest.Mock).mockReturnValue([span]);
+    (spansToFlow as jest.Mock).mockReturnValue({ nodes: [], edges: [] });
+    const decorateNode = jest.fn(() => ({ className: 'only', badge: <span>Only here</span> }));
+    const onSelectSpan = jest.fn();
+    mockNodeId = 'span-1';
+    try {
+      render(
+        <TraceFlowView
+          {...defaultProps}
+          onSelectSpan={onSelectSpan}
+          decorateNode={decorateNode}
+          showMinimap={false}
+        />
+      );
+    } finally {
+      mockNodeId = undefined;
+    }
+    const node = screen.getByTestId('agentTracesFlowDecoratedNode');
+    expect(node).toHaveClass('only');
+    expect(node).toHaveTextContent('Only here');
+    expect(decorateNode).toHaveBeenCalledWith(span);
+    expect(capturedMapProps.showMinimap).toBe(false);
+    fireEvent.click(screen.getByTestId('mock-agent-card-node'));
+    expect(onSelectSpan).toHaveBeenCalledWith(span);
+  });
+
   it('does not call spansToFlow when categorized tree is empty', () => {
     (categorizeSpanTree as jest.Mock).mockReturnValue([]);
 

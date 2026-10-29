@@ -388,3 +388,22 @@ export const summarizeDiff = (
     counts,
   };
 };
+
+export interface StepMark {
+  diff: StepDiff;
+  /** Position of the step's row in the alignment. */
+  index: number;
+}
+
+/** Each side's spans that are steps, with how their aligned row differs (for the graph view). */
+export const stepMarks = (
+  aligned: AlignedStep[]
+): { baseline: Map<string, StepMark>; candidate: Map<string, StepMark> } => {
+  const baseline = new Map<string, StepMark>();
+  const candidate = new Map<string, StepMark>();
+  aligned.forEach((row, index) => {
+    if (row.baseline) baseline.set(row.baseline.spanId, { diff: row.diff, index });
+    if (row.candidate) candidate.set(row.candidate.spanId, { diff: row.diff, index });
+  });
+  return { baseline, candidate };
+};

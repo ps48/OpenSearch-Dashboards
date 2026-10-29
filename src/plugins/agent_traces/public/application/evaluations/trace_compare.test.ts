@@ -8,6 +8,7 @@ import {
   alignSteps,
   compactText,
   spansToSteps,
+  stepMarks,
   summarizeDiff,
   traceTotals,
 } from './trace_compare';
@@ -219,5 +220,18 @@ describe('compactText', () => {
     expect(compactText({ b: [1, 2] })).toBe('{"b":[1,2]}');
     expect(compactText('x'.repeat(50), 10)).toBe('xxxxxxx...');
     expect(compactText('')).toBeUndefined();
+  });
+});
+
+describe('stepMarks', () => {
+  it("marks each side's step spans with their row and difference", () => {
+    const a = step({ spanId: 'a1', name: 'get_weather' });
+    const b = step({ spanId: 'b1', name: 'get_weather' });
+    const extra = step({ spanId: 'b2', name: 'search_hotels' });
+    const marks = stepMarks(alignSteps([a], [b, extra]));
+    expect(marks.baseline.get('a1')).toEqual({ diff: 'same', index: 0 });
+    expect(marks.candidate.get('b1')).toEqual({ diff: 'same', index: 0 });
+    expect(marks.candidate.get('b2')).toEqual({ diff: 'candidate_only', index: 1 });
+    expect(marks.baseline.has('b2')).toBe(false);
   });
 });

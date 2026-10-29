@@ -48,3 +48,18 @@
   height: 120px;
   margin: $ouiSizeL;
 }
+
+// Marks from a caller (trace comparison): a badge above the card and an outline around it.
+.agentTracesFlow__decorated {
+  position: relative;
+  border-radius: $ouiBorderRadius;
+  outline-offset: 3px;
+}
+
+.agentTracesFlow__nodeBadge {
+  position: absolute;
+  top: -$ouiSizeM;
+  right: $ouiSizeXS;
+  z-index: 1;
+  pointer-events: none;
+}

@@ -15,6 +15,12 @@ import { categorizeSpanTree, CategorizedSpan } from '../../../../services/span_c
 import { spansToFlow } from '../../../../services/flow_transform';
 import './trace_flow_view.scss';
 
+/** Extra marks on one node (e.g. a trace comparison): a class on its wrapper and a badge. */
+export interface NodeDecoration {
+  className?: string;
+  badge?: React.ReactNode;
+}
+
 interface TraceFlowViewProps {
   spanTree: TraceRow[];
   totalDuration: number;
@@ -22,12 +28,17 @@ interface TraceFlowViewProps {
   onSelectSpan: (span: TraceRow | null) => void;
   isLoading?: boolean;
   loadError?: string;
+  /** Marks per span; without it nodes render as in the trace flyout. */
+  decorateNode?: (span: CategorizedSpan) => NodeDecoration | undefined;
+  /** The minimap (default on); off for maps shown side by side. */
+  showMinimap?: boolean;
 }
 
 // Context for passing span selection handler to custom node components
 interface TraceFlowContextValue {
   onSelectSpan: (span: TraceRow | null) => void;
   spanMap: Map<string, CategorizedSpan>;
+  decorateNode?: (span: CategorizedSpan) => NodeDecoration | undefined;
 }
 
 const TraceFlowContext = createContext<TraceFlowContextValue>({
@@ -40,7 +51,9 @@ const TraceFlowContext = createContext<TraceFlowContextValue>({
  * still reaches CelestialMap, which centers the node (onNodeClickZoom="centerOnNode").
  */
 const TraceAgentCardNode = (props: NodeProps<any>) => {
-  const { onSelectSpan, spanMap } = useContext(TraceFlowContext);
+  const { onSelectSpan, spanMap, decorateNode } = useContext(TraceFlowContext);
+  const nodeSpan = spanMap.get(props.data.id);
+  const decoration = nodeSpan && decorateNode ? decorateNode(nodeSpan) : undefined;
 
   const selectSpan = useCallback(() => {
     const span = spanMap.get(props.data.id);
@@ -61,8 +74,22 @@ const TraceAgentCardNode = (props: NodeProps<any>) => {
     [selectSpan]
   );
 
+  if (!decoration) {
+    return (
+      <div onClick={handleClick} onKeyDown={handleKeyDown} role="presentation">
+        <AgentCardNode {...props} />
+      </div>
+    );
+  }
   return (
-    <div onClick={handleClick} onKeyDown={handleKeyDown} role="presentation">
+    <div
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role="presentation"
+      className={`agentTracesFlow__decorated ${decoration.className ?? ''}`}
+      data-test-subj="agentTracesFlowDecoratedNode"
+    >
+      {decoration.badge && <div className="agentTracesFlow__nodeBadge">{decoration.badge}</div>}
       <AgentCardNode {...props} />
     </div>
   );
@@ -77,6 +104,8 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
   onSelectSpan,
   isLoading,
   loadError,
+  decorateNode,
+  showMinimap = true,
 }) => {
   // Categorize spans and build CelestialMap data
   const categorizedTree = useMemo(() => categorizeSpanTree(spanTree), [spanTree]);
@@ -106,8 +135,8 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
   }, [categorizedTree]);
 
   const contextValue = useMemo<TraceFlowContextValue>(
-    () => ({ onSelectSpan, spanMap }),
-    [onSelectSpan, spanMap]
+    () => ({ onSelectSpan, spanMap, decorateNode }),
+    [onSelectSpan, spanMap, decorateNode]
   );
 
   // Deselect when clicking the ReactFlow background pane
@@ -182,7 +211,7 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
           layoutOptions={{ direction: 'TB', rankSeparation: 80, nodeSeparation: 40 }}
           legend={false}
           breadcrumbs={[]}
-          showMinimap
+          showMinimap={showMinimap}
           // Deep trace trees need to zoom out further than the default 60% floor to fit
           // the flyout panel, and the panel is resizable.
           fitViewOptions={{ minZoom: 0.1 }}

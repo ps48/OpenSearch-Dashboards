@@ -423,3 +423,32 @@
     }
   }
 }
+
+// Trace compare graph: two node maps side by side; marks in non-verdict accents.
+.agtEvlGraphPanel {
+  height: 480px;
+  overflow: hidden;
+}
+
+.agtEvlGraphNode {
+  &--only {
+    outline: $euiBorderWidthThick dashed $euiColorVis3;
+  }
+
+  &--changed {
+    outline: $euiBorderWidthThick solid $euiColorVis1;
+  }
+
+  &--selected {
+    outline: 3px solid $euiColorPrimary;
+    box-shadow: 0 0 0 6px transparentize($euiColorPrimary, 0.8);
+  }
+}
+
+.agtEvlGraphLegend__selected {
+  display: inline-block;
+  width: $euiSize;
+  height: $euiSizeS;
+  border: 3px solid $euiColorPrimary;
+  border-radius: $euiBorderRadius;
+}

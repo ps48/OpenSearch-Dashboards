@@ -3,10 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import moment from 'moment-timezone';
 import {
   EuiBadge,
   EuiBasicTable,
+  EuiButtonGroup,
   EuiButtonEmpty,
   EuiCallOut,
   EuiFlexGroup,
@@ -40,13 +42,24 @@ import { EVAL_SPANS_DATASET, buildTraceSpansQuery } from './eval_target';
 import {
   AlignedStep,
   StepDiff,
+  StepMark,
   TraceStep,
   TraceTotals,
   alignSteps,
   spansToSteps,
+  stepMarks,
   summarizeDiff,
   traceTotals,
 } from './trace_compare';
+import { TraceFlowView, NodeDecoration } from '../pages/traces/flow/trace_flow_view';
+import {
+  TraceRow,
+  buildFullSpanTree,
+  formatTimestamp,
+  hitsToAgentSpans,
+} from '../pages/traces/hooks/tree_utils';
+import { transformPPLDataToTraceHits } from '../pages/traces/trace_details/traces/ppl_to_trace_hits';
+import type { CategorizedSpan } from '../../services/span_categorization';
 import {
   OutcomeBadge,
   QueryErrorCallout,
@@ -69,6 +82,8 @@ export interface TraceCompareSide {
 
 interface SideData {
   rows: PplRecord[];
+  /** The span tree, as the trace flyout builds it (for the graph view). */
+  tree: TraceRow[];
   steps: TraceStep[];
   totals: TraceTotals;
   grades: EvalResult[];
@@ -100,8 +115,12 @@ const fetchSide = async (
   ]);
   const rows = pplResponseToRecords(spans);
   const steps = spansToSteps(rows);
+  const timezone = moment.tz.guess();
   return {
     rows,
+    tree: buildFullSpanTree(hitsToAgentSpans(transformPPLDataToTraceHits(spans)), (ts) =>
+      formatTimestamp(ts, timezone)
+    ) as TraceRow[],
     steps,
     totals: traceTotals(steps, rows),
     grades: grades ? pplResponseToRecords(grades).map(recordToEvalResult) : [],
@@ -369,12 +388,14 @@ const SideHeader: React.FC<{
 );
 
 /** The aligned steps of both traces, with differences highlighted. */
-export const StepsComparison: React.FC<{ aligned: AlignedStep[]; onlyDifferences: boolean }> = ({
-  aligned,
-  onlyDifferences,
-}) => {
+export const StepsComparison: React.FC<{
+  aligned: AlignedStep[];
+  onlyDifferences: boolean;
+  /** Position of the first row (a single step shown from the graph). */
+  firstPosition?: number;
+}> = ({ aligned, onlyDifferences, firstPosition = 1 }) => {
   const rows = aligned
-    .map((row, i) => ({ row, position: i + 1 }))
+    .map((row, i) => ({ row, position: i + firstPosition }))
     .filter(({ row }) => !onlyDifferences || row.diff !== 'same');
   if (rows.length === 0) {
     return (
@@ -410,6 +431,198 @@ export const StepsComparison: React.FC<{ aligned: AlignedStep[]; onlyDifferences
   );
 };
 
+type CompareView = 'steps' | 'graph';
+const VIEW_KEY = 'agentTraces:traceCompareView';
+
+/** Steps or Graph, kept for the browser session (Steps by default). */
+export const useCompareView = (): [CompareView, (view: CompareView) => void] => {
+  const [view, setView] = useState<CompareView>(() => {
+    try {
+      return window.sessionStorage.getItem(VIEW_KEY) === 'graph' ? 'graph' : 'steps';
+    } catch {
+      return 'steps';
+    }
+  });
+  const set = useCallback((next: CompareView) => {
+    try {
+      window.sessionStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // storage unavailable: keep it for this flyout only
+    }
+    setView(next);
+  }, []);
+  return [view, set];
+};
+
+const MARK_TEXT: Partial<Record<StepDiff, string>> = {
+  baseline_only: i18n.translate('agentTraces.evalsPage.markOnlyHere', {
+    defaultMessage: 'Only here',
+  }),
+  candidate_only: i18n.translate('agentTraces.evalsPage.markOnlyHere', {
+    defaultMessage: 'Only here',
+  }),
+  changed: i18n.translate('agentTraces.evalsPage.markChanged', { defaultMessage: 'Changed' }),
+  args: i18n.translate('agentTraces.evalsPage.markArgs', { defaultMessage: 'Other arguments' }),
+  error: i18n.translate('agentTraces.evalsPage.markError', { defaultMessage: 'Error' }),
+};
+
+/** Mark hues: accents that carry no verdict (not success, danger or warning). */
+const ONLY_COLOR = '#9170B8';
+const CHANGED_COLOR = '#6092C0';
+
+const markClass = (diff: StepDiff) =>
+  diff === 'baseline_only' || diff === 'candidate_only'
+    ? 'agtEvlGraphNode--only'
+    : diff === 'same'
+      ? ''
+      : 'agtEvlGraphNode--changed';
+
+/** How a step's node is marked on its side's map: its difference, and the selection. */
+export const decorationOf = (
+  mark: StepMark | undefined,
+  selected: number | undefined
+): NodeDecoration | undefined => {
+  if (!mark) return undefined;
+  const isSelected = mark.index === selected;
+  const text = MARK_TEXT[mark.diff];
+  if (!text && !isSelected) return undefined;
+  return {
+    className: `agtEvlGraphNode ${markClass(mark.diff)} ${
+      isSelected ? 'agtEvlGraphNode--selected' : ''
+    }`,
+    badge: text ? (
+      <EuiBadge
+        color={mark.diff.endsWith('_only') ? ONLY_COLOR : CHANGED_COLOR}
+        data-test-subj={`agtEvlGraphMark-${mark.diff}`}
+      >
+        {text}
+      </EuiBadge>
+    ) : undefined,
+  };
+};
+
+/**
+ * Both traces as the node map Agent Traces draws, side by side, with steps that are only on
+ * one side or differ marked. Selecting a step selects its match on the other side and shows
+ * the aligned pair below.
+ */
+export const GraphComparison: React.FC<{
+  baseline: TraceRow[];
+  candidate: TraceRow[];
+  aligned: AlignedStep[];
+  baselineTitle: string;
+  candidateTitle: string;
+}> = ({ baseline, candidate, aligned, baselineTitle, candidateTitle }) => {
+  const marks = useMemo(() => stepMarks(aligned), [aligned]);
+  const [selected, setSelected] = useState<number | undefined>();
+  const decorateBaseline = useCallback(
+    (span: CategorizedSpan) => decorationOf(marks.baseline.get(span.spanId), selected),
+    [marks, selected]
+  );
+  const decorateCandidate = useCallback(
+    (span: CategorizedSpan) => decorationOf(marks.candidate.get(span.spanId), selected),
+    [marks, selected]
+  );
+  const selectBaseline = useCallback(
+    (span: TraceRow | null) =>
+      setSelected(span ? marks.baseline.get(span.spanId)?.index : undefined),
+    [marks]
+  );
+  const selectCandidate = useCallback(
+    (span: TraceRow | null) =>
+      setSelected(span ? marks.candidate.get(span.spanId)?.index : undefined),
+    [marks]
+  );
+  const row = selected !== undefined ? aligned[selected] : undefined;
+  return (
+    <div data-test-subj="agtEvlGraphComparison">
+      <EuiFlexGroup gutterSize="s" responsive={false} wrap data-test-subj="agtEvlGraphLegend">
+        <EuiFlexItem grow={false}>
+          <EuiBadge color={ONLY_COLOR}>{MARK_TEXT.baseline_only}</EuiBadge>
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <EuiText size="xs" color="subdued">
+            {i18n.translate('agentTraces.evalsPage.legendOnly', {
+              defaultMessage: 'a step the other trace does not have',
+            })}
+          </EuiText>
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <EuiBadge color={CHANGED_COLOR}>{MARK_TEXT.changed}</EuiBadge>
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <EuiText size="xs" color="subdued">
+            {i18n.translate('agentTraces.evalsPage.legendChanged', {
+              defaultMessage: 'another step, other arguments or an error at the same position',
+            })}
+          </EuiText>
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <span className="agtEvlGraphLegend__selected" />
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <EuiText size="xs" color="subdued">
+            {i18n.translate('agentTraces.evalsPage.legendSelected', {
+              defaultMessage: 'the selected step and its match',
+            })}
+          </EuiText>
+        </EuiFlexItem>
+      </EuiFlexGroup>
+      <EuiSpacer size="s" />
+      <EuiFlexGroup gutterSize="s" responsive={false}>
+        {[
+          {
+            id: 'baseline',
+            title: baselineTitle,
+            tree: baseline,
+            decorate: decorateBaseline,
+            onSelect: selectBaseline,
+          },
+          {
+            id: 'candidate',
+            title: candidateTitle,
+            tree: candidate,
+            decorate: decorateCandidate,
+            onSelect: selectCandidate,
+          },
+        ].map((side) => (
+          <EuiFlexItem key={side.id} style={{ minWidth: 0 }}>
+            <EuiText size="xs">
+              <strong>{side.title}</strong>
+            </EuiText>
+            <EuiSpacer size="xs" />
+            <EuiPanel
+              hasBorder
+              paddingSize="none"
+              className="agtEvlGraphPanel"
+              data-test-subj={`agtEvlGraph-${side.id}`}
+            >
+              <TraceFlowView
+                spanTree={side.tree}
+                totalDuration={0}
+                selectedSpan={null}
+                onSelectSpan={side.onSelect}
+                decorateNode={side.decorate}
+                showMinimap={false}
+              />
+            </EuiPanel>
+          </EuiFlexItem>
+        ))}
+      </EuiFlexGroup>
+      <EuiSpacer size="s" />
+      {row && selected !== undefined ? (
+        <StepsComparison aligned={[row]} onlyDifferences={false} firstPosition={selected + 1} />
+      ) : (
+        <EuiText size="xs" color="subdued" data-test-subj="agtEvlGraphHint">
+          {i18n.translate('agentTraces.evalsPage.graphHint', {
+            defaultMessage: 'Select a step on either map to see it next to its match.',
+          })}
+        </EuiText>
+      )}
+    </div>
+  );
+};
+
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <EuiTitle size="xxs">
     <h3>{children}</h3>
@@ -432,6 +645,7 @@ export const TraceCompareFlyout: React.FC<{
 }> = ({ caseName, baseline, candidate, onClose, onBack, onOpenTrace }) => {
   const state = useTraceCompare(baseline.traceId, candidate.traceId);
   const [onlyDifferences, setOnlyDifferences] = useState(false);
+  const [view, setView] = useCompareView();
   const aligned = useMemo(
     () =>
       state.baseline && state.candidate
@@ -607,24 +821,54 @@ export const TraceCompareFlyout: React.FC<{
         <EuiSpacer size="l" />
         <EuiFlexGroup alignItems="center" justifyContent="spaceBetween" responsive={false}>
           <EuiFlexItem grow={false}>
-            <SectionTitle>
-              {i18n.translate('agentTraces.evalsPage.steps', { defaultMessage: 'Steps' })}
-            </SectionTitle>
-          </EuiFlexItem>
-          <EuiFlexItem grow={false}>
-            <EuiSwitch
-              compressed
-              label={i18n.translate('agentTraces.evalsPage.onlyDifferences', {
-                defaultMessage: 'Only differences',
+            <EuiButtonGroup
+              legend={i18n.translate('agentTraces.evalsPage.compareViewLegend', {
+                defaultMessage: 'Show the steps as a list or as a graph',
               })}
-              checked={onlyDifferences}
-              onChange={(e) => setOnlyDifferences(e.target.checked)}
-              data-test-subj="agtEvlOnlyDifferences"
+              buttonSize="compressed"
+              options={[
+                {
+                  id: 'steps',
+                  label: i18n.translate('agentTraces.evalsPage.steps', { defaultMessage: 'Steps' }),
+                  'data-test-subj': 'agtEvlCompareViewSteps',
+                },
+                {
+                  id: 'graph',
+                  label: i18n.translate('agentTraces.evalsPage.graph', { defaultMessage: 'Graph' }),
+                  'data-test-subj': 'agtEvlCompareViewGraph',
+                },
+              ]}
+              idSelected={view}
+              onChange={(id) => setView(id as 'steps' | 'graph')}
+              data-test-subj="agtEvlCompareView"
             />
           </EuiFlexItem>
+          {view === 'steps' && (
+            <EuiFlexItem grow={false}>
+              <EuiSwitch
+                compressed
+                label={i18n.translate('agentTraces.evalsPage.onlyDifferences', {
+                  defaultMessage: 'Only differences',
+                })}
+                checked={onlyDifferences}
+                onChange={(e) => setOnlyDifferences(e.target.checked)}
+                data-test-subj="agtEvlOnlyDifferences"
+              />
+            </EuiFlexItem>
+          )}
         </EuiFlexGroup>
         <EuiSpacer size="s" />
-        <StepsComparison aligned={aligned} onlyDifferences={onlyDifferences} />
+        {view === 'steps' ? (
+          <StepsComparison aligned={aligned} onlyDifferences={onlyDifferences} />
+        ) : (
+          <GraphComparison
+            baseline={state.baseline.tree}
+            candidate={state.candidate.tree}
+            aligned={aligned}
+            baselineTitle={baselineTitle}
+            candidateTitle={candidateTitle}
+          />
+        )}
       </>
     );
   };
