@@ -130,8 +130,45 @@ its label, or with a value below or above its value. Agent Traces then lists onl
 (distinct target trace ids of matching results in the time range, the first 500), with a
 removable pill naming the condition. The filter is kept for the browser session.
 
+## Compare runs
+
+Select 2 to 5 runs of a suite on Evaluation runs and Compare. Runs are lettered columns (A to
+E, oldest first) in hues that carry no verdict; one is the baseline, the others are measured
+against it. Each compared run is read by its id, whatever its date.
+
+- Runs table: pass rate with its change in points (`↓8 pp`) and "10 of 12 passed", the mean
+  of each evaluation with its change, the duration, and Changes: test cases in both the run
+  and the baseline that regressed, improved or did not change.
+- Deltas are in the evaluation's unit (`↑0.25`), in points for scores on 0..1 and pass rates.
+  They are colored by better or worse for the evaluation (its direction and range applied,
+  as in `compareRuns`: a move under 5% of the range is no change), never by sign; gray when
+  the range is unknown.
+- Test cases: one column per run, a value chip per evaluation colored by verdict, the delta
+  against the baseline, the duration, the trace, the case flyout and the step-by-step trace
+  comparison with the baseline. Biggest regression first (summed normalized drops plus one
+  per pass-to-fail flip), or most improved, or by name.
+- A callout says when the runs are not comparable as is: different test cases, another
+  evaluator, evaluator version or judge model for an evaluation, or no pass rule in one run
+  for an evaluation others decide. Agent version and model changes (run metadata
+  `agent.version`, `agent.model`) are listed neutrally.
+
+### Run verdict
+
+Each run other than the baseline gets one word, from the same changes, no LLM:
+
+1. Evaluations whose mean got better or worse by more than 5% of its range.
+2. Some better and some worse: **Tradeoff**. Only better: **Improvement**. Only worse:
+   **Regression**.
+3. No mean moved: more improved than regressed test cases is an Improvement, fewer a
+   Regression, as many a **Tie**.
+
+The evidence sentence names the evaluations ("Better on answer_quality, worse on
+latency_budget") or the case counts.
+
 ## Links
 
+- Compare: `_a=(tab:runs,compare:!('<run A>','<run B>',...),baseline:'<run>')`; without
+  `baseline` the first run is the baseline (2-run links from before the grid keep working).
 - Run page: `#/?_a=(tab:runs,run:'<test.suite.run.id>')` opens one run whatever its date (CI
   jobs link here; keep the `run` key).
 - Evaluation runs time range: `_a=(runsTime:(from:now-30d,to:now))`, the last 7 days by default.

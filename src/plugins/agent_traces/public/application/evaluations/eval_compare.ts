@@ -399,3 +399,49 @@ export const comparabilityOf = (
     hasWarnings: !!coverage || evaluators.length > 0 || missingRules.length > 0,
   };
 };
+
+// ---------------------------------------------------------------------------------------
+// Run verdict: one word for a run against the baseline, no LLM
+// ---------------------------------------------------------------------------------------
+
+export type RunVerdict = 'improvement' | 'regression' | 'tradeoff' | 'tie';
+
+export interface RunVerdictResult {
+  verdict: RunVerdict;
+  /** Evaluations whose mean got better (worse) by more than the change threshold. */
+  better: string[];
+  worse: string[];
+  improvedCases: number;
+  regressedCases: number;
+}
+
+/**
+ * The verdict of a run against the baseline, from the same changes the grid shows:
+ *
+ * 1. `better` / `worse`: evaluations whose mean (normalized to its range, direction applied)
+ *    moved by more than `CHANGE_THRESHOLD` (5% of the range) up / down.
+ * 2. Some better and some worse: Tradeoff. Only better: Improvement. Only worse: Regression.
+ * 3. No mean moved: more improved than regressed test cases is an Improvement, fewer a
+ *    Regression, as many a Tie.
+ *
+ * Undefined for the baseline and for runs without data.
+ */
+export const runVerdictOf = (run: GridRun): RunVerdictResult | undefined => {
+  if (run.isBaseline || !run.comparison || !run.summary) return undefined;
+  const better = run.comparison.evaluators
+    .filter((e) => e.change === 'improved')
+    .map((e) => e.name);
+  const worse = run.comparison.evaluators
+    .filter((e) => e.change === 'regressed')
+    .map((e) => e.name);
+  const improvedCases = run.changes?.improved ?? 0;
+  const regressedCases = run.changes?.regressed ?? 0;
+  let verdict: RunVerdict;
+  if (better.length && worse.length) verdict = 'tradeoff';
+  else if (better.length) verdict = 'improvement';
+  else if (worse.length) verdict = 'regression';
+  else if (improvedCases > regressedCases) verdict = 'improvement';
+  else if (regressedCases > improvedCases) verdict = 'regression';
+  else verdict = 'tie';
+  return { verdict, better, worse, improvedCases, regressedCases };
+};

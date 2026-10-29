@@ -44,6 +44,8 @@ import {
   CaseSort,
   Comparability,
   GridCase,
+  RunVerdict,
+  RunVerdictResult,
   GridRun,
   buildCompareGrid,
   comparabilityOf,
@@ -54,6 +56,7 @@ import {
   formatDurationDelta,
   formatPointsDelta,
   passRateChange,
+  runVerdictOf,
   sortCases,
 } from './eval_compare';
 import { VerdictBadge } from './eval_chips';
@@ -249,6 +252,86 @@ export const ChangesCell: React.FC<{ run: GridRun }> = ({ run }) => {
         </div>
       </div>
     </EuiToolTip>
+  );
+};
+
+const VERDICT_TEXT: Record<RunVerdict, string> = {
+  improvement: i18n.translate('agentTraces.evalsPage.verdictImprovement', {
+    defaultMessage: 'Improvement',
+  }),
+  regression: i18n.translate('agentTraces.evalsPage.verdictRegression', {
+    defaultMessage: 'Regression',
+  }),
+  tradeoff: i18n.translate('agentTraces.evalsPage.verdictTradeoff', {
+    defaultMessage: 'Tradeoff',
+  }),
+  tie: i18n.translate('agentTraces.evalsPage.verdictTie', { defaultMessage: 'Tie' }),
+};
+
+const VERDICT_COLOR: Record<RunVerdict, string> = {
+  improvement: 'secondary',
+  regression: 'danger',
+  tradeoff: 'hollow',
+  tie: 'hollow',
+};
+
+const VERDICT_ICON: Record<RunVerdict, string | undefined> = {
+  improvement: 'sortUp',
+  regression: 'sortDown',
+  tradeoff: 'sortable',
+  tie: undefined,
+};
+
+/** The evidence sentence of a verdict: which evaluations moved, else how many cases. */
+export const verdictEvidence = (v: RunVerdictResult): string => {
+  const cases = i18n.translate('agentTraces.evalsPage.verdictCases', {
+    defaultMessage: '{improved} test cases improved, {regressed} regressed',
+    values: { improved: v.improvedCases, regressed: v.regressedCases },
+  });
+  if (v.better.length && v.worse.length) {
+    return i18n.translate('agentTraces.evalsPage.verdictTradeoffWhy', {
+      defaultMessage: 'Better on {better}, worse on {worse}',
+      values: { better: v.better.join(', '), worse: v.worse.join(', ') },
+    });
+  }
+  if (v.better.length) {
+    return i18n.translate('agentTraces.evalsPage.verdictBetterWhy', {
+      defaultMessage: 'Better on {better}; {cases}',
+      values: { better: v.better.join(', '), cases },
+    });
+  }
+  if (v.worse.length) {
+    return i18n.translate('agentTraces.evalsPage.verdictWorseWhy', {
+      defaultMessage: 'Worse on {worse}; {cases}',
+      values: { worse: v.worse.join(', '), cases },
+    });
+  }
+  return i18n.translate('agentTraces.evalsPage.verdictCasesWhy', {
+    defaultMessage: 'No evaluation mean moved more than 5% of its range; {cases}',
+    values: { cases },
+  });
+};
+
+/** One-word verdict of a run against the baseline, with its evidence sentence. */
+export const RunVerdictCell: React.FC<{ run: GridRun }> = ({ run }) => {
+  const v = runVerdictOf(run);
+  if (!v) return null;
+  return (
+    <div data-test-subj="agtEvlRunVerdict" data-verdict={v.verdict}>
+      <EuiToolTip
+        content={i18n.translate('agentTraces.evalsPage.verdictRuleTip', {
+          defaultMessage:
+            'From the evaluation means against the baseline: some better and some worse is a Tradeoff, only better an Improvement, only worse a Regression (a move under 5% of the range does not count). When no mean moved, more improved than regressed test cases is an Improvement, fewer a Regression, as many a Tie.',
+        })}
+      >
+        <EuiBadge color={VERDICT_COLOR[v.verdict]} iconType={VERDICT_ICON[v.verdict]}>
+          {VERDICT_TEXT[v.verdict]}
+        </EuiBadge>
+      </EuiToolTip>
+      <EuiText size="xs" color="subdued" data-test-subj="agtEvlRunVerdictWhy">
+        {verdictEvidence(v)}
+      </EuiText>
+    </div>
   );
 };
 
@@ -836,6 +919,11 @@ export const CompareRuns: React.FC<CompareRunsProps> = ({
       render: (run: GridRun) => <ChangesCell run={run} />,
     },
     {
+      name: i18n.translate('agentTraces.evalsPage.colVerdict', { defaultMessage: 'Verdict' }),
+      width: '200px',
+      render: (run: GridRun) => <RunVerdictCell run={run} />,
+    },
+    {
       name: '',
       width: '150px',
       align: 'right',
@@ -1095,7 +1183,7 @@ export const CompareRuns: React.FC<CompareRunsProps> = ({
             </EuiFlexItem>
             <EuiFlexItem />
             <EuiFlexItem grow={false}>
-              <EuiFilterGroup compressed>
+              <EuiFilterGroup>
                 {filters.map((f) => (
                   <EuiFilterButton
                     key={f.id}

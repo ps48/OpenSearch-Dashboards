@@ -13,6 +13,7 @@ import {
   formatDurationDelta,
   formatPointsDelta,
   passRateChange,
+  runVerdictOf,
   sortCases,
 } from './eval_compare';
 
@@ -159,5 +160,59 @@ describe('comparabilityOf', () => {
     const grid = buildCompareGrid(results, undefined, ['run-1', 'run-2'], 'run-1');
     const c = comparabilityOf(grid, results, meta);
     expect(c).toMatchObject({ evaluators: [], missingRules: [], changes: [], hasWarnings: false });
+  });
+});
+
+describe('runVerdictOf', () => {
+  const grade = (runId: string, name: string, caseId: string, value: number) =>
+    makeResult({
+      runId,
+      suiteName: 's',
+      caseId,
+      name,
+      value,
+      scoreMin: 0,
+      scoreMax: 1,
+      time: runId === 'r1' ? '2026-10-25 10:00:00.000' : '2026-10-26 10:00:00.000',
+    });
+  const verdict = (results: Array<ReturnType<typeof grade>>) =>
+    runVerdictOf(buildCompareGrid(results, undefined, ['r1', 'r2'], 'r1').runs[1]);
+
+  it('is a tradeoff when one mean rises and another falls', () => {
+    const v = verdict([
+      grade('r1', 'accuracy', 'a', 0.5),
+      grade('r1', 'helpfulness', 'a', 0.9),
+      grade('r2', 'accuracy', 'a', 0.9),
+      grade('r2', 'helpfulness', 'a', 0.5),
+    ]);
+    expect(v).toMatchObject({ verdict: 'tradeoff', better: ['accuracy'], worse: ['helpfulness'] });
+  });
+
+  it('is an improvement or a regression when means move one way', () => {
+    expect(
+      verdict([grade('r1', 'accuracy', 'a', 0.5), grade('r2', 'accuracy', 'a', 0.9)])?.verdict
+    ).toBe('improvement');
+    expect(
+      verdict([grade('r1', 'accuracy', 'a', 0.9), grade('r2', 'accuracy', 'a', 0.5)])?.verdict
+    ).toBe('regression');
+  });
+
+  it('falls back to case counts, and is a tie when nothing moved', () => {
+    // Means cancel out (0.5 and 0.5), but one case improved and one regressed: a tie.
+    const v = verdict([
+      grade('r1', 'accuracy', 'a', 0.2),
+      grade('r1', 'accuracy', 'b', 0.8),
+      grade('r2', 'accuracy', 'a', 0.8),
+      grade('r2', 'accuracy', 'b', 0.2),
+    ]);
+    expect(v).toMatchObject({ verdict: 'tie', improvedCases: 1, regressedCases: 1 });
+    expect(
+      verdict([grade('r1', 'accuracy', 'a', 0.5), grade('r2', 'accuracy', 'a', 0.52)])?.verdict
+    ).toBe('tie');
+  });
+
+  it('has no verdict for the baseline', () => {
+    const grid = buildCompareGrid(twoRunFixture(), undefined, ['run-1', 'run-2'], 'run-1');
+    expect(runVerdictOf(grid.runs[0])).toBeUndefined();
   });
 });

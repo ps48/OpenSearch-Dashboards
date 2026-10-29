@@ -72,6 +72,9 @@ describe('RunsTab', () => {
     expect(within(a).getByTestId('agtEvlChangesReference')).toHaveTextContent('Reference');
     expect(within(b).getByTestId('agtEvlChanges')).toHaveTextContent('↓1 ↑1 of 2');
     expect(within(b).getByTestId('agtEvlRunMean')).toHaveTextContent('0.57');
+    // The mean fell 0.08 (more than 5% of 0..1), and nothing rose.
+    expect(within(b).getByTestId('agtEvlRunVerdict')).toHaveTextContent('Regression');
+    expect(within(b).getByTestId('agtEvlRunVerdictWhy')).toHaveTextContent('Worse on accuracy');
     expect(screen.getByTestId('agtEvlCasesTitle')).toHaveTextContent(
       '2 test cases shared by all runs'
     );
