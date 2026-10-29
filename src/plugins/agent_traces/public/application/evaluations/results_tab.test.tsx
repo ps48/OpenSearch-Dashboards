@@ -8,6 +8,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import { ResultsTab, toResultRows } from './results_tab';
 import { makeResult } from './eval_test_fixtures';
+import { OpenSessionContext } from './eval_links';
 
 const results = [
   makeResult({
@@ -71,6 +72,26 @@ describe('ResultsTab', () => {
     );
     fireEvent.click(screen.getByTestId('agtEvlResultRow-fail'));
     expect(onOpenResult).toHaveBeenCalledWith(expect.objectContaining({ name: 'tool_diversity' }));
+  });
+
+  it('opens a session target as the session, not the result', () => {
+    const onOpenResult = jest.fn();
+    const openSession = jest.fn();
+    render(
+      <I18nProvider>
+        <OpenSessionContext.Provider value={openSession}>
+          <ResultsTab results={results} onOpenResult={onOpenResult} />
+        </OpenSessionContext.Provider>
+      </I18nProvider>
+    );
+    const links = screen.getAllByTestId('agtEvlTargetSession');
+    expect(links).toHaveLength(1);
+    fireEvent.click(links[0]);
+    expect(openSession).toHaveBeenCalledWith(
+      'session-0123456789',
+      Date.parse('2026-10-26T10:00:00Z')
+    );
+    expect(onOpenResult).not.toHaveBeenCalled();
   });
 
   it('gives the exact total and asks for the next page and a new sort', () => {

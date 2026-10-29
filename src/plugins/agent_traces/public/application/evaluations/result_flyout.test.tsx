@@ -117,6 +117,25 @@ describe('ResultFlyout', () => {
     await waitFor(() => expect(screen.getByTestId('agtEvlTargetSpan')).toBeInTheDocument());
   });
 
+  it('opens a session result as its session view, not one of its traces', async () => {
+    const { navigateToApp } = setup(
+      makeResult({
+        level: 'session',
+        sessionId: 'evalpoc-r2-s1',
+        traceId: undefined,
+        spanId: undefined,
+        endTraceId: 'last-trace',
+        source: 'agentcore',
+      })
+    );
+    expect(screen.queryByTestId('agtEvlOpenTrace')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agtEvlOpenSession'));
+    expect(navigateToApp).toHaveBeenCalledWith(AGENT_TRACES_NAV_ID, {
+      path: expect.stringContaining('openSessionId=evalpoc-r2-s1'),
+    });
+    await waitFor(() => expect(navigateToApp).toHaveBeenCalledTimes(1));
+  });
+
   it('says when the judged spans are not found', async () => {
     const search = jest.fn(() => of(toResponse([])));
     render(

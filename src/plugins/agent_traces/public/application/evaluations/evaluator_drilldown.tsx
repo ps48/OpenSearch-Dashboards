@@ -56,7 +56,7 @@ import {
   formatValue,
   shortId,
 } from './eval_components';
-import { traceToOpen } from './eval_links';
+import { sessionToOpen, traceToOpen, useOpenSession } from './eval_links';
 import { errorMessage } from './use_eval_data';
 import type { EvaluationsServices } from '.';
 
@@ -260,6 +260,7 @@ export const EvaluatorDrilldownFlyout: React.FC<{
   onViewAllResults,
 }) => {
   const aggregate = useMemo(() => aggregateEvaluator(name, results), [name, results]);
+  const openSession = useOpenSession();
   const failures = useMemo(() => latestFailures(results), [results]);
   const spans = useFailureSpans(failures);
   const joined = useMemo(() => joinFailures(failures, spans.spans), [failures, spans.spans]);
@@ -317,6 +318,7 @@ export const EvaluatorDrilldownFlyout: React.FC<{
       width: '110px',
       render: (j: JoinedFailure) => {
         const traceId = traceToOpen(j.result);
+        const sessionId = openSession ? sessionToOpen(j.result) : undefined;
         return (
           <div>
             <EuiText size="xs" color="subdued">
@@ -337,17 +339,34 @@ export const EvaluatorDrilldownFlyout: React.FC<{
                   </EuiLink>
                 </EuiFlexItem>
               )}
-              {traceId && (
+              {sessionId && openSession ? (
                 <EuiFlexItem grow={false}>
                   <EuiLink
-                    onClick={() => onOpenTrace(traceId, parseEvalTime(j.result.time))}
-                    data-test-subj="agtEvlDrilldownOpenTrace"
+                    onClick={() => openSession(sessionId, parseEvalTime(j.result.time))}
+                    data-test-subj="agtEvlDrilldownOpenSession"
                   >
                     <EuiText size="xs">
-                      {i18n.translate('agentTraces.evalsPage.trace', { defaultMessage: 'Trace' })}
+                      {i18n.translate('agentTraces.evalsPage.session', {
+                        defaultMessage: 'Session',
+                      })}
                     </EuiText>
                   </EuiLink>
                 </EuiFlexItem>
+              ) : (
+                traceId && (
+                  <EuiFlexItem grow={false}>
+                    <EuiLink
+                      onClick={() => onOpenTrace(traceId, parseEvalTime(j.result.time))}
+                      data-test-subj="agtEvlDrilldownOpenTrace"
+                    >
+                      <EuiText size="xs">
+                        {i18n.translate('agentTraces.evalsPage.trace', {
+                          defaultMessage: 'Trace',
+                        })}
+                      </EuiText>
+                    </EuiLink>
+                  </EuiFlexItem>
+                )
               )}
             </EuiFlexGroup>
           </div>

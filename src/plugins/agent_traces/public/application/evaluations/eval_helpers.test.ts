@@ -23,7 +23,7 @@ import {
   baselineOf,
   runsTimeOf,
 } from './eval_url_state';
-import { traceDeepLinkPath, traceToOpen } from './eval_links';
+import { sessionLink, sessionToOpen, traceDeepLinkPath, traceToOpen } from './eval_links';
 import { errorMessage, isIndexMissing } from './use_eval_data';
 import { buildSameTargetQuery, sameTarget } from './result_flyout';
 import { makeResult } from './eval_test_fixtures';
@@ -251,6 +251,15 @@ describe('trace deep link', () => {
   });
   it('encodes unusual ids', () => {
     expect(traceDeepLinkPath('a b&c', 0)).toContain('openTraceId=a%20b%26c');
+  });
+  it('opens a session-level result as its session, with a time window around it', () => {
+    const at = Date.parse('2026-10-26T12:00:00.000Z');
+    expect(sessionLink('evalpoc-r2-s1', at)).toBe(
+      "#/?_g=(time:(from:'2026-10-26T06:00:00.000Z',to:'2026-10-26T13:00:00.000Z'))&_a=(ui:(activeTabId:traces,showHistogram:!t))&openSessionId=evalpoc-r2-s1"
+    );
+    expect(sessionLink('a b&c', at)).toContain('openSessionId=a%20b%26c');
+    expect(sessionToOpen(makeResult({ level: 'session', sessionId: 's1' }))).toBe('s1');
+    expect(sessionToOpen(makeResult({ level: 'trace', sessionId: 's1' }))).toBeUndefined();
   });
 });
 

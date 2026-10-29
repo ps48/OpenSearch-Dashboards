@@ -24,6 +24,7 @@ import {
 } from './table_shared';
 import { getHitId } from '../../../components/data_table/table_cell/trace_utils/trace_utils';
 import './traces_table.scss';
+import { takeHashParam, useOpenSessionFromLink } from './deep_link';
 import { dropShadowedAiRoots } from '../../utils/ai_root';
 
 const DEFAULT_TRACE_COLUMNS = [...AGENT_TRACES_DEFAULT_COLUMNS];
@@ -60,7 +61,7 @@ export const TracesDataTable: React.FC = () => {
 
   const { pplService, datasetParam } = usePPLQueryDeps();
   const hits = useMemo(() => dropShadowedAiRoots(queryHits), [queryHits]);
-  const { openFlyout, updateFlyoutFullTree } = useTraceFlyout();
+  const { openFlyout, openSession, updateFlyoutFullTree } = useTraceFlyout();
 
   // Build row metadata map from hits
   const rowMetaMap = useMemo(() => {
@@ -347,18 +348,9 @@ export const TracesDataTable: React.FC = () => {
   const openedFromLinkRef = useRef(false);
   useEffect(() => {
     if (openedFromLinkRef.current || !isInitialized || isQueryLoading) return;
-    const [path, query = ''] = window.location.hash.split('?');
-    const params = new URLSearchParams(query);
-    const linkedTraceId = params.get('openTraceId');
+    const linkedTraceId = takeHashParam('openTraceId');
     if (!linkedTraceId) return;
     openedFromLinkRef.current = true;
-    params.delete('openTraceId');
-    const rest = params.toString();
-    window.history.replaceState(
-      window.history.state,
-      '',
-      `${window.location.pathname}${window.location.search}${path}${rest ? `?${rest}` : ''}`
-    );
     const hit = hits.find(
       (h) => (h._source as Record<string, unknown> | undefined)?.traceId === linkedTraceId
     );
@@ -389,6 +381,9 @@ export const TracesDataTable: React.FC = () => {
     openFlyout(row);
     expandTrace(linkedTraceId);
   }, [isInitialized, isQueryLoading, hits, handleRowClick, openFlyout, expandTrace]);
+
+  // Deep link (Agent Evaluations "Open session"): opens the session view.
+  useOpenSessionFromLink(isInitialized, openSession);
 
   const expansionContextValue = useMemo(
     () => ({

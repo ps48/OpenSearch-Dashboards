@@ -216,4 +216,9 @@ The Verdict filter (Pass, Fail, Evaluator error, Scored) is in the filter bar.
   jobs link here; keep the `run` key).
 - Evaluation runs time range: `_a=(runsTime:(from:now-30d,to:now))`, the last 7 days by default.
   Overview and Results use the global time range (`_g`).
+- Open session: session-level results (the result flyout's Open session, their target in
+  Results, Recent failures and the drill-down) open Agent Traces with
+  `#/?_g=(time:(...))&_a=(ui:(activeTabId:traces))&openSessionId=<id>`: the session view
+  (its traces and session results) opens once and the parameter leaves the URL, like
+  `openTraceId` for traces.
 - Evaluation drill-down on Overview: `_a=(evaluation:'<gen_ai.evaluation.name>')`.

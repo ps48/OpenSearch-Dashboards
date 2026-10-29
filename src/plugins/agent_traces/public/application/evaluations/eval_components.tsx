@@ -10,6 +10,7 @@ import {
   EuiCallOut,
   EuiCode,
   EuiEmptyPrompt,
+  EuiLink,
   EuiText,
   EuiTitle,
   EuiToolTip,
@@ -22,6 +23,7 @@ import { AGENT_EVALS_INDEX_PATTERN, EVALS_INDEX_SETTING } from '../../../common'
 import { EvalOutcome, EvalResult } from './eval_data';
 import { LevelPill, SourcePill, VerdictBadge } from './eval_chips';
 import { CaseStatus, EvaluatorAggregate, parseEvalTime } from './eval_aggregations';
+import { sessionToOpen, useOpenSession } from './eval_links';
 
 export { OUTCOME_BADGE_COLOR, OUTCOME_TEXT, levelLabel, sourceLabel } from './eval_chips';
 
@@ -164,6 +166,31 @@ export const targetLabelOf = (r: EvalResult): string => {
 
 export const TargetText: React.FC<{ result: EvalResult }> = ({ result }) => {
   const label = targetLabelOf(result);
+  const openSession = useOpenSession();
+  const sessionId = sessionToOpen(result);
+  if (openSession && sessionId) {
+    return (
+      <EuiToolTip
+        content={i18n.translate('agentTraces.evalsPage.openSessionTip', {
+          defaultMessage: 'Open session {id} in Agent Traces',
+          values: { id: sessionId },
+        })}
+      >
+        <EuiLink
+          onClick={(e: React.MouseEvent) => {
+            // In a table row that opens the result: open the session only.
+            e.stopPropagation();
+            openSession(sessionId, parseEvalTime(result.time));
+          }}
+          data-test-subj="agtEvlTargetSession"
+        >
+          <EuiText size="xs">
+            <span className="agtEvlMono">{label}</span>
+          </EuiText>
+        </EuiLink>
+      </EuiToolTip>
+    );
+  }
   const full = [
     result.sessionId && `session ${result.sessionId}`,
     result.traceId && `trace ${result.traceId}`,

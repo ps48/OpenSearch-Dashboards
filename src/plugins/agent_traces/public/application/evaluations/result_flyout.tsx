@@ -46,7 +46,12 @@ import { ShowTracesMenu } from './eval_trace_filter';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { parseEvalTime } from './eval_aggregations';
 import { JudgedTarget, TargetSpan, fetchJudgedTarget } from './eval_target';
-import { openTraceInAgentTraces, traceToOpen } from './eval_links';
+import {
+  openSessionInAgentTraces,
+  openTraceInAgentTraces,
+  sessionToOpen,
+  traceToOpen,
+} from './eval_links';
 import {
   LevelBadge,
   OutcomeBadge,
@@ -333,6 +338,7 @@ export const ResultFlyout: React.FC<{
   const traceId =
     traceToOpen(result) ?? target.value?.traces?.[target.value.traces.length - 1]?.traceId;
   const aroundMs = target.value?.span?.startMs ?? parseEvalTime(result.time);
+  const sessionId = sessionToOpen(result);
   const openTrace = (id: string, ms: number) =>
     openTraceInAgentTraces(services.application, id, ms);
 
@@ -449,23 +455,40 @@ export const ResultFlyout: React.FC<{
         </EuiFlexGroup>
         <EuiSpacer size="s" />
         <EuiFlexGroup gutterSize="s" responsive={false} wrap>
-          {traceId && (
+          {sessionId ? (
             <EuiFlexItem grow={false}>
               <EuiButton
                 size="s"
                 iconType="popout"
-                onClick={() => openTrace(traceId, aroundMs)}
-                data-test-subj="agtEvlOpenTrace"
+                onClick={() =>
+                  openSessionInAgentTraces(
+                    services.application,
+                    sessionId,
+                    parseEvalTime(result.time)
+                  )
+                }
+                data-test-subj="agtEvlOpenSession"
               >
-                {result.level === 'session'
-                  ? i18n.translate('agentTraces.evalsPage.openSession', {
-                      defaultMessage: 'Open session',
-                    })
-                  : i18n.translate('agentTraces.evalsPage.openTrace', {
-                      defaultMessage: 'Open trace in Agent Traces',
-                    })}
+                {i18n.translate('agentTraces.evalsPage.openSession', {
+                  defaultMessage: 'Open session',
+                })}
               </EuiButton>
             </EuiFlexItem>
+          ) : (
+            traceId && (
+              <EuiFlexItem grow={false}>
+                <EuiButton
+                  size="s"
+                  iconType="popout"
+                  onClick={() => openTrace(traceId, aroundMs)}
+                  data-test-subj="agtEvlOpenTrace"
+                >
+                  {i18n.translate('agentTraces.evalsPage.openTrace', {
+                    defaultMessage: 'Open trace in Agent Traces',
+                  })}
+                </EuiButton>
+              </EuiFlexItem>
+            )
           )}
         </EuiFlexGroup>
       </EuiFlyoutHeader>
