@@ -15,6 +15,7 @@ import {
   Position,
   ScaleType,
   Settings,
+  Tooltip,
   XYChartElementEvent,
   niceTimeFormatter,
 } from '@elastic/charts';
@@ -148,6 +149,35 @@ const useChartPoint = () => {
   return { clickable: !!actions, wrapperProps, select, popover };
 };
 
+/** Small tick labels without tick marks, for the axis of a chart in a card. */
+export const COMPACT_AXIS_STYLE = {
+  tickLabel: { fontSize: 9, padding: { inner: 1, outer: 0 } },
+  tickLine: { visible: false, size: 0, padding: 0 },
+  axisLine: { visible: false },
+};
+
+/** A time bucket in a tooltip header: its start to its end. */
+export const bucketRangeText = (from: number, to: number): string => {
+  const sameDay = formatEvalTime(from, 'YYYY-MM-DD') === formatEvalTime(to, 'YYYY-MM-DD');
+  return i18n.translate('agentTraces.evalsPage.bucketRange', {
+    defaultMessage: '{from} to {to}',
+    values: {
+      from: formatEvalTime(from, 'MMM D, HH:mm'),
+      to: formatEvalTime(to, sameDay ? 'HH:mm' : 'MMM D, HH:mm'),
+    },
+  });
+};
+
+/** A score bin in a tooltip header: `40% to 50%`. */
+export const binRangeText = (x: number, width = 0.1): string =>
+  i18n.translate('agentTraces.evalsPage.binRange', {
+    defaultMessage: '{from} to {to}',
+    values: {
+      from: `${Math.round(x * 100)}%`,
+      to: `${Math.round(Math.min(1, x + width) * 100)}%`,
+    },
+  });
+
 /** The datum under a click on an XY chart. */
 const datumOf = <T,>(elements: unknown[]): T | undefined => {
   const [first] = elements as XYChartElementEvent[];
@@ -205,9 +235,18 @@ export const OutcomeHistogram: React.FC<{
               : undefined
           }
         />
-        {!compact && (
-          <Axis id="time" position={Position.Bottom} tickFormat={formatter} showOverlappingTicks />
-        )}
+        <Tooltip
+          headerFormatter={({ value }) => bucketRangeText(Number(value), Number(value) + interval)}
+        />
+        {/* In a card: a few small time ticks (start, middle, end), no count axis. */}
+        <Axis
+          id="time"
+          position={Position.Bottom}
+          tickFormat={formatter}
+          ticks={compact ? 3 : undefined}
+          style={compact ? COMPACT_AXIS_STYLE : undefined}
+          showOverlappingTicks={!compact}
+        />
         {!compact && <Axis id="count" position={Position.Left} ticks={3} />}
         {OUTCOMES.map((outcome) => (
           <BarSeries
@@ -267,6 +306,9 @@ export const ScoreTrendChart: React.FC<{
                 }
               : undefined
           }
+        />
+        <Tooltip
+          headerFormatter={({ value }) => bucketRangeText(Number(value), Number(value) + interval)}
         />
         <Axis id="time" position={Position.Bottom} tickFormat={formatter} showOverlappingTicks />
         <Axis
@@ -359,6 +401,7 @@ export const ScoreDistributionChart: React.FC<{
               : undefined
           }
         />
+        <Tooltip headerFormatter={({ value }) => binRangeText(Number(value))} />
         <Axis
           id="score"
           position={Position.Bottom}

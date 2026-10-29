@@ -167,6 +167,18 @@ describe('OverviewTab', () => {
     expect(onShowPrevious).toHaveBeenCalledWith('tool_diversity');
   });
 
+  it('puts the score trend and results over time above the evaluation cards', () => {
+    renderOverview();
+    const trend = screen.getByTestId('trendStub');
+    const firstCard = screen.getAllByTestId('agtEvlEvaluatorCard')[0];
+    const attention = screen.getByTestId('agtEvlNeedsAttention');
+    const before = (a: Node, b: Node) =>
+      // eslint-disable-next-line no-bitwise
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(before(attention, trend)).toBe(true);
+    expect(before(trend, firstCard)).toBe(true);
+  });
+
   it('explains an empty result set', () => {
     renderOverview({ current: aggOf([]) });
     expect(screen.getByTestId('agtEvlOverviewEmpty')).toBeInTheDocument();

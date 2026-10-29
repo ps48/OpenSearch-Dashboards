@@ -11,7 +11,9 @@ import {
   OutcomeHistogram,
   ScoreDistributionChart,
   ScoreTrendChart,
+  binRangeText,
   bucketPoint,
+  bucketRangeText,
   pointTitle,
 } from './eval_charts';
 import { makeResult } from './eval_test_fixtures';
@@ -30,7 +32,10 @@ jest.mock('@elastic/charts', () => {
           onClick={() => onElementClick([[{ datum: mockDatum }, { specId: 'x' }]])}
         />
       ) : null,
-    Axis: () => null,
+    Axis: ({ id, ticks }: { id: string; ticks?: number }) => (
+      <span data-test-subj={`chartAxis-${id}`} data-ticks={ticks} />
+    ),
+    Tooltip: () => null,
     BarSeries: () => null,
     LineSeries: () => null,
     LineAnnotation: () => null,
@@ -120,5 +125,29 @@ describe('chart click-through', () => {
     const p = bucketPoint(Date.UTC(2026, 9, 28, 14), HOUR, { name: 'tone', outcome: 'fail' });
     expect(pointTitle(p)).toMatch(/^tone · Fail · Oct 28, \d\d:00 to Oct 28, \d\d:00$/);
     expect(pointTitle({ from: 0, to: 1 })).toMatch(/^All evaluations · /);
+  });
+});
+
+describe('chart axes and tooltips', () => {
+  it('gives a card histogram a compact time axis and no count axis', () => {
+    render(<OutcomeHistogram buckets={[]} bounds={bounds} interval={HOUR} height={72} compact />);
+    expect(screen.getByTestId('chartAxis-time')).toHaveAttribute('data-ticks', '3');
+    expect(screen.queryByTestId('chartAxis-count')).not.toBeInTheDocument();
+  });
+
+  it('keeps both axes on a full histogram', () => {
+    render(<OutcomeHistogram buckets={[]} bounds={bounds} interval={HOUR} height={200} />);
+    expect(screen.getByTestId('chartAxis-time')).toBeInTheDocument();
+    expect(screen.getByTestId('chartAxis-count')).toBeInTheDocument();
+  });
+
+  it('names a time bucket and a score bin', () => {
+    const from = Date.UTC(2026, 9, 28, 14);
+    expect(bucketRangeText(from, from + HOUR)).toMatch(/^Oct 28, \d\d:00 to \d\d:00$/);
+    expect(bucketRangeText(from, from + 3 * 24 * HOUR)).toMatch(
+      /^Oct 28, \d\d:00 to Oct 31, \d\d:00$/
+    );
+    expect(binRangeText(0.4)).toBe('40% to 50%');
+    expect(binRangeText(0.9)).toBe('90% to 100%');
   });
 });

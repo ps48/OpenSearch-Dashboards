@@ -496,7 +496,7 @@ export const EvaluatorCard: React.FC<{
             buckets={buckets}
             bounds={bounds}
             interval={interval}
-            height={56}
+            height={72}
             compact
             name={summary.name}
             data-test-subj="agtEvlCardHistogram"
@@ -890,34 +890,7 @@ export const OverviewTab: React.FC<{
       {changes.length > 0 && <EuiSpacer size="m" />}
       <KpiRow current={current.kpis} previous={previous?.kpis} />
       <EuiSpacer size="l" />
-      <SectionHeader
-        title={
-          <FormattedMessage id="agentTraces.evalsPage.byEvaluation" defaultMessage="Evaluations" />
-        }
-        count={current.summaries.length}
-        help={
-          <FormattedMessage
-            id="agentTraces.evalsPage.byEvaluationHelp"
-            defaultMessage="Most failing first. Select one to see where it fails."
-          />
-        }
-      />
-      <EuiSpacer size="s" />
-      <EuiFlexGrid columns={3} gutterSize="m">
-        {current.summaries.map((s) => (
-          <EuiFlexItem key={s.name}>
-            <EvaluatorCard
-              summary={s}
-              previous={previousByName.get(s.name)}
-              buckets={current.bucketsByName.get(s.name) ?? []}
-              bounds={bounds}
-              interval={interval}
-              onSelect={onSelectEvaluation}
-            />
-          </EuiFlexItem>
-        ))}
-      </EuiFlexGrid>
-      <EuiSpacer size="l" />
+      {/* Trends first, then the evaluations, then the failures. */}
       <EuiFlexGroup gutterSize="m">
         <EuiFlexItem grow={3}>
           <EuiPanel hasBorder paddingSize="m" className="agtEvlChartPanel">
@@ -965,6 +938,34 @@ export const OverviewTab: React.FC<{
           </EuiPanel>
         </EuiFlexItem>
       </EuiFlexGroup>
+      <EuiSpacer size="l" />
+      <SectionHeader
+        title={
+          <FormattedMessage id="agentTraces.evalsPage.byEvaluation" defaultMessage="Evaluations" />
+        }
+        count={current.summaries.length}
+        help={
+          <FormattedMessage
+            id="agentTraces.evalsPage.byEvaluationHelp"
+            defaultMessage="Most failing first. Select one to see where it fails."
+          />
+        }
+      />
+      <EuiSpacer size="s" />
+      <EuiFlexGrid columns={3} gutterSize="m">
+        {current.summaries.map((s) => (
+          <EuiFlexItem key={s.name}>
+            <EvaluatorCard
+              summary={s}
+              previous={previousByName.get(s.name)}
+              buckets={current.bucketsByName.get(s.name) ?? []}
+              bounds={bounds}
+              interval={interval}
+              onSelect={onSelectEvaluation}
+            />
+          </EuiFlexItem>
+        ))}
+      </EuiFlexGrid>
       <EuiSpacer size="l" />
       <EuiPanel hasBorder paddingSize="m">
         <SectionHeader
