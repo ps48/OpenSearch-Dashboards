@@ -6,15 +6,12 @@
 import {
   VerdictInput,
   buildVerdictClauses,
-  condToPpl,
   getActiveClauses,
   getActiveRuleEntries,
   parseEvaluationRules,
   ruleFor,
   setEvaluationRulesSource,
-  verdictEvalPpl,
   verdictOf,
-  VERDICT_PPL_FIELDS,
 } from './eval_verdict';
 import { EVALS_RULES_SETTING } from '../../../common';
 import { agentTracesUiSettings } from '../../../server/ui_settings';
@@ -165,34 +162,14 @@ describe('rules setting', () => {
   });
 });
 
-describe('PPL compilation', () => {
-  it('compiles the clauses to one case() with the same order', () => {
-    const ppl = verdictEvalPpl(
-      buildVerdictClauses(
-        parseEvaluationRules({ 'lat*': { threshold: 10, direction: 'minimize' } })
-      )
-    );
-    expect(
-      ppl.startsWith("eval evl_verdict = case(isnotnull(`attributes.error.type`), 'error'")
-    ).toBe(true);
-    expect(ppl).toContain("substring(`attributes.gen_ai.evaluation.name`, 1, 3) = 'lat'");
-    expect(ppl).toContain('`attributes.gen_ai.evaluation.score.value` <= 10');
-    expect(ppl).toContain("lower(`attributes.opensearch.evaluation.assessment`) in ('pass')");
-    expect(ppl).toContain("`attributes.gen_ai.evaluation.name` in ('Builtin.Correctness'");
-    expect(ppl.endsWith("else 'neutral')")).toBe(true);
-  });
-
-  it('drops branches on fields the index does not map', () => {
-    const missing = new Set([VERDICT_PPL_FIELDS.assessment, VERDICT_PPL_FIELDS.threshold]);
-    const ppl = verdictEvalPpl(buildVerdictClauses([]), missing);
-    expect(ppl).not.toContain('assessment');
-    expect(ppl).not.toContain('threshold');
-    expect(condToPpl({ k: 'not', c: { k: 'notnull', f: 'assessment' } }, missing)).toBe('true');
-  });
-
-  it('quotes names safely', () => {
-    expect(condToPpl({ k: 'name', v: "it's" })).toBe(
-      "`attributes.gen_ai.evaluation.name` = 'it\\'s'"
-    );
+describe('threshold sign', () => {
+  it('compares with the producer threshold from the sign alone', () => {
+    const clauses = buildVerdictClauses([]);
+    const at = (thresholdSign: number, direction?: string) =>
+      verdictOf({ name: 'x', value: 0, threshold: 0, thresholdSign, direction }, clauses);
+    expect(at(0)).toBe('pass');
+    expect(at(-1)).toBe('fail');
+    expect(at(-1, 'minimize')).toBe('pass');
+    expect(at(1, 'minimize')).toBe('fail');
   });
 });

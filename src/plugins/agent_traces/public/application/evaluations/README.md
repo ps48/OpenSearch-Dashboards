@@ -151,9 +151,29 @@ says AgentCore results arrive about 15 minutes after a session ends.
 
 KPIs, evaluation cards (count, pass, fail, error and scored counts, mean, label split), the
 score trend and results over time come from PPL aggregations on the evaluation index
-(`eval evl_verdict = case(...)` with the verdict rules compiled to PPL, then `stats ... by`,
-`span(@timestamp, ...)`), so they are exact at any volume. Distinct traces and sessions use
-`distinct_count` (exact below 3,000 per period, approximate above).
+(`stats ... by`, `span(@timestamp, ...)`), so they are exact at any volume. Distinct traces
+and sessions use `distinct_count` (exact below 3,000 per period, approximate above).
+
+The verdict rules are not compiled into the query: one `case(...)` holding every rule is
+pushed down to OpenSearch as a single inline script, which grows with each rule until
+OpenSearch rejects it (65,535 bytes). Aggregations group instead by what the verdict reads,
+and the browser applies the rules to each group (`eval_verdict_keys.ts`):
+
+- evaluation name, label, `error.type`, assessment, direction and source, as they are;
+- `evl_vb0`, `evl_vb1`, ...: where the value lies among the distinct numeric bounds of the
+  rules (built-in 0.5, each `threshold`), 16 bounds a column;
+- `evl_tc`: the sign of `value - opensearch.evaluation.score.threshold`.
+
+The query grows only with the distinct thresholds, about 60 characters each, never with
+label lists or names. A verdict filter (Fail only, the Verdict filter, traces where an
+evaluation fails, failing test cases of a run) first reads these groups, then queries with a
+`where` naming the groups it keeps (`name in (...)`, or a name with a label, value range or
+assessment), pushed down as plain term and range queries. Sorting Results by Result pages each
+verdict apart, their counts known from the groups.
+
+A query that fails (a limit of the engine, a timeout) leaves the rest of the page: a
+"Some of this page could not be loaded" callout names the part and the reason ("Pass rules
+too large for one query", ...), and the counts read as unknown rather than zero.
 
 The Evaluation runs list is aggregated too, so it holds every run in its range: grades
 `stats ... by test.suite.run.id, test.suite.name, gen_ai.evaluation.name, label, scale,

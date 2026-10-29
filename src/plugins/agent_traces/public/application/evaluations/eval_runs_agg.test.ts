@@ -26,18 +26,18 @@ describe('run aggregation queries', () => {
     expect(q).toContain('source = idx-a');
     expect(q).toContain('isnotnull(`attributes.test.suite.run.id`)');
     expect(q).toContain("`attributes.gen_ai.evaluation.name` = 'accuracy'");
-    expect(q).toContain('eval evl_verdict = case(');
+    expect(q).toContain('eval evl_vb0 = case(');
     expect(q).toMatch(
       /stats count\(\) as n, count\(.*\) as nv, .* min\(`@timestamp`\) as t0, max\(`@timestamp`\) as t1 by `attributes\.test\.suite\.run\.id`, `attributes\.test\.suite\.name`, `attributes\.gen_ai\.evaluation\.name`/
     );
     expect(q).not.toContain('score.label');
-    expect(q).toMatch(/evl_verdict \| head 10000$/);
+    expect(q).toMatch(/evl_vb0, evl_tc \| head 10000$/);
   });
 
   it('counts test cases by run from grades', () => {
-    expect(buildRunCasesAggQuery({}, 'all', { withoutVerdict: true })).not.toContain('evl_verdict');
-    expect(buildRunCasesAggQuery({}, 'fail')).toContain("where evl_verdict = 'fail'");
-    expect(buildRunCasesAggQuery({}, 'decided')).toMatch(
+    expect(buildRunCasesAggQuery({})).not.toContain('evl_');
+    expect(buildRunCasesAggQuery({}, { verdictWhere: '`x` = 1' })).toContain('where `x` = 1');
+    expect(buildRunCasesAggQuery({})).toMatch(
       /stats distinct_count\(`attributes\.test\.case\.id`\) as nc by `attributes\.test\.suite\.run\.id`/
     );
   });

@@ -28,16 +28,26 @@ import {
   getActiveClauses,
   getActiveRuleEntries,
   ruleFor,
-  verdictCasePpl,
 } from './eval_verdict';
+import {
+  MATCH_NONE,
+  VerdictKey,
+  VerdictKeyPlan,
+  verdictKeyEval,
+  verdictKeyGroups,
+  verdictKeyOf,
+  verdictKeyPlan,
+  verdictOfKey,
+  verdictWhere,
+} from './eval_verdict_keys';
 import type { EvalKpis, OutcomeBucket, TrendPoint } from './eval_aggregations';
 import { parseEvalTime } from './eval_aggregations';
 
 /**
  * Exact numbers for the Overview: server-side PPL aggregations on the evaluation index.
- * Each result's verdict is computed in the query (`eval evl_verdict = case(...)`) from the
- * same clauses the browser uses, then counted with `stats ... by`, so counts, pass rates,
- * means, label splits and time buckets hold at any volume.
+ * Aggregations group by what the verdict reads (`eval_verdict_keys.ts`) and the browser
+ * applies the rules to each group, so counts, pass rates, means, label splits and time
+ * buckets hold at any volume, and the queries do not grow with the rules.
  */
 
 const field = (f: string) => `\`${f}\``;
@@ -122,21 +132,121 @@ export const executeEvalPpl = async (
 
 export interface QueryContext {
   index?: string;
+  /** Verdict clauses (the active rules by default). */
   clauses?: Clause[];
   missing?: ReadonlySet<string>;
-  /** No verdict column (the query needs none, and then needs no script). */
-  withoutVerdict?: boolean;
+  /** A `where` keeping the wanted verdicts (`verdictWhere`), for queries that filter on it. */
+  verdictWhere?: string;
 }
 
 const present = (missing: ReadonlySet<string>) => (f: string) => !missing.has(f);
 
-/** `source`, the filters, the verdict column and the verdict filter. */
+/** `source`, the filters and the verdict filter (`ctx.verdictWhere`). */
 export const baseCommands = (filters: EvalFilters, ctx: QueryContext = {}): string[] =>
   buildEvalCommands(filters, ctx.index ?? AGENT_EVALS_INDEX_PATTERN, {
     missing: ctx.missing,
-    clauses: ctx.clauses,
-    withVerdict: !ctx.withoutVerdict,
+    verdictWhere: ctx.verdictWhere,
   });
+
+const planOf = (ctx: QueryContext): VerdictKeyPlan =>
+  verdictKeyPlan(ctx.clauses ?? getActiveClauses(), ctx.missing ?? new Set());
+
+/** `eval` of the verdict key columns (when any) and the `by` list with the verdict keys. */
+const withVerdictKeys = (ctx: QueryContext, groups: string[]) => {
+  const plan = planOf(ctx);
+  const evalCommand = verdictKeyEval(plan);
+  const by = Array.from(new Set([...groups, ...verdictKeyGroups(plan)]));
+  return { evals: evalCommand ? [evalCommand] : [], by };
+};
+
+/**
+ * Groups of results by what the verdict reads, with their counts: what a verdict filter is
+ * built from (`verdictWhere`).
+ */
+export const buildVerdictKeysQuery = (filters: EvalFilters, ctx: QueryContext = {}): string => {
+  const { evals, by } = withVerdictKeys(ctx, []);
+  return [
+    ...baseCommands(filters, { ...ctx, verdictWhere: undefined }),
+    ...evals,
+    `stats count() as n by ${by.join(', ')}`,
+    `head ${AGG_ROWS_LIMIT}`,
+  ].join(' | ');
+};
+
+/** Aggregated rows with their verdict (`evl_verdict`), and the groups behind them. */
+export interface VerdictAgg {
+  rows: PplRecord[];
+  keys: VerdictKey[];
+  plan: VerdictKeyPlan;
+  clauses: Clause[];
+}
+
+/**
+ * Runs an aggregation grouped by the verdict keys (`build` gets the clauses to plan with)
+ * and sets each row's `evl_verdict` from the rules.
+ */
+export const executeVerdictAgg = async (
+  ppl: PPLService,
+  index: string,
+  build: (missing: ReadonlySet<string>, source: string, clauses: Clause[]) => string,
+  options: { emptyWithout?: string[]; clauses?: Clause[] } = {}
+): Promise<VerdictAgg> => {
+  const clauses = options.clauses ?? getActiveClauses();
+  let used: ReadonlySet<string> = new Set();
+  const rows = await executeEvalPpl(
+    ppl,
+    index,
+    (missing, source) => {
+      used = missing;
+      return build(missing, source, clauses);
+    },
+    options
+  );
+  const plan = verdictKeyPlan(clauses, used);
+  const keys = rows.map((r) => verdictKeyOf(r, plan));
+  rows.forEach((r, i) => {
+    r[VERDICT_COLUMN] = verdictOfKey(keys[i], plan, clauses);
+  });
+  return { rows, keys, plan, clauses };
+};
+
+/** The verdict groups of the results under the filters (verdict filter left out). */
+export const fetchVerdictGroups = (
+  ppl: PPLService,
+  index: string,
+  filters: EvalFilters
+): Promise<VerdictAgg> =>
+  executeVerdictAgg(ppl, index, (missing, source, clauses) =>
+    buildVerdictKeysQuery(filters, { index: source, missing, clauses })
+  );
+
+/** The `where` keeping `outcomes`, from verdict groups (`MATCH_NONE`: nothing matches). */
+export const whereForOutcomes = (agg: VerdictAgg, outcomes: EvalOutcome[]): string =>
+  verdictWhere(agg.keys, agg.plan, agg.clauses, outcomes);
+
+/** Rows of a verdict aggregation kept by the filters' verdict filter, if any. */
+export const keepOutcomes = (rows: PplRecord[], filters: EvalFilters): PplRecord[] => {
+  const outcomes = outcomesFilter(filters);
+  return outcomes ? rows.filter((r) => outcomes.includes(r[VERDICT_COLUMN] as EvalOutcome)) : rows;
+};
+
+/**
+ * Runs `build` with the verdict filter of `filters` as a `where` (`verdictWhere`, built
+ * from an aggregation of the verdict groups first); no rows when no group matches.
+ */
+export const executeEvalPplFiltered = async (
+  ppl: PPLService,
+  index: string,
+  filters: EvalFilters,
+  build: (missing: ReadonlySet<string>, source: string, verdictWhere?: string) => string,
+  options: { emptyWithout?: string[] } = {}
+): Promise<PplRecord[]> => {
+  const outcomes = outcomesFilter(filters);
+  if (!outcomes) return executeEvalPpl(ppl, index, (m, s) => build(m, s), options);
+  const where = whereForOutcomes(await fetchVerdictGroups(ppl, index, filters), outcomes);
+  if (where === MATCH_NONE) return [];
+  return executeEvalPpl(ppl, index, (m, s) => build(m, s, where), options);
+};
 
 /** Results under the filters, newest first, with optional fields dropped when unmapped. */
 export const fetchEvalResultsWith = async (
@@ -146,8 +256,8 @@ export const fetchEvalResultsWith = async (
   limit: number
 ): Promise<EvalResult[]> =>
   (
-    await executeEvalPpl(ppl, index, (missing, source) =>
-      buildEvalResultsQuery(filters, limit, source, missing)
+    await executeEvalPplFiltered(ppl, index, filters, (missing, source, where) =>
+      buildEvalResultsQuery(filters, limit, source, missing, where)
     )
   )
     .map(recordToEvalResult)
@@ -179,13 +289,18 @@ const valueStats = (missing: ReadonlySet<string>) =>
         EVAL_FIELDS.value
       )}) as vmin, max(${field(EVAL_FIELDS.value)}) as vmax`;
 
-/** Counts and value sums per evaluation, level, source, label, verdict and declared scale. */
+/**
+ * Counts and value sums per evaluation, level, source, label, declared scale and verdict
+ * keys (`executeVerdictAgg` sets the verdict). The verdict filter is applied to the rows
+ * (`keepOutcomes`), not in the query.
+ */
 export const buildSummaryAggQuery = (filters: EvalFilters, ctx: QueryContext = {}): string => {
   const missing = ctx.missing ?? new Set<string>();
-  const groups = SUMMARY_GROUPS.filter(present(missing)).map(field);
+  const { evals, by } = withVerdictKeys(ctx, SUMMARY_GROUPS.filter(present(missing)).map(field));
   return [
     ...baseCommands(filters, ctx),
-    `stats count() as n${valueStats(missing)} by ${[...groups, VERDICT_COLUMN].join(', ')}`,
+    ...evals,
+    `stats count() as n${valueStats(missing)} by ${by.join(', ')}`,
     `head ${AGG_ROWS_LIMIT}`,
   ].join(' | ');
 };
@@ -202,19 +317,20 @@ export const spanUnit = (intervalMs: number): string => {
   return `${Math.max(1, Math.round(intervalMs / size))}${unit}`;
 };
 
-/** Counts and value sums per time bucket, evaluation, verdict and declared scale. */
+/** Counts and value sums per time bucket, evaluation, declared scale and verdict keys. */
 export const buildTrendAggQuery = (
   filters: EvalFilters,
   intervalMs: number,
   ctx: QueryContext = {}
 ): string => {
   const missing = ctx.missing ?? new Set<string>();
-  const groups = TREND_GROUPS.filter(present(missing)).map(field);
+  const { evals, by } = withVerdictKeys(ctx, TREND_GROUPS.filter(present(missing)).map(field));
   return [
     ...baseCommands(filters, ctx),
+    ...evals,
     `stats count() as n${valueStats(missing)} by span(${field(EVAL_FIELDS.time)}, ${spanUnit(
       intervalMs
-    )}) as t, ${[...groups, VERDICT_COLUMN].join(', ')}`,
+    )}) as t, ${by.join(', ')}`,
     `head ${AGG_ROWS_LIMIT}`,
   ].join(' | ');
 };
@@ -463,9 +579,6 @@ export interface ResultsSort {
 }
 export const DEFAULT_RESULTS_SORT: ResultsSort = { field: 'time', direction: 'desc' };
 
-/** Sort key of the Result column: failures, errors, scored, passes; then the value. */
-export const RANK_COLUMN = 'evl_rank';
-
 /**
  * Page sizes of the Results table. They divide 10,000: on OpenSearch 3.9 a PPL page that
  * straddles offset 10,000 (`plugins.query.size_limit`) is cut there; pages on either side of
@@ -473,7 +586,10 @@ export const RANK_COLUMN = 'evl_rank';
  */
 export const RESULTS_PAGE_SIZES = [25, 50, 100];
 
-/** One page of results under the filters, in the given order. */
+/**
+ * One page of results under the filters, in the given order. By Result, the caller pages
+ * each verdict apart (`ctx.verdictWhere` keeps one) and this sorts by value then time.
+ */
 export const buildResultsPageQuery = (
   filters: EvalFilters,
   sort: ResultsSort,
@@ -482,26 +598,12 @@ export const buildResultsPageQuery = (
   ctx: QueryContext = {}
 ): string => {
   const missing = ctx.missing ?? new Set<string>();
-  const byResult = sort.field === 'result';
-  const commands = buildEvalCommands(filters, ctx.index ?? AGENT_EVALS_INDEX_PATTERN, {
-    missing,
-    clauses: ctx.clauses,
-  });
+  const commands = baseCommands(filters, ctx);
   const dir = sort.direction === 'desc' ? '- ' : '';
   const time = field(EVAL_FIELDS.time);
   let sortBy: string;
-  if (byResult) {
-    // The rank is its own case(): naming evl_verdict would inline the verdict once per use.
-    commands.push(
-      `eval ${RANK_COLUMN} = ${verdictCasePpl(ctx.clauses ?? getActiveClauses(), missing, {
-        fail: '0',
-        error: '1',
-        neutral: '2',
-        pass: '3',
-      })}`
-    );
+  if (sort.field === 'result') {
     sortBy = [
-      `${dir}${RANK_COLUMN}`,
       ...(missing.has(EVAL_FIELDS.value) ? [] : [`${dir}${field(EVAL_FIELDS.value)}`]),
       `- ${time}`,
     ].join(', ');
@@ -546,7 +648,15 @@ export interface ResultsPage {
   rows: EvalResult[];
 }
 
-/** One page of the Results table: one query on the index pattern, sorted and paged in PPL. */
+/** Verdicts in the Result column's ascending order. */
+const RESULT_ORDER: EvalOutcome[] = ['fail', 'error', 'neutral', 'pass'];
+
+/**
+ * One page of the Results table, sorted and paged in PPL. Without a verdict filter or
+ * Result sort it is one query. Otherwise the verdict groups are read first: a verdict filter
+ * becomes a `where` on them, and by Result each verdict is a segment of the order (its count
+ * known from the groups), paged on its own.
+ */
 export const fetchResultsPage = async (
   ppl: PPLService,
   index: string,
@@ -556,8 +666,43 @@ export const fetchResultsPage = async (
   pageSize: number
 ): Promise<ResultsPage> => {
   const from = pageIndex * pageSize;
-  const rows = await executeEvalPpl(ppl, index, (missing, source) =>
-    buildResultsPageQuery(filters, sort, from, pageSize, { index: source, missing })
+  const page = (start: number, size: number, where?: string) =>
+    executeEvalPpl(ppl, index, (missing, source) =>
+      buildResultsPageQuery(filters, sort, start, size, {
+        index: source,
+        missing,
+        verdictWhere: where,
+      })
+    );
+  const outcomes = outcomesFilter(filters);
+  if (!outcomes && sort.field !== 'result') {
+    return { rows: (await page(from, pageSize)).map(recordToEvalResult) };
+  }
+  const groups = await fetchVerdictGroups(ppl, index, filters);
+  if (sort.field !== 'result') {
+    const where = whereForOutcomes(groups, outcomes ?? []);
+    if (where === MATCH_NONE) return { rows: [] };
+    return { rows: (await page(from, pageSize, where)).map(recordToEvalResult) };
+  }
+  const counts = new Map<EvalOutcome, number>();
+  groups.rows.forEach((r) => {
+    const o = r[VERDICT_COLUMN] as EvalOutcome;
+    counts.set(o, (counts.get(o) ?? 0) + (numOf(r.n) ?? 0));
+  });
+  const order = (sort.direction === 'desc' ? [...RESULT_ORDER].reverse() : RESULT_ORDER).filter(
+    (o) => !outcomes || outcomes.includes(o)
   );
+  const rows: PplRecord[] = [];
+  let offset = 0;
+  for (const outcome of order) {
+    const count = counts.get(outcome) ?? 0;
+    const start = Math.max(0, from - offset);
+    const end = Math.min(count, from + pageSize - offset);
+    offset += count;
+    if (end <= start) continue;
+    const where = whereForOutcomes(groups, [outcome]);
+    if (where !== MATCH_NONE) rows.push(...(await page(start, end - start, where)));
+    if (offset >= from + pageSize) break;
+  }
   return { rows: rows.map(recordToEvalResult) };
 };

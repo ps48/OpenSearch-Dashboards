@@ -15,7 +15,7 @@ import { i18n } from '@osd/i18n';
 import { DataPublicPluginStart } from '../../../../data/public';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { EvalFilters, EvalOutcome, createEvalsPplService } from './eval_data';
-import { buildMatchingTraceIdsQuery, executeEvalPpl } from './eval_ppl';
+import { buildMatchingTraceIdsQuery, executeEvalPplFiltered } from './eval_ppl';
 import { OUTCOME_TEXT, formatEvalTime, formatValue, shortId } from './eval_components';
 import { EvalTraceFilter, setEvalTraceFilter, useEvalTraceFilter } from './eval_trace_filter_store';
 
@@ -103,10 +103,12 @@ export const fetchConditionTraces = async (
       }
     : timeRange;
   const ppl = createEvalsPplService(data, range, signal);
-  const rows = await executeEvalPpl(ppl, index, (missing, source) =>
-    buildMatchingTraceIdsQuery(conditionFilters(condition), MAX_FILTER_TRACES, {
+  const filters = conditionFilters(condition);
+  const rows = await executeEvalPplFiltered(ppl, index, filters, (missing, source, verdictWhere) =>
+    buildMatchingTraceIdsQuery(filters, MAX_FILTER_TRACES, {
       index: source,
       missing,
+      verdictWhere,
     })
   );
   const latest = new Map<string, string>();

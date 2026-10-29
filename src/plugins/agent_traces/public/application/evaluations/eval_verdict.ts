@@ -16,9 +16,9 @@
  *    evaluators that answer Pass or Fail);
  * 6. otherwise neutral: the result is a score without a pass rule, left out of pass rates.
  *
- * The rules are one ordered list of clauses. The browser evaluates them on fetched results
- * and the same list compiles to a PPL `case(...)`, so server-side aggregations count exactly
- * what the badges show.
+ * The rules are one ordered list of clauses, evaluated in the browser: on fetched results,
+ * and on aggregated rows grouped by what the verdict reads (`eval_verdict_keys.ts`), so
+ * server-side aggregations count exactly what the badges show.
  */
 
 import { EVALS_RULES_SETTING } from '../../../common';
@@ -56,9 +56,14 @@ export interface VerdictInput {
   threshold?: number;
   direction?: string;
   source?: string;
+  /**
+   * Sign of `value - threshold` when only that is known (aggregated rows): comparisons with
+   * the producer threshold read it instead of `value` and `threshold`.
+   */
+  thresholdSign?: number;
 }
 
-export type VerdictField = keyof VerdictInput;
+export type VerdictField = Exclude<keyof VerdictInput, 'thresholdSign'>;
 
 /** PPL names of the fields the verdict reads. */
 export const VERDICT_PPL_FIELDS: Record<VerdictField, string> = {
@@ -334,6 +339,9 @@ const test = (cond: Cond, input: VerdictInput): boolean => {
     case 'prefix':
       return input.name.startsWith(cond.v);
     case 'cmp': {
+      if (cond.v === 'threshold' && input.thresholdSign !== undefined) {
+        return cond.op === '>=' ? input.thresholdSign >= 0 : input.thresholdSign <= 0;
+      }
       const bound = cond.v === 'threshold' ? input.threshold : cond.v;
       if (input.value === undefined || bound === undefined) return false;
       return cond.op === '>=' ? input.value >= bound : input.value <= bound;
@@ -350,89 +358,8 @@ const test = (cond: Cond, input: VerdictInput): boolean => {
 export const verdictOf = (input: VerdictInput, clauses: Clause[]): EvalOutcome =>
   clauses.find((c) => test(c.when, input))?.outcome ?? 'neutral';
 
-// ---------------------------------------------------------------------------------------
-// Compilation to PPL
-// ---------------------------------------------------------------------------------------
-
-const quote = (v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-const field = (f: VerdictField) => `\`${VERDICT_PPL_FIELDS[f]}\``;
-
-/**
- * A PPL boolean expression for the condition. Conditions on fields the index does not map
- * (`missing`, PPL rejects unknown fields) are false, as they are for a result without them.
- */
-export const condToPpl = (cond: Cond, missing: ReadonlySet<string> = new Set()): string => {
-  const absent = (f: VerdictField) => missing.has(VERDICT_PPL_FIELDS[f]);
-  switch (cond.k) {
-    case 'notnull':
-      return absent(cond.f) ? 'false' : `isnotnull(${field(cond.f)})`;
-    case 'in':
-      if (absent(cond.f)) return 'false';
-      return `lower(${field(cond.f)}) in (${cond.v.map((v) => quote(v.toLowerCase())).join(', ')})`;
-    case 'name':
-      return `${field('name')} = ${quote(cond.v)}`;
-    case 'names':
-      return `${field('name')} in (${cond.v.map(quote).join(', ')})`;
-    case 'prefix':
-      return `substring(${field('name')}, 1, ${cond.v.length}) = ${quote(cond.v)}`;
-    case 'cmp': {
-      if (absent('value') || (cond.v === 'threshold' && absent('threshold'))) return 'false';
-      const bound = cond.v === 'threshold' ? field('threshold') : String(cond.v);
-      return `${field('value')} ${cond.op} ${bound}`;
-    }
-    case 'and': {
-      const parts = cond.c.map((c) => condToPpl(c, missing)).filter((p) => p !== 'true');
-      if (parts.includes('false')) return 'false';
-      return parts.length === 0
-        ? 'true'
-        : parts.length === 1
-          ? parts[0]
-          : `(${parts.join(' and ')})`;
-    }
-    case 'or': {
-      const parts = cond.c.map((c) => condToPpl(c, missing)).filter((p) => p !== 'false');
-      if (parts.includes('true')) return 'true';
-      return parts.length === 0
-        ? 'false'
-        : parts.length === 1
-          ? parts[0]
-          : `(${parts.join(' or ')})`;
-    }
-    case 'not': {
-      const inner = condToPpl(cond.c, missing);
-      return inner === 'false' ? 'true' : inner === 'true' ? 'false' : `not ${inner}`;
-    }
-  }
-};
-
-/** Name of the verdict column the PPL `eval` adds. */
+/** Name of the verdict column aggregated rows carry once their verdict is applied. */
 export const VERDICT_COLUMN = 'evl_verdict';
-
-/**
- * The verdict as one PPL `case(...)` expression, each verdict written as `values[verdict]`
- * (a quoted word by default, a number for sort ranks).
- */
-export const verdictCasePpl = (
-  clauses: Clause[],
-  missing: ReadonlySet<string> = new Set(),
-  values: Record<EvalOutcome, string> = {
-    pass: "'pass'",
-    fail: "'fail'",
-    error: "'error'",
-    neutral: "'neutral'",
-  }
-): string => {
-  const branches = clauses
-    .map((c) => ({ cond: condToPpl(c.when, missing), outcome: c.outcome }))
-    // Branches that can never match only lengthen the query.
-    .filter((b) => b.cond !== 'false')
-    .map((b) => `${b.cond}, ${values[b.outcome]}`);
-  return branches.length ? `case(${branches.join(', ')} else ${values.neutral})` : values.neutral;
-};
-
-/** `eval evl_verdict = case(...)`: the verdict of each result, computed by the engine. */
-export const verdictEvalPpl = (clauses: Clause[], missing: ReadonlySet<string> = new Set()) =>
-  `eval ${VERDICT_COLUMN} = ${verdictCasePpl(clauses, missing)}`;
 
 // ---------------------------------------------------------------------------------------
 // Active rules: read from uiSettings once the plugin starts

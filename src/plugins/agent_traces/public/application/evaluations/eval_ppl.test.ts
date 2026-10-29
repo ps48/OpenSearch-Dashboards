@@ -40,12 +40,15 @@ const row = (r: Record<string, unknown>) => ({
 });
 
 describe('aggregation queries', () => {
-  it('computes the verdict in the query and groups by it', () => {
+  it('groups by what the verdict reads, not by a verdict computed in the query', () => {
     const q = buildSummaryAggQuery({ names: ['a'] }, { index: 'evals-*' });
     expect(q).toMatch(/^source = evals-\* \| where `eventName` = 'gen_ai.evaluation.result'/);
-    expect(q).toContain('| eval evl_verdict = case(');
+    expect(q).not.toContain('evl_verdict');
+    expect(q).toContain('| eval evl_vb0 = case(');
     expect(q).toContain('count(`attributes.gen_ai.evaluation.score.value`) as nv');
-    expect(q).toMatch(/by `attributes\.gen_ai\.evaluation\.name`, .*evl_verdict \| head 10000$/);
+    expect(q).toMatch(
+      /by `attributes\.gen_ai\.evaluation\.name`, .*`attributes\.error\.type`, .*evl_vb0, evl_tc \| head 10000$/
+    );
   });
 
   it('buckets time with span() and leaves out fields the index lacks', () => {
@@ -53,15 +56,15 @@ describe('aggregation queries', () => {
       missing: new Set([F.scoreMin, F.scoreMax, F.direction]),
     });
     expect(q).toContain(
-      'by span(`@timestamp`, 5m) as t, `attributes.gen_ai.evaluation.name`, evl_verdict'
+      'by span(`@timestamp`, 5m) as t, `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.evaluation.score.label`'
     );
     expect(q).not.toContain(F.scoreMin);
   });
 
-  it('filters verdicts after computing them', () => {
-    const q = buildDistinctAggQuery({ failingOnly: true });
-    expect(q).toContain("| where evl_verdict = 'fail' | stats count() as n, distinct_count(");
-    expect(buildDistinctAggQuery({}, { withoutVerdict: true })).not.toContain('evl_verdict');
+  it('filters verdicts with the where it is given', () => {
+    const q = buildDistinctAggQuery({ failingOnly: true }, { verdictWhere: '`x` = 1' });
+    expect(q).toContain('| where `x` = 1 | stats count() as n, distinct_count(');
+    expect(buildDistinctAggQuery({ failingOnly: true })).not.toContain('evl_');
   });
 
   it('lists distinct traces of matching results, one more than the cap', () => {
@@ -266,34 +269,92 @@ describe('Results paging', () => {
     expect(buildResultsPageQuery({}, { field: 'name', direction: 'asc' }, 0, 25)).toMatch(
       /\| sort `attributes\.gen_ai\.evaluation\.name`, - `@timestamp` \| head 25$/
     );
-    const byResult = buildResultsPageQuery({}, { field: 'result', direction: 'asc' }, 0, 25);
-    expect(byResult).toContain('| eval evl_rank = case(isnotnull(`attributes.error.type`), 1,');
-    expect(byResult).not.toContain('evl_verdict');
+    const byResult = buildResultsPageQuery({}, { field: 'result', direction: 'asc' }, 0, 25, {
+      verdictWhere: '`x` = 1',
+    });
+    expect(byResult).not.toContain('case(');
     expect(byResult).toMatch(
-      /sort evl_rank, `attributes\.gen_ai\.evaluation\.score\.value`, - `@timestamp`/
+      /where `x` = 1 \| sort `attributes\.gen_ai\.evaluation\.score\.value`, - `@timestamp` \| head 25$/
     );
     expect(RESULTS_PAGE_SIZES.every((size) => 10000 % size === 0)).toBe(true);
   });
 
-  it('reads any page in one query, verdict filter included', async () => {
-    clearMissingFieldsCache();
-    const executeQuery = jest.fn().mockResolvedValue({
-      schema: [{ name: '@timestamp' }, { name: 'eventName' }],
-      datarows: [['2026-10-28 10:00:00', 'gen_ai.evaluation.result']],
+  /** A PPL service answering verdict group queries with `groups`, other queries with one row. */
+  const pplWithGroups = (groups: Array<Record<string, unknown>>) => {
+    const executeQuery = jest.fn().mockImplementation((_d: unknown, query: string) => {
+      if (query.includes('stats count() as n by')) {
+        const cols = Object.keys(groups[0] ?? { n: 0 });
+        return Promise.resolve({
+          schema: cols.map((name) => ({ name })),
+          datarows: groups.map((g) => cols.map((c) => g[c])),
+        });
+      }
+      return Promise.resolve({
+        schema: [{ name: '@timestamp' }, { name: F.name }],
+        datarows: [['2026-10-28 10:00:00', 'answer_quality']],
+      });
     });
-    const ppl = { executeQuery } as unknown as PPLService;
-    const page = await fetchResultsPage(
-      ppl,
-      'evals-*',
-      { failingOnly: true },
-      { field: 'time', direction: 'desc' },
-      400,
-      25
-    );
+    return { executeQuery, ppl: { executeQuery } as unknown as PPLService };
+  };
+  const group = (r: Record<string, unknown>) => ({
+    n: 1,
+    [F.name]: 'answer_quality',
+    [F.label]: null,
+    [F.errorType]: null,
+    [F.assessment]: null,
+    [F.direction]: null,
+    [F.source]: 'opensearch-sdk',
+    evl_vb0: -1,
+    evl_tc: -2,
+    ...r,
+  });
+
+  it('reads a page of one query without a verdict filter', async () => {
+    clearMissingFieldsCache();
+    const { executeQuery, ppl } = pplWithGroups([]);
+    const page = await fetchResultsPage(ppl, 'evals-*', {}, DEFAULT_SORT, 400, 25);
     expect(executeQuery).toHaveBeenCalledTimes(1);
-    expect(executeQuery.mock.calls[0][1]).toMatch(
-      /evl_verdict = 'fail' \| sort - `@timestamp` \| head 25 from 10000$/
+    expect(executeQuery.mock.calls[0][1]).toMatch(/sort - `@timestamp` \| head 25 from 10000$/);
+    expect(page.rows).toHaveLength(1);
+  });
+
+  it('turns a verdict filter into a where on the verdict groups', async () => {
+    clearMissingFieldsCache();
+    const { executeQuery, ppl } = pplWithGroups([
+      group({ n: 3, [F.assessment]: 'fail' }),
+      group({ n: 5, [F.assessment]: 'pass' }),
+    ]);
+    const page = await fetchResultsPage(ppl, 'evals-*', { failingOnly: true }, DEFAULT_SORT, 0, 25);
+    expect(executeQuery).toHaveBeenCalledTimes(2);
+    expect(executeQuery.mock.calls[1][1]).toContain(
+      "where (`attributes.gen_ai.evaluation.name` = 'answer_quality' and `attributes.opensearch.evaluation.assessment` = 'fail') | sort - `@timestamp` | head 25"
     );
     expect(page.rows).toHaveLength(1);
   });
+
+  it('reads nothing when no group has the verdict', async () => {
+    clearMissingFieldsCache();
+    const { executeQuery, ppl } = pplWithGroups([group({ [F.assessment]: 'pass' })]);
+    const page = await fetchResultsPage(ppl, 'evals-*', { failingOnly: true }, DEFAULT_SORT, 0, 25);
+    expect(executeQuery).toHaveBeenCalledTimes(1);
+    expect(page.rows).toHaveLength(0);
+  });
+
+  it('by Result, pages each verdict apart: failures first, then the next verdict', async () => {
+    clearMissingFieldsCache();
+    const { executeQuery, ppl } = pplWithGroups([
+      group({ n: 30, [F.assessment]: 'fail' }),
+      group({ n: 4, [F.errorType]: 'Timeout' }),
+      group({ n: 50, [F.assessment]: 'pass' }),
+    ]);
+    await fetchResultsPage(ppl, 'evals-*', {}, { field: 'result', direction: 'asc' }, 1, 25);
+    const queries = executeQuery.mock.calls.map((c) => c[1] as string).slice(1);
+    // Rows 25..49: failures 25..29, errors 0..3, passes 0..15.
+    expect(queries).toHaveLength(3);
+    expect(queries[0]).toMatch(/assessment` = 'fail'.*head 5 from 25$/);
+    expect(queries[1]).toMatch(/error\.type` = 'Timeout'.*head 4$/);
+    expect(queries[2]).toMatch(/assessment` = 'pass'.*head 16$/);
+  });
 });
+
+const DEFAULT_SORT = { field: 'time', direction: 'desc' } as const;

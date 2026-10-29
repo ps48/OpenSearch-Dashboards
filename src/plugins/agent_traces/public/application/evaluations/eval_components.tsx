@@ -11,6 +11,7 @@ import {
   EuiCode,
   EuiEmptyPrompt,
   EuiLink,
+  EuiSpacer,
   EuiText,
   EuiTitle,
   EuiToolTip,
@@ -321,6 +322,34 @@ export const TruncationNotice: React.FC<{ shown: number; total?: number }> = ({ 
     })}
   />
 );
+
+/**
+ * Some parts of the page could not be loaded: says which and why, and the rest shows.
+ * Not a page failure.
+ */
+export const PartialLoadNotice: React.FC<{ warnings?: string[] }> = ({ warnings }) =>
+  warnings && warnings.length > 0 ? (
+    <>
+      <EuiCallOut
+        size="s"
+        color="warning"
+        iconType="alert"
+        data-test-subj="agtEvlPartialLoad"
+        title={i18n.translate('agentTraces.evalsPage.partialLoad', {
+          defaultMessage: 'Some of this page could not be loaded',
+        })}
+      >
+        <ul>
+          {warnings.map((w) => (
+            <li key={w} className="agtEvlMono">
+              {w}
+            </li>
+          ))}
+        </ul>
+      </EuiCallOut>
+      <EuiSpacer size="s" />
+    </>
+  ) : null;
 
 /** An aggregation hit the engine's row limit: some groups may be missing. */
 export const AggregateLimitNotice: React.FC = () => (

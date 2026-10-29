@@ -70,6 +70,7 @@ import {
   NoEvalIndexPrompt,
   QueryErrorCallout,
   AggregateLimitNotice,
+  PartialLoadNotice,
   formatEvalTime,
   shortId,
 } from './eval_components';
@@ -498,6 +499,7 @@ const EvaluationsBody: React.FC<{
       if (runs.loading && runs.runs.length === 0) return <EuiLoadingContent lines={6} />;
       return (
         <>
+          <PartialLoadNotice warnings={runs.warnings} />
           {runs.truncated && (
             <>
               <AggregateLimitNotice />
@@ -545,12 +547,17 @@ const EvaluationsBody: React.FC<{
         <EuiSpacer size="s" />
       </>
     ) : null;
-    const partial = data.current?.truncated ? (
+    const partial = (
       <>
-        <AggregateLimitNotice />
-        <EuiSpacer size="s" />
+        <PartialLoadNotice warnings={data.warnings} />
+        {data.current?.truncated ? (
+          <>
+            <AggregateLimitNotice />
+            <EuiSpacer size="s" />
+          </>
+        ) : null}
       </>
-    ) : null;
+    );
     if (state.tab === 'results') {
       if (data.total === 0 && !data.loading) {
         return (
@@ -567,6 +574,7 @@ const EvaluationsBody: React.FC<{
       return (
         <>
           {lagNote}
+          <PartialLoadNotice warnings={data.warnings} />
           <ResultsTab
             results={resultsPage.rows}
             total={data.total}

@@ -13,7 +13,8 @@ import {
   TEST_SUITE_RUN_EVENT,
   recordToSuiteRunEvent,
 } from './eval_data';
-import { RuleEntry, VERDICT_COLUMN, getActiveRuleEntries } from './eval_verdict';
+import { RuleEntry, getActiveClauses, getActiveRuleEntries } from './eval_verdict';
+import { verdictKeyEval, verdictKeyGroups, verdictKeyPlan } from './eval_verdict_keys';
 import {
   EvaluatorAggregate,
   RunSummary,
@@ -30,8 +31,8 @@ import {
 
 /**
  * The Evaluation runs list from PPL aggregations, so it holds at any volume (not the first
- * 10,000 results): grades `stats ... by test.suite.run.id, evaluation name, ...` with the
- * verdict computed in the query, case counts by run, case events counted by run and status,
+ * 10,000 results): grades `stats ... by test.suite.run.id, evaluation name, ...` and the
+ * verdict keys (the verdict applied in the browser, `executeVerdictAgg`), case counts by run, case events counted by run and status,
  * and the run events themselves (one small event per run). The run page and Compare still
  * read their runs' events one run at a time.
  */
@@ -54,7 +55,7 @@ const runGradeFilters = (filters: EvalFilters): EvalFilters => ({
 
 const present = (missing: ReadonlySet<string>) => (f: string) => !missing.has(f);
 
-/** Per run, evaluation, label, declared scale and verdict: counts, value sums and times. */
+/** Per run, evaluation, label, declared scale and verdict keys: counts, value sums and times. */
 export const buildRunGradesAggQuery = (filters: EvalFilters, ctx: QueryContext = {}): string => {
   const missing = ctx.missing ?? new Set<string>();
   const groups = [
@@ -68,39 +69,33 @@ export const buildRunGradesAggQuery = (filters: EvalFilters, ctx: QueryContext =
       EVAL_FIELDS.scoreMax,
     ].filter(present(missing)),
   ].map(field);
+  const plan = verdictKeyPlan(ctx.clauses ?? getActiveClauses(), missing);
+  const keyEval = verdictKeyEval(plan);
+  const by = Array.from(new Set([...groups, ...verdictKeyGroups(plan)]));
   const values = missing.has(EVAL_FIELDS.value)
     ? ''
     : `, count(${field(EVAL_FIELDS.value)}) as nv, sum(${field(
         EVAL_FIELDS.value
       )}) as sv, min(${field(EVAL_FIELDS.value)}) as vmin, max(${field(EVAL_FIELDS.value)}) as vmax`;
   return [
-    ...baseCommands(runGradeFilters(filters), ctx),
-    `stats count() as n${values}, min(${TIME}) as t0, max(${TIME}) as t1 by ${[
-      ...groups,
-      VERDICT_COLUMN,
-    ].join(', ')}`,
+    ...baseCommands(runGradeFilters(filters), { ...ctx, verdictWhere: undefined }),
+    ...(keyEval ? [keyEval] : []),
+    `stats count() as n${values}, min(${TIME}) as t0, max(${TIME}) as t1 by ${by.join(', ')}`,
     `head ${AGG_ROWS_LIMIT}`,
   ].join(' | ');
 };
 
 /**
- * Test cases per run and verdict, counted from grades (`test.case.id`), for runs without
- * test case events. `scope`: all cases, those with a failing grade, or those with a passing
- * or failing grade.
+ * Test cases per run counted from grades (`test.case.id`), for runs without test case
+ * events: all cases, or with `ctx.verdictWhere` those with a grade of the wanted verdicts
+ * (failing; passing or failing), the `where` built from the grades' verdict groups.
  */
-export const buildRunCasesAggQuery = (
-  filters: EvalFilters,
-  scope: 'all' | 'fail' | 'decided',
-  ctx: QueryContext = {}
-): string => {
-  const commands = baseCommands(runGradeFilters(filters), ctx);
-  if (scope === 'fail') commands.push(`where ${VERDICT_COLUMN} = 'fail'`);
-  if (scope === 'decided') {
-    commands.push(`where ${VERDICT_COLUMN} = 'pass' or ${VERDICT_COLUMN} = 'fail'`);
-  }
-  commands.push(`stats distinct_count(${CASE}) as nc by ${RUN}`, `head ${AGG_ROWS_LIMIT}`);
-  return commands.join(' | ');
-};
+export const buildRunCasesAggQuery = (filters: EvalFilters, ctx: QueryContext = {}): string =>
+  [
+    ...baseCommands(runGradeFilters(filters), ctx),
+    `stats distinct_count(${CASE}) as nc by ${RUN}`,
+    `head ${AGG_ROWS_LIMIT}`,
+  ].join(' | ');
 
 /** Test case events per run and status: counts, times and the agent. */
 export const buildRunCaseEventsAggQuery = (index: string = AGENT_EVALS_INDEX_PATTERN): string =>

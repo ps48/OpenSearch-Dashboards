@@ -24,7 +24,9 @@ import {
   runsTimeOf,
 } from './eval_url_state';
 import { sessionLink, sessionToOpen, traceDeepLinkPath, traceToOpen } from './eval_links';
-import { errorMessage, isIndexMissing } from './use_eval_data';
+import { errorMessage, fetchAggregates, isIndexMissing, queryProblem } from './use_eval_data';
+import { clearMissingFieldsCache } from './eval_ppl';
+import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import { buildSameTargetQuery, sameTarget } from './result_flyout';
 import { makeResult } from './eval_test_fixtures';
 
@@ -280,6 +282,58 @@ describe('errors', () => {
       isIndexMissing({ body: { message: 'no such index [otel-v1-genai-evaluation-*]' } })
     ).toBe(true);
     expect(isIndexMissing(new Error('timeout'))).toBe(false);
+  });
+
+  it('names a script size limit in a few words', () => {
+    const error = {
+      body: {
+        message: JSON.stringify({
+          error: {
+            reason: 'Error',
+            details:
+              'IllegalArgumentException[exceeded max allowed inline script size in bytes [65535] with size [71894]]',
+          },
+        }),
+      },
+    };
+    expect(queryProblem(error)).toMatch(/^Pass rules too large for one query \(/);
+    expect(queryProblem(new Error('boom'))).toBe('boom');
+  });
+
+  it('keeps the other aggregations when one fails, and says which and why', async () => {
+    clearMissingFieldsCache();
+    const executeQuery = jest.fn().mockImplementation((_d: unknown, query: string) =>
+      query.includes('span(')
+        ? Promise.reject(new Error('exceeded max allowed inline script size in bytes [65535]'))
+        : Promise.resolve({
+            schema: [{ name: 'n' }, { name: 'attributes.gen_ai.evaluation.name' }],
+            datarows: [[3, 'answer_quality']],
+          })
+    );
+    const agg = await fetchAggregates(
+      { executeQuery } as unknown as PPLService,
+      'evals-*',
+      {},
+      3600 * 1000
+    );
+    expect(agg.summaries.map((s) => [s.name, s.count])).toEqual([['answer_quality', 3]]);
+    expect(agg.failed).toBe(false);
+    expect(agg.buckets).toEqual([]);
+    expect(agg.warnings).toHaveLength(1);
+    expect(agg.warnings[0]).toMatch(/^Score trend and results over time: Pass rules too large/);
+  });
+
+  it('marks the counts unknown, not zero, when the summary fails', async () => {
+    clearMissingFieldsCache();
+    const executeQuery = jest.fn().mockRejectedValue(new Error('boom'));
+    const agg = await fetchAggregates(
+      { executeQuery } as unknown as PPLService,
+      'evals-*',
+      {},
+      undefined
+    );
+    expect(agg.failed).toBe(true);
+    expect(agg.warnings.length).toBeGreaterThan(0);
   });
 });
 

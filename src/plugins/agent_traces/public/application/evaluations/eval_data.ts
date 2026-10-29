@@ -12,12 +12,10 @@ import {
   Clause,
   EvalOutcome,
   RuleEntry,
-  VERDICT_COLUMN,
   builtinRange,
   getActiveClauses,
   getActiveRuleEntries,
   ruleFor,
-  verdictEvalPpl,
   verdictOf,
 } from './eval_verdict';
 
@@ -358,27 +356,23 @@ export const outcomesFilter = (filters: EvalFilters): EvalOutcome[] | undefined 
 };
 
 /**
- * `source`, the filters as `where` clauses, and the verdict: an `eval` adding the
- * `evl_verdict` column (always with `withVerdict`, else when the filters narrow verdicts)
- * and a `where` on it. `missing`: fields the index does not map (see `executeEvalPpl`).
+ * `source`, the filters as `where` clauses, and the verdict filter. The verdict filter
+ * (`filters.outcomes`, `failingOnly`) is not compiled from the rules here: callers pass
+ * `verdictWhere`, built from an aggregation of the groups the verdict reads
+ * (`eval_verdict_keys.ts`), or apply it to aggregated rows themselves. `missing`: fields the
+ * index does not map (see `executeEvalPpl`).
  */
 export const buildEvalCommands = (
   filters: EvalFilters = {},
   index: string = AGENT_EVALS_INDEX_PATTERN,
-  options: { missing?: ReadonlySet<string>; clauses?: Clause[]; withVerdict?: boolean } = {}
+  options: { missing?: ReadonlySet<string>; verdictWhere?: string } = {}
 ): string[] => {
   const missing = options.missing ?? new Set<string>();
-  const outcomes = outcomesFilter(filters);
   const commands = [
     `source = ${index}`,
     ...buildEvalWhere(filters, missing).map((c) => `where ${c}`),
   ];
-  if (options.withVerdict || outcomes) {
-    commands.push(verdictEvalPpl(options.clauses ?? getActiveClauses(), missing));
-  }
-  if (outcomes) {
-    commands.push(`where ${outcomes.map((o) => `${VERDICT_COLUMN} = '${o}'`).join(' or ')}`);
-  }
+  if (options.verdictWhere) commands.push(`where ${options.verdictWhere}`);
   return commands;
 };
 
@@ -386,10 +380,11 @@ export const buildEvalResultsQuery = (
   filters: EvalFilters = {},
   limit = 500,
   index: string = AGENT_EVALS_INDEX_PATTERN,
-  missing: ReadonlySet<string> = new Set()
+  missing: ReadonlySet<string> = new Set(),
+  verdictWhere?: string
 ): string =>
   [
-    ...buildEvalCommands(filters, index, { missing }),
+    ...buildEvalCommands(filters, index, { missing, verdictWhere }),
     `sort - ${field(EVAL_FIELDS.time)}`,
     `head ${limit}`,
   ].join(' | ');

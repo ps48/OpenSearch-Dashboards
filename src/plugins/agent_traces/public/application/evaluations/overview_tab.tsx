@@ -858,7 +858,8 @@ export const OverviewTab: React.FC<{
     [previous]
   );
 
-  if (current.kpis.results === 0) {
+  // When the counts could not be read, they are unknown: the rest still shows.
+  if (current.kpis.results === 0 && !current.failed) {
     return (
       <NoResultsInRange
         data-test-subj="agtEvlOverviewEmpty"

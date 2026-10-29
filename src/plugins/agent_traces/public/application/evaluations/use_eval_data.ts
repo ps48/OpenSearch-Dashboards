@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { i18n } from '@osd/i18n';
 import { DataPublicPluginStart } from '../../../../data/public';
 import { PplRecord, pplResponseToRecords, withoutTimeRange } from '../pages/sessions/session_utils';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
@@ -11,6 +12,7 @@ import {
   EMPTY_RUN_EVENTS,
   EVAL_FIELDS,
   EvalFilters,
+  EvalOutcome,
   EvalResult,
   EvaluatorSummary,
   RunDetailData,
@@ -34,19 +36,24 @@ import {
 } from './eval_aggregations';
 import {
   AGG_ROWS_LIMIT,
+  VerdictAgg,
   buildDistinctAggQuery,
   buildSummaryAggQuery,
   buildTrendAggQuery,
   bucketsFromAgg,
   ResultsSort,
   executeEvalPpl,
+  executeVerdictAgg,
   fetchEvalResultsWith,
   fetchResultsPage,
+  keepOutcomes,
   kpisFromAgg,
   summariesFromAgg,
   toAggRows,
   trendFromAgg,
+  whereForOutcomes,
 } from './eval_ppl';
+import { MATCH_NONE, verdictKeyPlan } from './eval_verdict_keys';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import type { RunSummary } from './eval_aggregations';
 import {
@@ -79,6 +86,33 @@ export const errorMessage = (error: unknown): string => {
     }
   }
   return raw;
+};
+
+/**
+ * What went wrong with a query, in a few words when the engine's reason is a known limit
+ * (the full reason follows).
+ */
+export const queryProblem = (error: unknown): string => {
+  const message = errorMessage(error);
+  let text = `${message} ${String((error as { message?: unknown })?.message ?? '')}`;
+  try {
+    text += ` ${JSON.stringify((error as { body?: unknown })?.body ?? '')}`;
+  } catch {
+    // circular body: the message is enough
+  }
+  if (/max allowed inline script size/i.test(text)) {
+    return i18n.translate('agentTraces.evalsPage.problem.scriptSize', {
+      defaultMessage: 'Pass rules too large for one query ({message})',
+      values: { message },
+    });
+  }
+  if (/too_many_clauses|maxClauseCount|too many clauses/i.test(text)) {
+    return i18n.translate('agentTraces.evalsPage.problem.clauses', {
+      defaultMessage: 'Verdict filter too large for one query ({message})',
+      values: { message },
+    });
+  }
+  return message;
 };
 
 /** Whether the error says the evaluation index does not exist yet. */
@@ -118,6 +152,10 @@ export interface EvalAggregates {
   trend: TrendPoint[];
   /** An aggregation returned as many rows as allowed: some rows may be left out. */
   truncated: boolean;
+  /** Parts that could not be loaded, each with its reason (the others still show). */
+  warnings: string[];
+  /** The per-evaluation aggregation failed: counts are unknown, not zero. */
+  failed?: boolean;
 }
 
 export interface EvalData {
@@ -136,6 +174,8 @@ export interface EvalData {
   interval: number;
   /** More results matched than rows were read (Results tab). */
   truncated: boolean;
+  /** Parts that could not be loaded, each with its reason (the others still show). */
+  warnings: string[];
 }
 
 const EMPTY: EvalData = {
@@ -145,38 +185,110 @@ const EMPTY: EvalData = {
   facets: [],
   interval: 60 * 60 * 1000,
   truncated: false,
+  warnings: [],
 };
 
 /** Failures listed on the Overview. */
 export const RECENT_FAILURES = 10;
 
-const fetchAggregates = async (
+/** Names of the parts of the page, for the "could not load" notice. */
+const PART = {
+  summary: i18n.translate('agentTraces.evalsPage.part.summary', {
+    defaultMessage: 'Evaluation counts and pass rates',
+  }),
+  trend: i18n.translate('agentTraces.evalsPage.part.trend', {
+    defaultMessage: 'Score trend and results over time',
+  }),
+  distinct: i18n.translate('agentTraces.evalsPage.part.distinct', {
+    defaultMessage: 'Evaluated traces and sessions',
+  }),
+  previous: i18n.translate('agentTraces.evalsPage.part.previous', {
+    defaultMessage: 'Previous period',
+  }),
+  failures: i18n.translate('agentTraces.evalsPage.part.failures', {
+    defaultMessage: 'Recent failures',
+  }),
+  facets: i18n.translate('agentTraces.evalsPage.part.facets', {
+    defaultMessage: 'Filter options',
+  }),
+  grades: i18n.translate('agentTraces.evalsPage.part.runGrades', {
+    defaultMessage: 'Run evaluation scores',
+  }),
+  cases: i18n.translate('agentTraces.evalsPage.part.runCases', {
+    defaultMessage: 'Run test case counts',
+  }),
+};
+
+/**
+ * `promise`, or `fallback` with the reason added to `warnings`: one failed query leaves
+ * the rest of the page. A missing index still fails (the page says how to create it).
+ */
+const settle = async <T>(
+  part: string,
+  promise: Promise<T>,
+  fallback: T,
+  warnings: string[]
+): Promise<T> => {
+  try {
+    return await promise;
+  } catch (error) {
+    if (isIndexMissing(error)) throw error;
+    warnings.push(`${part}: ${queryProblem(error)}`);
+    return fallback;
+  }
+};
+
+const NO_AGG: VerdictAgg = { rows: [], keys: [], plan: verdictKeyPlan([]), clauses: [] };
+
+export const fetchAggregates = async (
   ppl: PPLService,
   index: string,
   filters: EvalFilters,
   interval: number | undefined
 ): Promise<EvalAggregates> => {
-  const [summaryRows, trendRows, distinct] = await Promise.all([
+  const warnings: string[] = [];
+  const outcomes = outcomesFilter(filters);
+  const distinctQuery = (verdictWhere?: string) =>
     executeEvalPpl(ppl, index, (missing, source) =>
-      buildSummaryAggQuery(filters, { index: source, missing })
-    ),
+      buildDistinctAggQuery(filters, { index: source, missing, verdictWhere })
+    );
+  let summaryFailed = false;
+  const summaryPromise = executeVerdictAgg(ppl, index, (missing, source, clauses) =>
+    buildSummaryAggQuery(filters, { index: source, missing, clauses })
+  ).catch((error) => {
+    summaryFailed = true;
+    throw error;
+  });
+  const [summaryAgg, trendAgg, distinct] = await Promise.all([
+    settle(PART.summary, summaryPromise, NO_AGG, warnings),
     interval
-      ? executeEvalPpl(ppl, index, (missing, source) =>
-          buildTrendAggQuery(filters, interval, { index: source, missing })
+      ? settle(
+          PART.trend,
+          executeVerdictAgg(ppl, index, (missing, source, clauses) =>
+            buildTrendAggQuery(filters, interval, { index: source, missing, clauses })
+          ),
+          NO_AGG,
+          warnings
         )
-      : Promise.resolve([]),
-    // Without a verdict filter the distinct counts need no script.
-    executeEvalPpl(ppl, index, (missing, source) =>
-      buildDistinctAggQuery(filters, {
-        index: source,
-        missing,
-        withoutVerdict: !outcomesFilter(filters),
-      })
+      : Promise.resolve(NO_AGG),
+    // Without a verdict filter the distinct counts need no verdict groups.
+    settle(
+      PART.distinct,
+      outcomes
+        ? summaryPromise.then((agg) => {
+            const where = whereForOutcomes(agg, outcomes);
+            return where === MATCH_NONE ? [] : distinctQuery(where);
+          })
+        : distinctQuery(),
+      [] as PplRecord[],
+      warnings
     ),
   ]);
+  const summaryRows = keepOutcomes(summaryAgg.rows, filters);
+  const trendRows = keepOutcomes(trendAgg.rows, filters);
   const summaries = summariesFromAgg(toAggRows(summaryRows));
-  const trendAgg = toAggRows(trendRows);
-  const { all, byName } = bucketsFromAgg(trendAgg);
+  const trendAggRows = toAggRows(trendRows);
+  const { all, byName } = bucketsFromAgg(trendAggRows);
   const distinctTotals = distinct.reduce<PplRecord>(
     (acc, row) => ({
       traces: Number(acc.traces ?? 0) + Number(row.traces ?? 0),
@@ -189,8 +301,10 @@ const fetchAggregates = async (
     kpis: kpisFromAgg(summaries, distinctTotals),
     buckets: all,
     bucketsByName: byName,
-    trend: trendFromAgg(trendAgg),
-    truncated: summaryRows.length >= AGG_ROWS_LIMIT || trendRows.length >= AGG_ROWS_LIMIT,
+    trend: trendFromAgg(trendAggRows),
+    truncated: summaryAgg.rows.length >= AGG_ROWS_LIMIT || trendAgg.rows.length >= AGG_ROWS_LIMIT,
+    warnings: Array.from(new Set(warnings)),
+    failed: summaryFailed,
   };
 };
 
@@ -217,36 +331,54 @@ export const useEvalData = (
     const current = createEvalsPplService(data, range, controller.signal);
     const before = createEvalsPplService(data, previousRange, controller.signal);
     const interval = pickInterval(bounds);
-    const run = async () =>
+    const run = async () => {
+      const warnings: string[] = [];
       // The Results table pages its rows itself (useResultsPage).
-      Promise.all([
+      const [agg, previous, results, allFacets] = await Promise.all([
         fetchAggregates(current, index, filters, view === 'overview' ? interval : undefined),
         view === 'overview'
           ? fetchAggregates(before, index, filters, undefined)
           : Promise.resolve(undefined),
         view === 'overview'
-          ? fetchEvalResultsWith(
-              current,
-              index,
-              { ...filters, outcomes: ['fail'] },
-              RECENT_FAILURES
+          ? settle(
+              PART.failures,
+              fetchEvalResultsWith(
+                current,
+                index,
+                { ...filters, outcomes: ['fail'] },
+                RECENT_FAILURES
+              ),
+              [] as EvalResult[],
+              warnings
             )
-          : Promise.resolve([]),
-        current.executeQuery(evalsDataset(index), buildEvalFacetsQuery({}, index)),
+          : Promise.resolve([] as EvalResult[]),
+        settle(
+          PART.facets,
+          current.executeQuery(evalsDataset(index), buildEvalFacetsQuery({}, index)),
+          undefined as unknown,
+          warnings
+        ),
       ]);
+      // The previous period only colors changes: its failures read as one line.
+      if (previous && previous.warnings.length)
+        warnings.push(`${PART.previous}: ${previous.warnings[0]}`);
+      return { agg, previous, results, allFacets, warnings: [...agg.warnings, ...warnings] };
+    };
     run()
-      .then(([agg, previous, results, allFacets]) => {
+      .then(({ agg, previous, results, allFacets, warnings }) => {
         if (controller.signal.aborted) return;
         setState({
           loading: false,
           indexMissing: false,
           results,
-          total: agg.kpis.results,
-          facets: toFacets(allFacets),
+          // Unknown, not zero, when the counts could not be read.
+          total: agg.failed ? undefined : agg.kpis.results,
+          facets: allFacets === undefined ? [] : toFacets(allFacets),
           current: agg,
           previous: previous && { summaries: previous.summaries, kpis: previous.kpis },
           interval,
           truncated: false,
+          warnings,
         });
       })
       .catch((error) => {
@@ -274,6 +406,8 @@ export interface RunData {
   runs: RunSummary[];
   /** An aggregation returned as many rows as allowed: some runs may be missing. */
   truncated: boolean;
+  /** Parts that could not be loaded, each with its reason (the runs still show). */
+  warnings?: string[];
 }
 
 export const EMPTY_RUN_DATA: RunData = {
@@ -290,7 +424,7 @@ export const fetchRunSummaries = async (
   filters: EvalFilters,
   index: string,
   signal?: AbortSignal
-): Promise<{ runs: RunSummary[]; truncated: boolean }> => {
+): Promise<{ runs: RunSummary[]; truncated: boolean; warnings: string[] }> => {
   const ppl = createEvalsPplService(data, isoRange(bounds), signal);
   // No run id field mapped: no runs.
   const viaPattern = (build: (missing: ReadonlySet<string>, source: string) => string) =>
@@ -303,25 +437,48 @@ export const fetchRunSummaries = async (
       .executeQuery(evalsDataset(index), query)
       .then((r) => pplResponseToRecords(r))
       .catch(() => [] as PplRecord[]);
-  const [grades, all, fail, decided, caseEvents, runEvents] = await Promise.all([
-    viaPattern((missing, source) => buildRunGradesAggQuery(filters, { index: source, missing })),
-    viaPattern((missing, source) =>
-      buildRunCasesAggQuery(filters, 'all', { index: source, missing, withoutVerdict: true })
+  const warnings: string[] = [];
+  const gradesPromise = executeVerdictAgg(
+    ppl,
+    index,
+    (missing, source, clauses) =>
+      buildRunGradesAggQuery(filters, { index: source, missing, clauses }),
+    { emptyWithout: [EVAL_FIELDS.runId, EVAL_FIELDS.suiteName, EVAL_FIELDS.caseId] }
+  );
+  // Cases with a grade of these verdicts, the `where` from the grades' verdict groups.
+  const casesWith = (outcomes: EvalOutcome[]) =>
+    gradesPromise.then((agg) => {
+      const where = whereForOutcomes(agg, outcomes);
+      return where === MATCH_NONE
+        ? []
+        : viaPattern((missing, source) =>
+            buildRunCasesAggQuery(filters, { index: source, missing, verdictWhere: where })
+          );
+    });
+  const [gradesAgg, all, fail, decided, caseEvents, runEvents] = await Promise.all([
+    settle(PART.grades, gradesPromise, NO_AGG, warnings),
+    settle(
+      PART.cases,
+      viaPattern((missing, source) => buildRunCasesAggQuery(filters, { index: source, missing })),
+      [] as PplRecord[],
+      warnings
     ),
-    viaPattern((missing, source) =>
-      buildRunCasesAggQuery(filters, 'fail', { index: source, missing })
-    ),
-    viaPattern((missing, source) =>
-      buildRunCasesAggQuery(filters, 'decided', { index: source, missing })
-    ),
+    settle(PART.cases, casesWith(['fail']), [] as PplRecord[], warnings),
+    settle(PART.cases, casesWith(['pass', 'fail']), [] as PplRecord[], warnings),
     optional(buildRunCaseEventsAggQuery(index)),
     optional(buildRunEventsOnlyQuery(undefined, index)),
   ]);
-  const rows = { grades, gradeCases: { all, fail, decided }, caseEvents, runEvents };
+  const rows = {
+    grades: gradesAgg.rows,
+    gradeCases: { all, fail, decided },
+    caseEvents,
+    runEvents,
+  };
   const narrowed = (filters.names?.length ?? 0) > 0 || !!filters.search?.trim();
   return {
     runs: runSummariesFromAgg(rows, { onlyWithGrades: narrowed }),
     truncated: runAggTruncated(rows),
+    warnings: Array.from(new Set(warnings)),
   };
 };
 
@@ -349,9 +506,9 @@ export const useRunResults = (
       index,
       controller.signal
     )
-      .then(({ runs, truncated }) => {
+      .then(({ runs, truncated, warnings }) => {
         if (controller.signal.aborted) return;
-        setState({ loading: false, indexMissing: false, runs, truncated });
+        setState({ loading: false, indexMissing: false, runs, truncated, warnings });
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -596,7 +753,7 @@ export const useResultsPage = (
       .catch(
         (error) =>
           !controller.signal.aborted &&
-          setState({ loading: false, rows: [], error: errorMessage(error) })
+          setState({ loading: false, rows: [], error: queryProblem(error) })
       );
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
