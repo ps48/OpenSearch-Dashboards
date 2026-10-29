@@ -7,16 +7,24 @@ import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import { RunsTab } from './runs_tab';
-import { EMPTY_RUN_EVENTS } from './eval_data';
+import { EMPTY_RUN_EVENTS, EvalResult, RunEvents } from './eval_data';
+import { summarizeRuns } from './eval_aggregations';
 import { makeResult, twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
 
-const renderRuns = (props: Partial<React.ComponentProps<typeof RunsTab>> = {}) => {
+type RenderProps = Partial<React.ComponentProps<typeof RunsTab>> & {
+  results?: EvalResult[];
+  events?: RunEvents;
+};
+
+/** The runs list and the compared runs from the same grades and events. */
+const renderRuns = ({ results = twoRunFixture(), events, ...props }: RenderProps = {}) => {
   const onCompareChange = jest.fn();
   const onOpenTrace = jest.fn();
   render(
     <I18nProvider>
       <RunsTab
-        results={twoRunFixture()}
+        runs={summarizeRuns(results, events)}
+        compareData={{ loading: false, results, events: events ?? EMPTY_RUN_EVENTS, missing: [] }}
         onCompareChange={onCompareChange}
         onOpenTrace={onOpenTrace}
         {...props}
@@ -41,6 +49,29 @@ describe('RunsTab', () => {
     expect(within(rows[0]).getByTestId('agtEvlRegression')).toBeInTheDocument();
     expect(within(rows[0]).getByText('0.57')).toBeInTheDocument();
     expect(within(rows[1]).queryByTestId('agtEvlRegression')).not.toBeInTheDocument();
+    // Against the previous run of the suite: 0.65 to 0.57, worse.
+    const delta = within(rows[0]).getByTestId('agtEvlRunsDelta');
+    expect(delta).toHaveTextContent('↓8 pp');
+    expect(delta).toHaveAttribute('data-change', 'regressed');
+    expect(within(rows[1]).queryByTestId('agtEvlRunsDelta')).not.toBeInTheDocument();
+  });
+
+  it('shows the agent version, model, status and usage from the run metadata', () => {
+    const events = twoRunEventsFixture();
+    events.runs[1].metadata = {
+      'agent.version': 'v2',
+      'agent.model': 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'usage.total_tokens': '12345',
+    };
+    renderRuns({ events });
+    const [latest, first] = within(screen.getByTestId('agtEvlRunsTable'))
+      .getAllByRole('row')
+      .slice(1);
+    expect(within(latest).getByTestId('agtEvlRunAgentVersion')).toHaveTextContent('v2');
+    expect(within(latest).getByTestId('agtEvlRunModel')).toHaveTextContent('claude-haiku-4-5');
+    expect(within(latest).getByTestId('agtEvlRunTokens')).toHaveTextContent('12.3k');
+    expect(within(first).getByTestId('agtEvlRunCompleted')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlRunCost')).not.toBeInTheDocument();
   });
 
   it('compares two selected runs of a suite, oldest as baseline', () => {

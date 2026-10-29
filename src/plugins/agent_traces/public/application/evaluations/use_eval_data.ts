@@ -19,11 +19,9 @@ import {
   buildEvalFacetsQuery,
   buildEvalResultsQuery,
   buildRunDetailQuery,
-  buildRunEventsQuery,
   createEvalsPplService,
   evalsDataset,
   fetchEvalResults,
-  fetchRunEvents,
   recordsToRunDetail,
 } from './eval_data';
 import {
@@ -52,11 +50,18 @@ import {
   trendFromAgg,
 } from './eval_ppl';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
+import type { RunSummary } from './eval_aggregations';
+import {
+  buildRunCaseEventsAggQuery,
+  buildRunCasesAggQuery,
+  buildRunEventsOnlyQuery,
+  buildRunGradesAggQuery,
+  runAggTruncated,
+  runSummariesFromAgg,
+} from './eval_runs_agg';
 
 /** Results read for the Evaluation runs tab. */
 export const RUN_RESULTS_LIMIT = 10000;
-/** Test case and run events read for the Evaluation runs tab. */
-export const RUN_EVENTS_LIMIT = 10000;
 
 /** Readable message of a failed PPL request (the engine's reason when it sent one). */
 export const errorMessage = (error: unknown): string => {
@@ -291,73 +296,87 @@ export interface RunData {
   loading: boolean;
   error?: string;
   indexMissing: boolean;
-  /** Grades of the runs. */
-  results: EvalResult[];
-  /** Test case and run events of the runs (empty for runs from older producers). */
-  events: RunEvents;
+  /** Runs in the time range, newest first, from aggregations (exact at any volume). */
+  runs: RunSummary[];
+  /** An aggregation returned as many rows as allowed: some runs may be missing. */
   truncated: boolean;
 }
 
-/** Keeps only events of runs that have grades (when grade filters narrow the runs). */
-export const eventsOfRuns = (events: RunEvents, results: EvalResult[]): RunEvents => {
-  const runIds = new Set(results.map((r) => r.runId));
+export const EMPTY_RUN_DATA: RunData = {
+  loading: true,
+  indexMissing: false,
+  runs: [],
+  truncated: false,
+};
+
+/** Runs in the range from PPL aggregations, per index group (see `executeEvalPpl`). */
+export const fetchRunSummaries = async (
+  data: DataPublicPluginStart,
+  bounds: TimeBoundsMs,
+  filters: EvalFilters,
+  index: string,
+  signal?: AbortSignal
+): Promise<{ runs: RunSummary[]; truncated: boolean }> => {
+  const range = isoRange(bounds);
+  const ppl = createEvalsPplService(data, range, signal);
+  const groups = await probeIndexGroups(data, index, range, signal);
+  const viaGroups = (build: (missing: ReadonlySet<string>, source: string) => string) =>
+    executeEvalPpl(ppl, index, build, groups);
+  // Case and run events are optional: a run without them still works from its grades.
+  const optional = (query: string) =>
+    ppl
+      .executeQuery(evalsDataset(index), query)
+      .then((r) => pplResponseToRecords(r))
+      .catch(() => [] as PplRecord[]);
+  const [grades, all, fail, decided, caseEvents, runEvents] = await Promise.all([
+    viaGroups((missing, source) => buildRunGradesAggQuery(filters, { index: source, missing })),
+    viaGroups((missing, source) =>
+      buildRunCasesAggQuery(filters, 'all', { index: source, missing, withoutVerdict: true })
+    ),
+    viaGroups((missing, source) =>
+      buildRunCasesAggQuery(filters, 'fail', { index: source, missing })
+    ),
+    viaGroups((missing, source) =>
+      buildRunCasesAggQuery(filters, 'decided', { index: source, missing })
+    ),
+    optional(buildRunCaseEventsAggQuery(index)),
+    optional(buildRunEventsOnlyQuery(undefined, index)),
+  ]);
+  const rows = { grades, gradeCases: { all, fail, decided }, caseEvents, runEvents };
+  const narrowed = (filters.names?.length ?? 0) > 0 || !!filters.search?.trim();
   return {
-    cases: events.cases.filter((e) => runIds.has(e.runId)),
-    runs: events.runs.filter((e) => runIds.has(e.runId)),
+    runs: runSummariesFromAgg(rows, { onlyWithGrades: narrowed }),
+    truncated: runAggTruncated(rows),
   };
 };
 
-/** Grades, test case events and run events of evaluation runs in the time range. */
+/** Evaluation runs in the time range, from aggregations. */
 export const useRunResults = (
   data: DataPublicPluginStart,
   bounds: TimeBoundsMs,
   filters: EvalFilters,
   refreshKey: number,
-  /** Fetch only while the runs tab is shown. */
+  /** Fetch only while the runs are shown. */
   enabled = true,
   index: string = AGENT_EVALS_INDEX_PATTERN
 ): RunData => {
-  const [state, setState] = useState<RunData>({
-    loading: true,
-    indexMissing: false,
-    results: [],
-    events: EMPTY_RUN_EVENTS,
-    truncated: false,
-  });
+  const [state, setState] = useState<RunData>(EMPTY_RUN_DATA);
   const key = JSON.stringify([bounds, filters.names, filters.search, refreshKey, index]);
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
     setState((s) => ({ ...s, loading: true, error: undefined }));
-    const ppl = createEvalsPplService(data, isoRange(bounds), controller.signal);
-    const narrowed = (filters.names?.length ?? 0) > 0 || !!filters.search?.trim();
-    Promise.all([
-      // Level, source and outcome filters do not apply: a run is compared on all its results.
-      fetchEvalResults(
-        ppl,
-        buildEvalResultsQuery(
-          { names: filters.names, search: filters.search, runsOnly: true },
-          RUN_RESULTS_LIMIT,
-          index
-        ),
-        index
-      ),
-      // Case and run events are optional: a run without them still works from its grades.
-      fetchRunEvents(ppl, buildRunEventsQuery(RUN_EVENTS_LIMIT, index), index).catch(
-        () => EMPTY_RUN_EVENTS
-      ),
-    ])
-      .then(([results, events]) => {
+    // Level, source and outcome filters do not apply: a run is compared on all its results.
+    fetchRunSummaries(
+      data,
+      bounds,
+      { names: filters.names, search: filters.search },
+      index,
+      controller.signal
+    )
+      .then(({ runs, truncated }) => {
         if (controller.signal.aborted) return;
-        setState({
-          loading: false,
-          indexMissing: false,
-          results,
-          events: narrowed ? eventsOfRuns(events, results) : events,
-          truncated:
-            results.length >= RUN_RESULTS_LIMIT ||
-            events.cases.length + events.runs.length >= RUN_EVENTS_LIMIT,
-        });
+        setState({ loading: false, indexMissing: false, runs, truncated });
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -365,8 +384,7 @@ export const useRunResults = (
           loading: false,
           indexMissing: isIndexMissing(error),
           error: errorMessage(error),
-          results: [],
-          events: EMPTY_RUN_EVENTS,
+          runs: [],
           truncated: false,
         });
       });

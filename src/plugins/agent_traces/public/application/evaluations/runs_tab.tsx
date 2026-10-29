@@ -20,17 +20,19 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { EMPTY_RUN_EVENTS, EvalResult, RunEvents } from './eval_data';
-import { RunSummary, isRegression, summarizeRuns } from './eval_aggregations';
+import { EMPTY_RUN_EVENTS } from './eval_data';
+import { RunSummary, compareValues, isRegression } from './eval_aggregations';
+import { formatAggregateDelta } from './eval_compare';
 import {
   CASE_STATUS_COLOR,
   SectionHeader,
   formatAggregate,
   formatDuration,
   formatEvalTime,
+  formatTokens,
   shortId,
 } from './eval_components';
-import { CompareRuns } from './compare_runs';
+import { ChangeDelta, CompareRuns, agentModelOf, agentVersionOf, shortModel } from './compare_runs';
 import { MAX_COMPARE_RUNS } from './eval_url_state';
 import type { RunsDetailState } from './use_eval_data';
 
@@ -119,11 +121,89 @@ export const MiniCaseSplit: React.FC<{ run: RunSummary }> = ({ run }) => {
   );
 };
 
+/** `success`: completed; `failure`: some test case errored; no run event: unknown. */
+export const RunStatusPill: React.FC<{ run: RunSummary }> = ({ run }) => {
+  if (run.status === 'failure' || run.casesErrored > 0) {
+    return (
+      <EuiToolTip
+        content={i18n.translate('agentTraces.evalsPage.erroredTip', {
+          defaultMessage:
+            '{count, plural, one {# test case} other {# test cases}} raised an error (the task or a scorer failed)',
+          values: { count: run.casesErrored },
+        })}
+      >
+        <EuiBadge color="warning" iconType="alert" data-test-subj="agtEvlRunErrored">
+          {i18n.translate('agentTraces.evalsPage.errored', { defaultMessage: 'Errored' })}
+        </EuiBadge>
+      </EuiToolTip>
+    );
+  }
+  if (run.status === 'success') {
+    return (
+      <EuiBadge color="hollow" data-test-subj="agtEvlRunCompleted">
+        {i18n.translate('agentTraces.evalsPage.completed', { defaultMessage: 'Completed' })}
+      </EuiBadge>
+    );
+  }
+  return (
+    <EuiToolTip
+      content={i18n.translate('agentTraces.evalsPage.noRunEventTip', {
+        defaultMessage: 'The producer sent no run event: counts come from the grades.',
+      })}
+    >
+      <EuiText size="xs" color="subdued" data-test-subj="agtEvlRunNoStatus">
+        -
+      </EuiText>
+    </EuiToolTip>
+  );
+};
+
+/** Run metadata keys holding token counts or cost, when producers attach them. */
+const metadataKey = (runs: RunSummary[], test: RegExp) =>
+  runs
+    .flatMap((r) => Object.keys(r.metadata ?? {}))
+    .find((k) => test.test(k) && runs.some((r) => Number.isFinite(Number(r.metadata?.[k]))));
+
+/** Tokens and Cost columns, only when some run's metadata has them. */
+const usageColumns = (runs: RunSummary[]): Array<EuiBasicTableColumn<RunSummary>> => {
+  const tokens = metadataKey(runs, /tokens?$/i);
+  const cost = metadataKey(runs, /cost/i);
+  const columns: Array<EuiBasicTableColumn<RunSummary>> = [];
+  const value = (run: RunSummary, key: string) => {
+    const n = Number(run.metadata?.[key]);
+    return run.metadata?.[key] !== undefined && Number.isFinite(n) ? n : undefined;
+  };
+  if (tokens) {
+    columns.push({
+      name: i18n.translate('agentTraces.evalsPage.colTokens', { defaultMessage: 'Tokens' }),
+      width: '80px',
+      render: (run: RunSummary) => (
+        <EuiText size="xs" className="agtEvlNum" data-test-subj="agtEvlRunTokens">
+          {formatTokens(value(run, tokens))}
+        </EuiText>
+      ),
+    });
+  }
+  if (cost) {
+    columns.push({
+      name: i18n.translate('agentTraces.evalsPage.colCost', { defaultMessage: 'Cost' }),
+      width: '80px',
+      render: (run: RunSummary) => {
+        const n = value(run, cost);
+        return (
+          <EuiText size="xs" className="agtEvlNum" data-test-subj="agtEvlRunCost">
+            {n === undefined ? '-' : `$${n.toFixed(n < 1 ? 4 : 2)}`}
+          </EuiText>
+        );
+      },
+    });
+  }
+  return columns;
+};
+
 export const RunsTab: React.FC<{
-  /** Grades of the runs. */
-  results: EvalResult[];
-  /** Test case and run events of the runs; empty for runs from older producers. */
-  events?: RunEvents;
+  /** Runs in the runs time range, newest first (see `useRunResults`). */
+  runs: RunSummary[];
   /** Compared runs in column order, and the baseline (the first by default). */
   compare?: string[];
   baseline?: string;
@@ -136,8 +216,7 @@ export const RunsTab: React.FC<{
   /** Label of the back link of a comparison (the run page it was opened from). */
   backLabel?: string;
 }> = ({
-  results,
-  events = EMPTY_RUN_EVENTS,
+  runs,
   compare,
   baseline,
   compareData,
@@ -146,7 +225,6 @@ export const RunsTab: React.FC<{
   onOpenRun,
   backLabel,
 }) => {
-  const runs = useMemo(() => summarizeRuns(results, events), [results, events]);
   const [selection, setSelection] = useState<RunSummary[]>([]);
   const evaluatorNames = useMemo(
     () => Array.from(new Set(runs.flatMap((r) => Object.keys(r.evaluators)))).sort(),
@@ -155,8 +233,12 @@ export const RunsTab: React.FC<{
 
   if (compare) {
     const baselineId = baseline && compare.includes(baseline) ? baseline : compare[0];
-    // Without data read by id (tests, older callers), the runs in range are compared.
-    const data = compareData ?? { results, events, loading: false, missing: [] };
+    const data = compareData ?? {
+      results: [],
+      events: EMPTY_RUN_EVENTS,
+      loading: true,
+      missing: [],
+    };
     return (
       <CompareRuns
         runIds={compare}
@@ -176,6 +258,7 @@ export const RunsTab: React.FC<{
   }
 
   if (runs.length === 0) return <NoRunsPrompt />;
+  const byId = new Map(runs.map((r) => [r.runId, r]));
 
   const sameSuite = selection.every((r) => (r.suiteName ?? '') === (selection[0]?.suiteName ?? ''));
   const countOk = selection.length >= 2 && selection.length <= MAX_COMPARE_RUNS;
@@ -213,21 +296,6 @@ export const RunsTab: React.FC<{
               )}
             </EuiToolTip>
           </EuiFlexItem>
-          {run.casesErrored > 0 && (
-            <EuiFlexItem grow={false}>
-              <EuiToolTip
-                content={i18n.translate('agentTraces.evalsPage.erroredTip', {
-                  defaultMessage:
-                    '{count, plural, one {# test case} other {# test cases}} raised an error (the task or a scorer failed)',
-                  values: { count: run.casesErrored },
-                })}
-              >
-                <EuiBadge color="warning" iconType="alert" data-test-subj="agtEvlRunErrored">
-                  {i18n.translate('agentTraces.evalsPage.errored', { defaultMessage: 'Errored' })}
-                </EuiBadge>
-              </EuiToolTip>
-            </EuiFlexItem>
-          )}
           {isRegression(run) && (
             <EuiFlexItem grow={false}>
               <EuiToolTip
@@ -266,6 +334,40 @@ export const RunsTab: React.FC<{
       render: (started: number) => formatEvalTime(started, 'MMM D, YYYY HH:mm'),
     },
     {
+      field: 'status',
+      name: i18n.translate('agentTraces.evalsPage.colStatus', { defaultMessage: 'Status' }),
+      width: '100px',
+      render: (_status: string | undefined, run: RunSummary) => <RunStatusPill run={run} />,
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.colAgentVersion', {
+        defaultMessage: 'Agent version',
+      }),
+      width: '100px',
+      render: (run: RunSummary) => (
+        <EuiText size="xs" data-test-subj="agtEvlRunAgentVersion">
+          {agentVersionOf(run) ?? '-'}
+        </EuiText>
+      ),
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.colModel', { defaultMessage: 'Model' }),
+      render: (run: RunSummary) => {
+        const model = agentModelOf(run);
+        return model ? (
+          <EuiToolTip content={model}>
+            <EuiText size="xs" className="eui-textTruncate" data-test-subj="agtEvlRunModel">
+              {shortModel(model)}
+            </EuiText>
+          </EuiToolTip>
+        ) : (
+          <EuiText size="xs" color="subdued">
+            -
+          </EuiText>
+        );
+      },
+    },
+    {
       field: 'durationMs',
       name: i18n.translate('agentTraces.evalsPage.colDuration', { defaultMessage: 'Duration' }),
       sortable: true,
@@ -290,10 +392,38 @@ export const RunsTab: React.FC<{
           <span>{name}</span>
         </EuiToolTip>
       ),
-      render: (run: RunSummary) => (
-        <EuiText size="xs">{formatAggregate(run.evaluators[name])}</EuiText>
-      ),
+      render: (run: RunSummary) => {
+        const previous = run.previousRunId ? byId.get(run.previousRunId) : undefined;
+        const now = run.evaluators[name];
+        const before = previous?.evaluators[name];
+        return (
+          <EuiFlexGroup gutterSize="xs" alignItems="baseline" responsive={false} wrap={false}>
+            <EuiFlexItem grow={false}>
+              <EuiText size="xs" className="agtEvlNum">
+                {formatAggregate(now)}
+              </EuiText>
+            </EuiFlexItem>
+            {now && before && (
+              <EuiFlexItem grow={false}>
+                <EuiToolTip
+                  content={i18n.translate('agentTraces.evalsPage.vsPreviousRun', {
+                    defaultMessage: 'Against the previous run of the suite ({previous}): {before}',
+                    values: { previous: previous?.runId, before: formatAggregate(before) },
+                  })}
+                >
+                  <ChangeDelta
+                    text={formatAggregateDelta(before, now)}
+                    change={compareValues(before, now).change}
+                    data-test-subj="agtEvlRunsDelta"
+                  />
+                </EuiToolTip>
+              </EuiFlexItem>
+            )}
+          </EuiFlexGroup>
+        );
+      },
     })),
+    ...usageColumns(runs),
     {
       field: 'agentName',
       name: i18n.translate('agentTraces.evalsPage.colRunAgent', { defaultMessage: 'Agent' }),

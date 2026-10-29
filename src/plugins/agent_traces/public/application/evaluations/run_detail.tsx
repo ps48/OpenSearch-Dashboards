@@ -36,6 +36,7 @@ import {
   RunCaseRow,
   RunSummary,
   isRegression,
+  linkPreviousRuns,
   runCases,
   suiteTrend,
   summarizeRuns,
@@ -340,14 +341,34 @@ export const RunDetailPage: React.FC<{
   /** Grades and events of this run and of the suite's other runs in the time range. */
   results: EvalResult[];
   events: RunEvents;
+  /** Runs of the runs list (aggregated): the suite's history; this run's own data wins. */
+  runs?: RunSummary[];
   loading: boolean;
   error?: string;
   onBack: () => void;
   onOpenRun: (runId: string) => void;
   onCompare: (compare: string[]) => void;
   onOpenTrace: (traceId: string, aroundMs: number) => void;
-}> = ({ runId, results, events, loading, error, onBack, onOpenRun, onCompare, onOpenTrace }) => {
-  const runs = useMemo(() => summarizeRuns(results, events), [results, events]);
+}> = ({
+  runId,
+  results,
+  events,
+  runs: listed,
+  loading,
+  error,
+  onBack,
+  onOpenRun,
+  onCompare,
+  onOpenTrace,
+}) => {
+  const runs = useMemo(() => {
+    const own = summarizeRuns(results, events);
+    const ids = new Set(own.map((r) => r.runId));
+    return linkPreviousRuns([
+      ...own,
+      ...(listed ?? []).filter((r) => !ids.has(r.runId)).map((r) => ({ ...r })),
+    ]);
+  }, [results, events, listed]);
   const run = runs.find((r) => r.runId === runId);
   const suiteRuns = useMemo(
     () =>

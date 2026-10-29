@@ -315,83 +315,89 @@ export const summarizeRuns = (
     ...events.cases.map((e) => e.runId),
     ...events.runs.map((e) => e.runId),
   ]);
-  const runs = Array.from(runIds)
-    .map((runId) => {
-      const list = grades.get(runId) ?? [];
-      const caseEvents = caseEventsOf(events, runId);
-      const runEvent = runEventOf(events, runId);
-      const fromCaseEvents = caseEvents.size > 0;
-      const gradeCases = groupBy(list, caseKey);
-      const keys = new Set([...caseEvents.keys(), ...gradeCases.keys()]);
-      const statuses = Array.from(keys).map((key) =>
-        sideStatus(caseEvents.get(key), gradeCases.get(key) ?? [])
-      );
-      const evaluators: Record<string, EvaluatorAggregate> = {};
-      groupBy(list, (r) => r.name).forEach((group, name) => {
-        evaluators[name] = aggregateEvaluator(name, group);
-      });
-      const first = <T>(values: Array<T | undefined>) => values.find((v) => v !== undefined);
-      const caseList = Array.from(caseEvents.values());
+  const runs = Array.from(runIds).map((runId) => {
+    const list = grades.get(runId) ?? [];
+    const caseEvents = caseEventsOf(events, runId);
+    const runEvent = runEventOf(events, runId);
+    const fromCaseEvents = caseEvents.size > 0;
+    const gradeCases = groupBy(list, caseKey);
+    const keys = new Set([...caseEvents.keys(), ...gradeCases.keys()]);
+    const statuses = Array.from(keys).map((key) =>
+      sideStatus(caseEvents.get(key), gradeCases.get(key) ?? [])
+    );
+    const evaluators: Record<string, EvaluatorAggregate> = {};
+    groupBy(list, (r) => r.name).forEach((group, name) => {
+      evaluators[name] = aggregateEvaluator(name, group);
+    });
+    const first = <T>(values: Array<T | undefined>) => values.find((v) => v !== undefined);
+    const caseList = Array.from(caseEvents.values());
 
-      // Start and end: the run event knows both; else case end times minus their durations.
-      const starts = [
-        ...list.map((r) => parseEvalTime(r.time)),
-        ...caseList.map((e) => parseEvalTime(e.time) - (e.durationMs ?? 0)),
-      ].filter(Number.isFinite);
-      const ends = [
-        ...list.map((r) => parseEvalTime(r.time)),
-        ...caseList.map((e) => parseEvalTime(e.time)),
-      ].filter(Number.isFinite);
-      const runEnd = runEvent ? parseEvalTime(runEvent.time) : NaN;
-      const ended = Number.isFinite(runEnd) ? runEnd : ends.length ? Math.max(...ends) : NaN;
-      const started =
-        Number.isFinite(runEnd) && runEvent?.durationMs !== undefined
-          ? runEnd - runEvent.durationMs
-          : starts.length
-            ? Math.min(...starts)
-            : ended;
-      const durationMs =
-        runEvent?.durationMs ??
-        (fromCaseEvents && Number.isFinite(ended - started) ? ended - started : undefined);
+    // Start and end: the run event knows both; else case end times minus their durations.
+    const starts = [
+      ...list.map((r) => parseEvalTime(r.time)),
+      ...caseList.map((e) => parseEvalTime(e.time) - (e.durationMs ?? 0)),
+    ].filter(Number.isFinite);
+    const ends = [
+      ...list.map((r) => parseEvalTime(r.time)),
+      ...caseList.map((e) => parseEvalTime(e.time)),
+    ].filter(Number.isFinite);
+    const runEnd = runEvent ? parseEvalTime(runEvent.time) : NaN;
+    const ended = Number.isFinite(runEnd) ? runEnd : ends.length ? Math.max(...ends) : NaN;
+    const started =
+      Number.isFinite(runEnd) && runEvent?.durationMs !== undefined
+        ? runEnd - runEvent.durationMs
+        : starts.length
+          ? Math.min(...starts)
+          : ended;
+    const durationMs =
+      runEvent?.durationMs ??
+      (fromCaseEvents && Number.isFinite(ended - started) ? ended - started : undefined);
 
-      const counted = {
-        cases: statuses.length,
-        casesPassed: statuses.filter((c) => c === 'pass').length,
-        casesFailed: statuses.filter((c) => c === 'fail').length,
-        casesErrored: statuses.filter((c) => c === 'error').length,
-      };
-      const summary: RunSummary = {
-        runId,
-        suiteName: first([
-          runEvent?.suiteName,
-          ...caseList.map((e) => e.suiteName),
-          ...list.map((r) => r.suiteName),
-        ]),
-        started,
-        ended,
-        durationMs,
-        status: runEvent?.status,
-        results: list.length,
-        // The run event counts every case, also those outside the time range.
-        cases: runEvent?.caseCount ?? counted.cases,
-        casesPassed: runEvent?.passCount ?? counted.casesPassed,
-        casesFailed: runEvent?.failCount ?? counted.casesFailed,
-        casesErrored: runEvent?.errorCount ?? counted.casesErrored,
-        fromCaseEvents,
-        agentName: first([...list.map((r) => r.agentName), ...caseList.map((e) => e.agentName)]),
-        serviceName: first([
-          ...list.map((r) => r.serviceName),
-          ...caseList.map((e) => e.serviceName),
-        ]),
-        metadata: runEvent?.metadata ?? caseList.find((e) => e.metadata)?.metadata,
-        evaluators,
-        regressedEvaluators: [],
-        passRateDropped: false,
-      };
-      return summary;
-    })
-    .sort((a, b) => a.started - b.started);
+    const counted = {
+      cases: statuses.length,
+      casesPassed: statuses.filter((c) => c === 'pass').length,
+      casesFailed: statuses.filter((c) => c === 'fail').length,
+      casesErrored: statuses.filter((c) => c === 'error').length,
+    };
+    const summary: RunSummary = {
+      runId,
+      suiteName: first([
+        runEvent?.suiteName,
+        ...caseList.map((e) => e.suiteName),
+        ...list.map((r) => r.suiteName),
+      ]),
+      started,
+      ended,
+      durationMs,
+      status: runEvent?.status,
+      results: list.length,
+      // The run event counts every case, also those outside the time range.
+      cases: runEvent?.caseCount ?? counted.cases,
+      casesPassed: runEvent?.passCount ?? counted.casesPassed,
+      casesFailed: runEvent?.failCount ?? counted.casesFailed,
+      casesErrored: runEvent?.errorCount ?? counted.casesErrored,
+      fromCaseEvents,
+      agentName: first([...list.map((r) => r.agentName), ...caseList.map((e) => e.agentName)]),
+      serviceName: first([
+        ...list.map((r) => r.serviceName),
+        ...caseList.map((e) => e.serviceName),
+      ]),
+      metadata: runEvent?.metadata ?? caseList.find((e) => e.metadata)?.metadata,
+      evaluators,
+      regressedEvaluators: [],
+      passRateDropped: false,
+    };
+    return summary;
+  });
+  return linkPreviousRuns(runs);
+};
 
+/**
+ * Links each run to the previous run of its suite (by start time) and checks it for a
+ * regression against it. Returns the runs newest first.
+ */
+export const linkPreviousRuns = (list: RunSummary[]): RunSummary[] => {
+  const runs = [...list].sort((a, b) => a.started - b.started);
   const lastBySuite = new Map<string, RunSummary>();
   runs.forEach((run) => {
     const suite = run.suiteName ?? '';
@@ -456,7 +462,7 @@ export interface RunComparison {
   counts: Record<ChangeKind, number>;
 }
 
-const compareValues = (
+export const compareValues = (
   baseline: EvaluatorAggregate | undefined,
   candidate: EvaluatorAggregate | undefined
 ): ValueComparison => {

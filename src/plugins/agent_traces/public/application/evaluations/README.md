@@ -94,7 +94,8 @@ Overview and Results use the global time range, shared with Explore and Agent Tr
 carries over between apps, a link's `_g` wins, and on a fresh start it is the
 `timepicker:timeDefaults` setting (the last 15 minutes). The app's last URL (tab, filters, run
 range) is kept for the browser session like other apps (`lastUrl:` in session storage).
-Evaluation runs have their own range in `_a.runsTime`, the last 7 days by default.
+Evaluation runs have their own range in `_a.runsTime`, the last 7 days by default, with 7 and
+30 day buttons next to the picker.
 
 When the range ends less than 15 minutes ago and the index holds AgentCore results, a note
 says AgentCore results arrive about 15 minutes after a session ends.
@@ -106,6 +107,17 @@ score trend and results over time come from PPL aggregations on the evaluation i
 (`eval evl_verdict = case(...)` with the verdict rules compiled to PPL, then `stats ... by`,
 `span(@timestamp, ...)`), so they are exact at any volume. Distinct traces and sessions use
 `distinct_count` (exact below 3,000 per period, approximate above).
+
+The Evaluation runs list is aggregated too, so it holds every run in its range: grades
+`stats ... by test.suite.run.id, test.suite.name, gen_ai.evaluation.name, label, scale,
+evl_verdict` (per index group), test cases per run from grades (`distinct_count` of
+`test.case.id`: all, failing, passing or failing), test case events counted by run and
+status, and the run events (one per run, read as is for their metadata). Counts and timing
+come from the run event, else the case events, else the grades. Each evaluator cell shows
+the change against the previous run of the suite (`4.92 ↑0.05`, colored by better or worse);
+Agent version and Model come from the run metadata (`agent.version`, `agent.model`); Tokens
+and Cost columns appear when run metadata has keys ending in `tokens` or holding `cost`. The
+run page and Compare read their runs' events by run id.
 
 The Results table reaches every result in the range: it is sorted (Time, Evaluation, Level,
 Result) and paged in the query (`sort ... | head <size> from <offset>`), filters and search

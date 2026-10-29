@@ -10,6 +10,8 @@ import { isEqual } from 'lodash';
 import {
   EuiCallOut,
   EuiErrorBoundary,
+  EuiFilterButton,
+  EuiFilterGroup,
   EuiFlexGroup,
   EuiFlexItem,
   EuiLoadingContent,
@@ -69,7 +71,6 @@ import {
   NoEvalIndexPrompt,
   QueryErrorCallout,
   AggregateLimitNotice,
-  TruncationNotice,
   formatEvalTime,
 } from './eval_components';
 import { openTraceInAgentTraces } from './eval_links';
@@ -89,6 +90,18 @@ const TAB_LABELS: Record<EvalTab, string> = {
   results: i18n.translate('agentTraces.evalsPage.tabResults', { defaultMessage: 'Results' }),
   runs: i18n.translate('agentTraces.evalsPage.tabRuns', { defaultMessage: 'Evaluation runs' }),
 };
+
+/** Quick ranges next to the runs time picker: offline runs are looked at by week or month. */
+const RUNS_QUICK_RANGES = [
+  {
+    from: 'now-7d',
+    label: i18n.translate('agentTraces.evalsPage.runs7d', { defaultMessage: '7 days' }),
+  },
+  {
+    from: 'now-30d',
+    label: i18n.translate('agentTraces.evalsPage.runs30d', { defaultMessage: '30 days' }),
+  },
+];
 
 const PAGE_TITLE = i18n.translate('agentTraces.evalsPage.title', {
   defaultMessage: 'Agent Evaluations',
@@ -318,9 +331,19 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     runsTime.refreshKey,
     index
   );
+  // The run page compares cases with the previous run of the suite: read that run too.
+  const previousRunId = state.run
+    ? runs.runs.find((r) => r.runId === state.run)?.previousRunId
+    : undefined;
+  const previousDetail = useRunsDetail(
+    services.data,
+    runsActive && state.run && !state.compare && previousRunId ? [previousRunId] : undefined,
+    runsTime.refreshKey,
+    index
+  );
   const runData = useMemo(
-    () => mergeRunData(runs, state.run ? runDetail : undefined),
-    [runs, runDetail, state.run]
+    () => mergeRunData(previousDetail, state.run ? runDetail : undefined),
+    [previousDetail, runDetail, state.run]
   );
   const drilldownName = state.tab === 'overview' ? state.evaluation : undefined;
   const drilldown = useEvaluationResults(
@@ -386,6 +409,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             runId={state.run}
             results={runData.results}
             events={runData.events}
+            runs={runs.runs}
             loading={runDetail.loading || runs.loading}
             error={runDetail.error}
             onBack={() => setState({ run: undefined }, { push: true })}
@@ -396,13 +420,17 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
         );
       }
       if (runs.error) return <QueryErrorCallout message={runs.error} />;
-      if (runs.loading && runs.results.length === 0) return <EuiLoadingContent lines={6} />;
+      if (runs.loading && runs.runs.length === 0) return <EuiLoadingContent lines={6} />;
       return (
         <>
-          {runs.truncated && <TruncationNotice shown={runs.results.length} />}
+          {runs.truncated && (
+            <>
+              <AggregateLimitNotice />
+              <EuiSpacer size="s" />
+            </>
+          )}
           <RunsTab
-            results={runData.results}
-            events={runData.events}
+            runs={runs.runs}
             compare={state.compare}
             baseline={state.baseline}
             compareData={compareData}
@@ -486,7 +514,9 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
   };
 
   const loading =
-    state.tab === 'runs' ? runs.loading || runDetail.loading || compareData.loading : data.loading;
+    state.tab === 'runs'
+      ? runs.loading || runDetail.loading || compareData.loading || previousDetail.loading
+      : data.loading;
   // A json setting: no default override (it would be JSON-parsed).
   const quickRanges = useMemo(
     () =>
@@ -518,18 +548,46 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
               </EuiFlexItem>
               <EuiFlexItem grow={false}>
                 {runsActive ? (
-                  <div data-test-subj="agtEvlRunsTimePicker">
-                    <EuiSuperDatePicker
-                      start={runsTime.time.from}
-                      end={runsTime.time.to}
-                      onTimeChange={runsTime.onTimeChange}
-                      onRefresh={runsTime.onRefresh}
-                      isLoading={loading}
-                      dateFormat={services.uiSettings.get('dateFormat')}
-                      commonlyUsedRanges={quickRanges}
-                      data-test-subj="agtEvlRunsDatePicker"
-                    />
-                  </div>
+                  <EuiFlexGroup
+                    gutterSize="s"
+                    alignItems="center"
+                    responsive={false}
+                    data-test-subj="agtEvlRunsTimePicker"
+                  >
+                    <EuiFlexItem grow={false}>
+                      <EuiFilterGroup>
+                        {RUNS_QUICK_RANGES.map((r) => (
+                          <EuiFilterButton
+                            key={r.from}
+                            hasActiveFilters={
+                              runsTime.time.from === r.from && runsTime.time.to === 'now'
+                            }
+                            onClick={() =>
+                              runsTime.onTimeChange({
+                                start: r.from,
+                                end: 'now',
+                              } as OnTimeChangeProps)
+                            }
+                            data-test-subj={`agtEvlRunsRange-${r.from}`}
+                          >
+                            {r.label}
+                          </EuiFilterButton>
+                        ))}
+                      </EuiFilterGroup>
+                    </EuiFlexItem>
+                    <EuiFlexItem grow={false}>
+                      <EuiSuperDatePicker
+                        start={runsTime.time.from}
+                        end={runsTime.time.to}
+                        onTimeChange={runsTime.onTimeChange}
+                        onRefresh={runsTime.onRefresh}
+                        isLoading={loading}
+                        dateFormat={services.uiSettings.get('dateFormat')}
+                        commonlyUsedRanges={quickRanges}
+                        data-test-subj="agtEvlRunsDatePicker"
+                      />
+                    </EuiFlexItem>
+                  </EuiFlexGroup>
                 ) : (
                   <EuiSuperDatePicker
                     start={time.time.from}

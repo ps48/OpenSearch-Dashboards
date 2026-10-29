@@ -14,7 +14,7 @@ import { EvaluationsApp } from './evaluations_app';
 import { makeResult, twoRunFixture } from './eval_test_fixtures';
 import { EvalAggregates, EvalData, RunData, RunDetailState } from './use_eval_data';
 import { EMPTY_RUN_EVENTS, summarizeByEvaluator } from './eval_data';
-import { computeKpis } from './eval_aggregations';
+import { computeKpis, summarizeRuns } from './eval_aggregations';
 
 jest.mock('../../../../data/public', () => ({
   syncQueryStateWithUrl: () => ({ stop: jest.fn() }),
@@ -50,6 +50,12 @@ jest.mock('./use_eval_data', () => ({
   useEvaluationResults: (...args: unknown[]) => mockUseEvaluationResults(...(args as [])),
   useAgentCorePresent: () => mockAgentCorePresent,
   useResultsPage: (...args: unknown[]) => mockUseResultsPage(...(args as [])),
+  useRunsDetail: () => ({
+    loading: false,
+    results: [],
+    events: { cases: [], runs: [] },
+    missing: [],
+  }),
 }));
 
 const aggOf = (list: typeof results): EvalAggregates => ({
@@ -138,8 +144,7 @@ beforeEach(() => {
   runData = {
     loading: false,
     indexMissing: false,
-    results: twoRunFixture(),
-    events: EMPTY_RUN_EVENTS,
+    runs: summarizeRuns(twoRunFixture()),
     truncated: false,
   };
   runDetail = { loading: false, results: [], events: EMPTY_RUN_EVENTS };
@@ -289,9 +294,9 @@ describe('EvaluationsApp', () => {
   });
 
   it("opens a run's page from the link a CI job builds, with the run loaded on its own", () => {
-    runDetail = { loading: false, results: runData.results.slice(0, 2), events: EMPTY_RUN_EVENTS };
+    runDetail = { loading: false, results: twoRunFixture().slice(0, 2), events: EMPTY_RUN_EVENTS };
     renderApp("#/?_a=(tab:runs,run:'run-1')");
-    expect(screen.getByTestId('runDetailStub')).toHaveTextContent('run-1:5');
+    expect(screen.getByTestId('runDetailStub')).toHaveTextContent('run-1:2');
     const call = mockUseRunDetail.mock.calls[mockUseRunDetail.mock.calls.length - 1];
     expect((call as unknown[])[1]).toBe('run-1');
     // No filters bar on the run page.
