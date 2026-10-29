@@ -347,7 +347,7 @@ export const RunVerdictCell: React.FC<{ run: GridRun }> = ({ run }) => {
       <EuiToolTip
         content={i18n.translate('agentTraces.evalsPage.verdictRuleTip', {
           defaultMessage:
-            'From the evaluation means against the baseline: some better and some worse is a Tradeoff, only better an Improvement, only worse a Regression (a move under 5% of the range does not count). When no mean moved, regressed test cases outnumbering improved ones by at least 2 (or 10% of the shared cases) is a Regression, the other way round an Improvement, anything less a Tie.',
+            'From the evaluation means against the baseline: some better and some worse is a Tradeoff, only better an Improvement, only worse a Regression (a move under 5% of the range does not count). When no mean moved, regressed test cases outnumbering improved ones by at least 2 (and 10% of the shared cases in a large suite) is a Regression, the other way round an Improvement, anything less (one case) a Tie.',
         })}
       >
         <EuiBadge color={VERDICT_COLOR[v.verdict]} iconType={VERDICT_ICON[v.verdict]}>

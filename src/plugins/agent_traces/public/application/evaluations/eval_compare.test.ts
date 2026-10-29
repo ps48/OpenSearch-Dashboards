@@ -6,6 +6,7 @@
 import { makeResult, makeRunEvent, twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
 import {
   buildCompareGrid,
+  caseMargin,
   comparabilityOf,
   durationChange,
   filterCases,
@@ -248,11 +249,15 @@ describe('runVerdictOf', () => {
     );
   });
 
-  it('calls one regressed case of 5 shared a regression (10% of the shared cases)', () => {
-    const v = verdict(suite(['c0'], [], 5));
-    expect(v).toMatchObject({ better: [], worse: [], sharedCases: 5, regressedCases: 1 });
-    expect(v?.verdict).toBe('regression');
-    expect(verdict(suite([], ['c0'], 5))?.verdict).toBe('improvement');
+  it('never lets a single case decide, and asks 10% of the shared cases of a large suite', () => {
+    expect(verdict(suite(['c0'], [], 5))?.verdict).toBe('tie');
+    expect(verdict(suite([], ['c0'], 5))?.verdict).toBe('tie');
+    expect(verdict(suite(['c0', 'c1'], [], 5))?.verdict).toBe('regression');
+    expect(caseMargin(8)).toBe(2);
+    expect(caseMargin(40)).toBe(4);
+    // 40 cases: 3 regressed is under 10%, a tie (each moves the mean by 0.0025).
+    expect(verdict(suite(['c0', 'c1', 'c2'], [], 40))?.verdict).toBe('tie');
+    expect(verdict(suite(['c0', 'c1', 'c2', 'c3'], [], 40))?.verdict).toBe('regression');
   });
 
   it('says when no test case changed', () => {

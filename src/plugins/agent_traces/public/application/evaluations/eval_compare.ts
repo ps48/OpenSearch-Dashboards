@@ -426,12 +426,17 @@ export interface RunVerdictResult {
   sharedCases: number;
 }
 
-/** Case changes decide a verdict only by a margin: at least 2 cases or 10% of shared cases. */
+/**
+ * Case changes decide a verdict only by a margin: at least 2 cases, and at least 10% of the
+ * shared cases in a large suite. A single changed case is never enough.
+ */
 export const CASE_MARGIN_COUNT = 2;
 export const CASE_MARGIN_SHARE = 0.1;
 
-const caseMarginMet = (margin: number, shared: number) =>
-  margin >= CASE_MARGIN_COUNT || (shared > 0 && margin >= CASE_MARGIN_SHARE * shared);
+export const caseMargin = (shared: number) =>
+  Math.max(CASE_MARGIN_COUNT, Math.ceil(CASE_MARGIN_SHARE * shared));
+
+const caseMarginMet = (margin: number, shared: number) => margin >= caseMargin(shared);
 
 /**
  * The verdict of a run against the baseline, from the same changes the grid shows:
@@ -439,9 +444,9 @@ const caseMarginMet = (margin: number, shared: number) =>
  * 1. `better` / `worse`: evaluations whose mean (normalized to its range, direction applied)
  *    moved by more than `CHANGE_THRESHOLD` (5% of the range) up / down.
  * 2. Some better and some worse: Tradeoff. Only better: Improvement. Only worse: Regression.
- * 3. No mean moved: regressed test cases outnumbering improved ones by at least 2, or by at
- *    least 10% of the shared cases, is a Regression (and the other way round an Improvement);
- *    anything less, a single regressed case for one, is a Tie.
+ * 3. No mean moved: regressed test cases outnumbering improved ones by at least 2 (and by
+ *    at least 10% of the shared cases in a large suite) is a Regression, the other way round
+ *    an Improvement; anything less, a single regressed case for one, is a Tie.
  *
  * Undefined for the baseline and for runs without data.
  */
