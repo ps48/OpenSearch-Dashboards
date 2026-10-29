@@ -408,3 +408,18 @@
   padding-left: $euiSize;
   list-style: disc;
 }
+
+.agtEvlAttention {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  &__item {
+    padding: $euiSizeXS 0;
+    border-bottom: $euiBorderThin;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+}

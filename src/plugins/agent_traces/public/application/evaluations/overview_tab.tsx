@@ -27,7 +27,16 @@ import {
   LabelCount,
   summaryPassRate,
 } from './eval_data';
-import { EvalKpis, OutcomeBucket, TimeBoundsMs, parseEvalTime } from './eval_aggregations';
+import {
+  EvalKpis,
+  OutcomeBucket,
+  RunSummary,
+  TimeBoundsMs,
+  parseEvalTime,
+} from './eval_aggregations';
+import { Finding, TopChange, needsAttention, topChanges } from './eval_attention';
+import { formatPointsDelta } from './eval_compare';
+import { ChangeDelta } from './compare_runs';
 import type { EvalAggregates } from './use_eval_data';
 import { ShowTracesMenu, useShowTraces } from './eval_trace_filter';
 import { OutcomeHistogram, ScoreTrendChart } from './eval_charts';
@@ -42,6 +51,7 @@ import {
   formatEvalTime,
   formatPercent,
   formatValue,
+  shortId,
 } from './eval_components';
 
 export const RECENT_FAILURES_LIMIT = 10;
@@ -70,7 +80,7 @@ export const DeltaText: React.FC<{
     kind === 'count'
       ? Math.abs(diff).toLocaleString()
       : kind === 'rate'
-        ? `${Math.abs(diff * 100).toFixed(1)} pts`
+        ? `${Math.abs(diff * 100).toFixed(1)} pp`
         : Math.abs(diff).toFixed(2);
   const pct =
     kind === 'count' && previous > 0 && !flat
@@ -553,6 +563,254 @@ export const RecentFailures: React.FC<{
   );
 };
 
+/** One finding as a sentence with its link. */
+const FindingRow: React.FC<{
+  finding: Finding;
+  onSelectEvaluation: (name: string) => void;
+  onOpenRun?: (runId: string) => void;
+  onShowPrevious?: (name: string) => void;
+}> = ({ finding: f, onSelectEvaluation, onOpenRun, onShowPrevious }) => {
+  const whereFails = i18n.translate('agentTraces.evalsPage.findingWhere', {
+    defaultMessage: 'Where it fails',
+  });
+  let icon = 'alert';
+  let color = 'danger';
+  let text: string;
+  let link: { label: string; onClick: () => void } | undefined;
+  switch (f.kind) {
+    case 'drop':
+      text = i18n.translate('agentTraces.evalsPage.findingDrop', {
+        defaultMessage: '{name}: pass rate fell {points} points to {to} (from {from})',
+        values: {
+          name: f.name,
+          points: Math.round((f.from - f.to) * 100),
+          to: formatPercent(f.to),
+          from: formatPercent(f.from),
+        },
+      });
+      link = { label: whereFails, onClick: () => onSelectEvaluation(f.name) };
+      break;
+    case 'runRegression': {
+      const what = [
+        ...f.run.regressedEvaluators,
+        ...(f.run.passRateDropped
+          ? [
+              i18n.translate('agentTraces.evalsPage.findingRunCases', {
+                defaultMessage: '{passed} of {cases} test cases passed (was {before})',
+                values: {
+                  passed: f.run.casesPassed,
+                  cases: f.run.cases,
+                  before: f.previous ? `${f.previous.casesPassed} of ${f.previous.cases}` : '-',
+                },
+              }),
+            ]
+          : []),
+      ].join(', ');
+      text = i18n.translate('agentTraces.evalsPage.findingRun', {
+        defaultMessage: 'Run {run}{suite} regressed against the previous run: {what}',
+        values: {
+          run: shortId(f.run.runId, 32),
+          suite: f.run.suiteName ? ` (${f.run.suiteName})` : '',
+          what,
+        },
+      });
+      icon = 'beaker';
+      link = onOpenRun
+        ? {
+            label: i18n.translate('agentTraces.evalsPage.findingOpenRun', {
+              defaultMessage: 'Open run',
+            }),
+            onClick: () => onOpenRun(f.run.runId),
+          }
+        : undefined;
+      break;
+    }
+    case 'lowest':
+      text = i18n.translate('agentTraces.evalsPage.findingLowest', {
+        defaultMessage: '{name}: lowest pass rate, {rate} ({fail} of {decided} failing)',
+        values: {
+          name: f.name,
+          rate: formatPercent(f.passRate),
+          fail: formatCount(f.failCount),
+          decided: formatCount(f.decided),
+        },
+      });
+      link = { label: whereFails, onClick: () => onSelectEvaluation(f.name) };
+      break;
+    case 'newLabel':
+      icon = 'tag';
+      text = i18n.translate('agentTraces.evalsPage.findingLabel', {
+        defaultMessage:
+          '{name}: new failing label "{label}" ({count, plural, one {# result} other {# results}}), not seen in the previous period',
+        values: { name: f.name, label: f.label, count: f.count },
+      });
+      link = { label: whereFails, onClick: () => onSelectEvaluation(f.name) };
+      break;
+    case 'silent':
+      icon = 'clock';
+      color = 'warning';
+      text = i18n.translate('agentTraces.evalsPage.findingSilent', {
+        defaultMessage: '{name}: no results in this period ({count} in the previous period)',
+        values: { name: f.name, count: formatCount(f.previousCount) },
+      });
+      link = onShowPrevious
+        ? {
+            label: i18n.translate('agentTraces.evalsPage.findingPrevious', {
+              defaultMessage: 'Show the previous period',
+            }),
+            onClick: () => onShowPrevious(f.name),
+          }
+        : undefined;
+      break;
+  }
+  return (
+    <li className="agtEvlAttention__item" data-test-subj={`agtEvlFinding-${f.kind}`}>
+      <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+        <EuiFlexItem grow={false}>
+          <EuiIcon type={icon} color={color} />
+        </EuiFlexItem>
+        <EuiFlexItem>
+          <EuiText size="s" className="agtEvlNum">
+            {text}
+          </EuiText>
+        </EuiFlexItem>
+        {link && (
+          <EuiFlexItem grow={false}>
+            <EuiLink onClick={link.onClick} data-test-subj="agtEvlFindingLink">
+              {link.label}
+            </EuiLink>
+          </EuiFlexItem>
+        )}
+      </EuiFlexGroup>
+    </li>
+  );
+};
+
+/** "Needs attention": deterministic findings for the range against the previous one. */
+export const NeedsAttention: React.FC<{
+  findings: Finding[];
+  onSelectEvaluation: (name: string) => void;
+  onOpenRun?: (runId: string) => void;
+  onShowPrevious?: (name: string) => void;
+}> = ({ findings, ...links }) => (
+  <EuiPanel hasBorder paddingSize="m" data-test-subj="agtEvlNeedsAttention">
+    <SectionHeader
+      title={
+        <FormattedMessage
+          id="agentTraces.evalsPage.needsAttention"
+          defaultMessage="Needs attention"
+        />
+      }
+      help={
+        <FormattedMessage
+          id="agentTraces.evalsPage.needsAttentionHelp"
+          defaultMessage="Computed from this range against the previous one of the same length, and the evaluation runs in this range."
+        />
+      }
+    />
+    <EuiSpacer size="s" />
+    {findings.length === 0 ? (
+      <EuiText size="s" color="subdued" data-test-subj="agtEvlNothingNeedsAttention">
+        <FormattedMessage
+          id="agentTraces.evalsPage.nothingNeedsAttention"
+          defaultMessage="Nothing needs attention in this range."
+        />
+      </EuiText>
+    ) : (
+      <ul className="agtEvlAttention">
+        {findings.map((f, i) => (
+          <FindingRow key={`${f.kind}|${i}`} finding={f} {...links} />
+        ))}
+      </ul>
+    )}
+  </EuiPanel>
+);
+
+/** Per evaluation, pass rate (or mean) and its change against the previous period. */
+export const TopChangesRow: React.FC<{
+  changes: TopChange[];
+  onSelectEvaluation: (name: string) => void;
+}> = ({ changes, onSelectEvaluation }) => {
+  if (changes.length === 0) return null;
+  return (
+    <div data-test-subj="agtEvlTopChanges">
+      <SectionHeader
+        title={
+          <FormattedMessage id="agentTraces.evalsPage.topChanges" defaultMessage="Top changes" />
+        }
+        help={
+          <FormattedMessage
+            id="agentTraces.evalsPage.topChangesHelp"
+            defaultMessage="Pass rate, or the mean without a pass rule, against the previous period. Worst change first."
+          />
+        }
+      />
+      <EuiSpacer size="s" />
+      <EuiFlexGroup gutterSize="s" responsive={false} wrap>
+        {changes.map((c) => {
+          const delta =
+            c.previous === undefined
+              ? undefined
+              : c.metric === 'passRate'
+                ? formatPointsDelta(c.value - c.previous)
+                : `${c.value - c.previous > 0 ? '↑' : c.value - c.previous < 0 ? '↓' : '±'}${Math.abs(
+                    c.value - c.previous
+                  ).toFixed(2)}`;
+          return (
+            <EuiFlexItem key={c.name} grow={false} style={{ minWidth: 150, maxWidth: 220 }}>
+              <EuiPanel
+                hasBorder
+                paddingSize="s"
+                className="agtEvlCard"
+                onClick={() => onSelectEvaluation(c.name)}
+                data-test-subj="agtEvlTopChange"
+              >
+                <EuiText size="xs" className="eui-textTruncate">
+                  <span title={c.name}>{c.name}</span>
+                </EuiText>
+                <EuiFlexGroup gutterSize="xs" alignItems="baseline" responsive={false}>
+                  <EuiFlexItem grow={false}>
+                    <EuiText size="s" className="agtEvlNum">
+                      <strong>
+                        {c.metric === 'passRate' ? formatPercent(c.value) : formatValue(c.value)}
+                      </strong>
+                    </EuiText>
+                  </EuiFlexItem>
+                  <EuiFlexItem grow={false}>
+                    {delta ? (
+                      <ChangeDelta
+                        text={delta}
+                        change={c.change}
+                        data-test-subj="agtEvlTopChangeDelta"
+                      />
+                    ) : (
+                      <EuiText size="xs" color="subdued">
+                        <FormattedMessage
+                          id="agentTraces.evalsPage.topChangeNew"
+                          defaultMessage="new"
+                        />
+                      </EuiText>
+                    )}
+                  </EuiFlexItem>
+                </EuiFlexGroup>
+                <EuiText size="xs" color="subdued">
+                  {c.metric === 'passRate'
+                    ? i18n.translate('agentTraces.evalsPage.topChangePassRate', {
+                        defaultMessage: 'pass rate',
+                      })
+                    : i18n.translate('agentTraces.evalsPage.topChangeMean', {
+                        defaultMessage: 'mean',
+                      })}
+                </EuiText>
+              </EuiPanel>
+            </EuiFlexItem>
+          );
+        })}
+      </EuiFlexGroup>
+    </div>
+  );
+};
+
 export const OverviewTab: React.FC<{
   current: EvalAggregates;
   previous?: Pick<EvalAggregates, 'summaries' | 'kpis'>;
@@ -561,7 +819,31 @@ export const OverviewTab: React.FC<{
   interval: number;
   onSelectEvaluation: (name: string) => void;
   onOpenResult: (r: EvalResult) => void;
-}> = ({ current, previous, failures, bounds, interval, onSelectEvaluation, onOpenResult }) => {
+  /** Evaluation runs in the range, for "Needs attention". */
+  runs?: RunSummary[];
+  onOpenRun?: (runId: string) => void;
+  /** Opens the previous period (an evaluation that stopped reporting). */
+  onShowPrevious?: (name: string) => void;
+}> = ({
+  current,
+  previous,
+  failures,
+  bounds,
+  interval,
+  onSelectEvaluation,
+  onOpenResult,
+  runs,
+  onOpenRun,
+  onShowPrevious,
+}) => {
+  const findings = useMemo(
+    () => needsAttention(current.summaries, previous?.summaries, runs),
+    [current, previous, runs]
+  );
+  const changes = useMemo(
+    () => topChanges(current.summaries, previous?.summaries),
+    [current, previous]
+  );
   const previousByName = useMemo(
     () => new Map((previous?.summaries ?? []).map((s) => [s.name, s])),
     [previous]
@@ -594,6 +876,15 @@ export const OverviewTab: React.FC<{
 
   return (
     <div data-test-subj="agtEvlOverview">
+      <NeedsAttention
+        findings={findings}
+        onSelectEvaluation={onSelectEvaluation}
+        onOpenRun={onOpenRun}
+        onShowPrevious={onShowPrevious}
+      />
+      <EuiSpacer size="m" />
+      <TopChangesRow changes={changes} onSelectEvaluation={onSelectEvaluation} />
+      {changes.length > 0 && <EuiSpacer size="m" />}
       <KpiRow current={current.kpis} previous={previous?.kpis} />
       <EuiSpacer size="l" />
       <SectionHeader

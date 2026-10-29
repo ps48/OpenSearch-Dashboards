@@ -135,6 +135,23 @@ script names (daily indices with dynamic mappings, where a new attribute such as
 asks, in one DSL aggregation, which indices in the range hold which optional fields, then runs
 once per group of indices naming only the fields that group holds, and adds up the rows.
 
+## Needs attention and Top changes
+
+The Overview opens with up to five findings computed from the aggregations of the range and of
+the previous range of the same length (no LLM), most urgent first:
+
+1. the biggest pass-rate drop (at least 1 point), linked to its drill-down;
+2. the most regressed evaluation run in the range (largest drop in passing test cases, then
+   most regressed evaluations, against the previous run of its suite), linked to the run;
+3. the lowest pass rate below 100% (another evaluation than the drop);
+4. a failing label the evaluation did not report in the previous range;
+5. evaluations with results in the previous range and none in this one ("no results in this
+   period"), linked to the previous range.
+
+Without any: "Nothing needs attention in this range." Top changes then lists, per evaluation,
+its pass rate (or its mean without a pass rule) with the change against the previous range,
+worst change first (pass-rate points, or the mean normalized to its range), at most six.
+
 ## Traces where an evaluation fails
 
 Result chips, Overview cards and Results rows have a menu: Show traces where it fails, with

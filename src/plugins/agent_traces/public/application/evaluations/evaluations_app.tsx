@@ -40,7 +40,7 @@ import { EvalResult } from './eval_data';
 import { ShowTracesContext, TraceCondition, fetchConditionTraces } from './eval_trace_filter';
 import { DEFAULT_RESULTS_SORT, RESULTS_PAGE_SIZES, ResultsSort } from './eval_ppl';
 import { setEvalTraceFilter } from './eval_trace_filter_store';
-import { TimeBoundsMs, mergeRunData } from './eval_aggregations';
+import { TimeBoundsMs, mergeRunData, previousPeriod } from './eval_aggregations';
 import {
   APP_STATE_KEY,
   DEFAULT_RUNS_TIME,
@@ -317,6 +317,15 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     [services, time.bounds, index]
   );
   const runsActive = state.tab === 'runs';
+  // "Needs attention" names the most regressed run in the Overview's range.
+  const overviewRuns = useRunResults(
+    services.data,
+    time.bounds,
+    filters,
+    time.refreshKey,
+    state.tab === 'overview',
+    index
+  );
   const runs = useRunResults(
     services.data,
     runsTime.bounds,
@@ -508,6 +517,16 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
           interval={data.interval}
           onSelectEvaluation={(name) => setState({ evaluation: name })}
           onOpenResult={openResult}
+          runs={overviewRuns.runs}
+          onOpenRun={(run) => setState({ tab: 'runs', run, compare: undefined }, { push: true })}
+          onShowPrevious={(name) => {
+            const before = previousPeriod(time.bounds);
+            services.data.query.timefilter.timefilter.setTime({
+              from: new Date(before.from).toISOString(),
+              to: new Date(before.to).toISOString(),
+            });
+            setState({ evaluation: name });
+          }}
         />
       </>
     );

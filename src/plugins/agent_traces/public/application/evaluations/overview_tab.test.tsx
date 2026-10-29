@@ -85,7 +85,7 @@ describe('OverviewTab', () => {
     expect(within(passRate).getByText('67%')).toBeInTheDocument();
     // 100% before, 67% now: a drop shown as bad
     const delta = within(passRate).getByTestId('agtEvlDelta');
-    expect(delta).toHaveTextContent('-33.3 pts vs previous');
+    expect(delta).toHaveTextContent('-33.3 pp vs previous');
     expect(within(screen.getByTestId('agtEvlKpiSessions')).getByText('1')).toBeInTheDocument();
   });
 
@@ -133,6 +133,38 @@ describe('OverviewTab', () => {
     );
     fireEvent.click(within(list).getByTestId('agtEvlFailureLink'));
     expect(onOpenResult).toHaveBeenCalledWith(results[0]);
+  });
+
+  it('opens with what needs attention and the top changes, linked to the drill-down', () => {
+    const { onSelectEvaluation } = renderOverview();
+    const drop = screen.getByTestId('agtEvlFinding-drop');
+    expect(drop).toHaveTextContent('tool_diversity: pass rate fell 50 points to 50% (from 100%)');
+    fireEvent.click(within(drop).getByTestId('agtEvlFindingLink'));
+    expect(onSelectEvaluation).toHaveBeenCalledWith('tool_diversity');
+    const top = screen.getAllByTestId('agtEvlTopChange');
+    expect(top[0]).toHaveTextContent('tool_diversity');
+    expect(within(top[0]).getByTestId('agtEvlTopChangeDelta')).toHaveTextContent('↓50 pp');
+    expect(top[1]).toHaveTextContent('new');
+  });
+
+  it('says when nothing needs attention, and names a silent evaluation', () => {
+    // Steady and nothing failing.
+    renderOverview({ current: aggOf(results.slice(1)), previous: aggOf(results.slice(1)) });
+    expect(screen.getByTestId('agtEvlNothingNeedsAttention')).toHaveTextContent(
+      'Nothing needs attention in this range.'
+    );
+    const onShowPrevious = jest.fn();
+    renderOverview({
+      current: aggOf(results.slice(2)),
+      previous: aggOf(results),
+      onShowPrevious,
+    });
+    const silent = screen.getByTestId('agtEvlFinding-silent');
+    expect(silent).toHaveTextContent(
+      'tool_diversity: no results in this period (2 in the previous period)'
+    );
+    fireEvent.click(within(silent).getByTestId('agtEvlFindingLink'));
+    expect(onShowPrevious).toHaveBeenCalledWith('tool_diversity');
   });
 
   it('explains an empty result set', () => {
