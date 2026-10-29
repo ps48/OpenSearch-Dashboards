@@ -42,7 +42,7 @@ const mockUseRunResults = jest.fn(() => runData);
 const mockUseRunDetail = jest.fn(() => runDetail);
 const mockUseEvaluationResults = jest.fn(() => ({ loading: false, results }));
 let mockAgentCorePresent = false;
-const mockUseResultsPage = jest.fn(() => ({ loading: false, rows: results, beyondLimit: false }));
+const mockUseResultsPage = jest.fn(() => ({ loading: false, rows: results }));
 jest.mock('./use_eval_data', () => ({
   ...jest.requireActual('./use_eval_data'),
   useEvalData: (...args: unknown[]) => mockUseEvalData(...(args as [])),

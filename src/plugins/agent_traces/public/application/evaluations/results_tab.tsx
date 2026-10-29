@@ -20,7 +20,6 @@ import { EvalResult, OUTCOME_RANK, normalizedScore } from './eval_data';
 import { ShowTracesMenu } from './eval_trace_filter';
 import {
   DEFAULT_RESULTS_SORT,
-  MERGED_PAGE_LIMIT,
   RESULTS_PAGE_SIZES,
   ResultsSort,
   ResultsSortField,
@@ -77,8 +76,6 @@ export const ResultsTab: React.FC<{
   total?: number;
   loading?: boolean;
   error?: string;
-  /** The page lies beyond what can be read (see `MERGED_PAGE_LIMIT`). */
-  beyondLimit?: boolean;
   sort?: ResultsSort;
   pageIndex?: number;
   pageSize?: number;
@@ -89,7 +86,6 @@ export const ResultsTab: React.FC<{
   total,
   loading,
   error,
-  beyondLimit,
   sort = DEFAULT_RESULTS_SORT,
   pageIndex = 0,
   pageSize = RESULTS_PAGE_SIZES[0],
@@ -204,19 +200,6 @@ export const ResultsTab: React.FC<{
       </EuiText>
       <EuiSpacer size="xs" />
       {error && <QueryErrorCallout message={error} />}
-      {beyondLimit && (
-        <EuiCallOut
-          size="s"
-          color="warning"
-          iconType="iInCircle"
-          data-test-subj="agtEvlResultsBeyondLimit"
-          title={i18n.translate('agentTraces.evalsPage.resultsBeyondLimit', {
-            defaultMessage:
-              'Pages past result {limit} cannot be read in this order: the indices in this range differ in their fields, so they are read separately and merged in the browser. Sort by another column or narrow the time range.',
-            values: { limit: MERGED_PAGE_LIMIT.toLocaleString() },
-          })}
-        />
-      )}
       <EuiBasicTable<ResultRow>
         items={rows}
         itemId="id"

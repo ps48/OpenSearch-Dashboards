@@ -110,7 +110,7 @@ score trend and results over time come from PPL aggregations on the evaluation i
 
 The Evaluation runs list is aggregated too, so it holds every run in its range: grades
 `stats ... by test.suite.run.id, test.suite.name, gen_ai.evaluation.name, label, scale,
-evl_verdict` (per index group), test cases per run from grades (`distinct_count` of
+evl_verdict`, test cases per run from grades (`distinct_count` of
 `test.case.id`: all, failing, passing or failing), test case events counted by run and
 status, and the run events (one per run, read as is for their metadata). Counts and timing
 come from the run event, else the case events, else the grades. Each evaluator cell shows
@@ -123,17 +123,16 @@ The Results table reaches every result in the range: it is sorted (Time, Evaluat
 Result) and paged in the query (`sort ... | head <size> from <offset>`), filters and search
 included, with the exact total from the aggregation. Page sizes are 25, 50 and 100: on
 OpenSearch 3.9 a page that straddles offset 10,000 (`plugins.query.size_limit`) is cut at
-10,000, while pages on either side are complete, and these sizes never straddle it. Sorting
-by Result or filtering on Failing only needs the verdict script; when the range spans
-indices with different fields, each group of indices is read up to the page and merged in
-the browser, which reaches the first 10,000 results in that order (the table says so past
-that).
+10,000, while pages on either side are complete, and these sizes never straddle it.
 
-PPL on OpenSearch 3.9 drops the documents of indices that do not map a field an `eval`
-script names (daily indices with dynamic mappings, where a new attribute such as
-`opensearch.evaluation.assessment` exists only in newer indices). So each aggregation first
-asks, in one DSL aggregation, which indices in the range hold which optional fields, then runs
-once per group of indices naming only the fields that group holds, and adds up the rows.
+Every query is PPL and runs once against the index pattern; there is no DSL. PPL on
+OpenSearch 3.9 drops the documents of indices that do not map a field an `eval` script names,
+so the index template must map every field these views read (`gen_ai.evaluation.*`,
+`opensearch.evaluation.*`, `derived.*`, `test.*`, `error.type`) from the first index on;
+indices created before the template got those fields miss documents in verdict aggregations
+until the mappings are added to them (`PUT <index>/_mapping` with the template's mappings).
+Safety net: when PPL answers "Field [x] not found" (no index of the pattern maps `x`), the
+query runs again without what needs `x`, and that is remembered for five minutes.
 
 ## Needs attention and Top changes
 

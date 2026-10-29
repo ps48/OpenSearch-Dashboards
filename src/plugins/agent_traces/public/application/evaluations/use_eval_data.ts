@@ -34,7 +34,6 @@ import {
 } from './eval_aggregations';
 import {
   AGG_ROWS_LIMIT,
-  IndexGroup,
   buildDistinctAggQuery,
   buildSummaryAggQuery,
   buildTrendAggQuery,
@@ -44,7 +43,6 @@ import {
   fetchEvalResultsWith,
   fetchResultsPage,
   kpisFromAgg,
-  probeIndexGroups,
   summariesFromAgg,
   toAggRows,
   trendFromAgg,
@@ -118,7 +116,7 @@ export interface EvalAggregates {
   bucketsByName: Map<string, OutcomeBucket[]>;
   /** Normalized mean per evaluation and bucket (evaluations with a known score range). */
   trend: TrendPoint[];
-  /** An aggregation returned as many rows as allowed: the numbers may miss some groups. */
+  /** An aggregation returned as many rows as allowed: some rows may be left out. */
   truncated: boolean;
 }
 
@@ -156,35 +154,25 @@ const fetchAggregates = async (
   ppl: PPLService,
   index: string,
   filters: EvalFilters,
-  interval: number | undefined,
-  groups: IndexGroup[] | undefined
+  interval: number | undefined
 ): Promise<EvalAggregates> => {
   const [summaryRows, trendRows, distinct] = await Promise.all([
-    executeEvalPpl(
-      ppl,
-      index,
-      (missing, source) => buildSummaryAggQuery(filters, { index: source, missing }),
-      groups
+    executeEvalPpl(ppl, index, (missing, source) =>
+      buildSummaryAggQuery(filters, { index: source, missing })
     ),
     interval
-      ? executeEvalPpl(
-          ppl,
-          index,
-          (missing, source) => buildTrendAggQuery(filters, interval, { index: source, missing }),
-          groups
+      ? executeEvalPpl(ppl, index, (missing, source) =>
+          buildTrendAggQuery(filters, interval, { index: source, missing })
         )
       : Promise.resolve([]),
-    // Without a verdict filter the distinct counts need no script: one exact query.
-    outcomesFilter(filters)
-      ? executeEvalPpl(
-          ppl,
-          index,
-          (missing, source) => buildDistinctAggQuery(filters, { index: source, missing }),
-          groups
-        )
-      : executeEvalPpl(ppl, index, (missing, source) =>
-          buildDistinctAggQuery(filters, { index: source, missing, withoutVerdict: true })
-        ),
+    // Without a verdict filter the distinct counts need no script.
+    executeEvalPpl(ppl, index, (missing, source) =>
+      buildDistinctAggQuery(filters, {
+        index: source,
+        missing,
+        withoutVerdict: !outcomesFilter(filters),
+      })
+    ),
   ]);
   const summaries = summariesFromAgg(toAggRows(summaryRows));
   const trendAgg = toAggRows(trendRows);
@@ -229,37 +217,23 @@ export const useEvalData = (
     const current = createEvalsPplService(data, range, controller.signal);
     const before = createEvalsPplService(data, previousRange, controller.signal);
     const interval = pickInterval(bounds);
-    const run = async () => {
-      const [groups, previousGroups] = await Promise.all([
-        probeIndexGroups(data, index, range, controller.signal),
-        view === 'overview'
-          ? probeIndexGroups(data, index, previousRange, controller.signal)
-          : Promise.resolve(undefined),
-      ]);
+    const run = async () =>
       // The Results table pages its rows itself (useResultsPage).
-      return Promise.all([
-        fetchAggregates(
-          current,
-          index,
-          filters,
-          view === 'overview' ? interval : undefined,
-          groups
-        ),
+      Promise.all([
+        fetchAggregates(current, index, filters, view === 'overview' ? interval : undefined),
         view === 'overview'
-          ? fetchAggregates(before, index, filters, undefined, previousGroups)
+          ? fetchAggregates(before, index, filters, undefined)
           : Promise.resolve(undefined),
         view === 'overview'
           ? fetchEvalResultsWith(
               current,
               index,
               { ...filters, outcomes: ['fail'] },
-              RECENT_FAILURES,
-              groups
+              RECENT_FAILURES
             )
           : Promise.resolve([]),
         current.executeQuery(evalsDataset(index), buildEvalFacetsQuery({}, index)),
       ]);
-    };
     run()
       .then(([agg, previous, results, allFacets]) => {
         if (controller.signal.aborted) return;
@@ -309,7 +283,7 @@ export const EMPTY_RUN_DATA: RunData = {
   truncated: false,
 };
 
-/** Runs in the range from PPL aggregations, per index group (see `executeEvalPpl`). */
+/** Runs in the range from PPL aggregations on the index pattern (see `executeEvalPpl`). */
 export const fetchRunSummaries = async (
   data: DataPublicPluginStart,
   bounds: TimeBoundsMs,
@@ -317,11 +291,12 @@ export const fetchRunSummaries = async (
   index: string,
   signal?: AbortSignal
 ): Promise<{ runs: RunSummary[]; truncated: boolean }> => {
-  const range = isoRange(bounds);
-  const ppl = createEvalsPplService(data, range, signal);
-  const groups = await probeIndexGroups(data, index, range, signal);
-  const viaGroups = (build: (missing: ReadonlySet<string>, source: string) => string) =>
-    executeEvalPpl(ppl, index, build, groups);
+  const ppl = createEvalsPplService(data, isoRange(bounds), signal);
+  // No run id field mapped: no runs.
+  const viaPattern = (build: (missing: ReadonlySet<string>, source: string) => string) =>
+    executeEvalPpl(ppl, index, build, {
+      emptyWithout: [EVAL_FIELDS.runId, EVAL_FIELDS.suiteName, EVAL_FIELDS.caseId],
+    });
   // Case and run events are optional: a run without them still works from its grades.
   const optional = (query: string) =>
     ppl
@@ -329,14 +304,14 @@ export const fetchRunSummaries = async (
       .then((r) => pplResponseToRecords(r))
       .catch(() => [] as PplRecord[]);
   const [grades, all, fail, decided, caseEvents, runEvents] = await Promise.all([
-    viaGroups((missing, source) => buildRunGradesAggQuery(filters, { index: source, missing })),
-    viaGroups((missing, source) =>
+    viaPattern((missing, source) => buildRunGradesAggQuery(filters, { index: source, missing })),
+    viaPattern((missing, source) =>
       buildRunCasesAggQuery(filters, 'all', { index: source, missing, withoutVerdict: true })
     ),
-    viaGroups((missing, source) =>
+    viaPattern((missing, source) =>
       buildRunCasesAggQuery(filters, 'fail', { index: source, missing })
     ),
-    viaGroups((missing, source) =>
+    viaPattern((missing, source) =>
       buildRunCasesAggQuery(filters, 'decided', { index: source, missing })
     ),
     optional(buildRunCaseEventsAggQuery(index)),
@@ -592,8 +567,6 @@ export interface ResultsPageState {
   loading: boolean;
   error?: string;
   rows: EvalResult[];
-  /** The page cannot be read (see `MERGED_PAGE_LIMIT`). */
-  beyondLimit: boolean;
 }
 
 /** One page of the Results table, sorted and filtered in the query. */
@@ -611,26 +584,19 @@ export const useResultsPage = (
   const [state, setState] = useState<ResultsPageState>({
     loading: true,
     rows: [],
-    beyondLimit: false,
   });
   const key = JSON.stringify([bounds, filters, refreshKey, index, sort, pageIndex, pageSize]);
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
     setState((s) => ({ ...s, loading: true, error: undefined }));
-    const range = isoRange(bounds);
-    const ppl = createEvalsPplService(data, range, controller.signal);
-    const needsScript = !!outcomesFilter(filters) || sort.field === 'result';
-    (needsScript
-      ? probeIndexGroups(data, index, range, controller.signal)
-      : Promise.resolve(undefined)
-    )
-      .then((groups) => fetchResultsPage(ppl, index, filters, sort, pageIndex, pageSize, groups))
-      .then((page) => !controller.signal.aborted && setState({ loading: false, ...page }))
+    const ppl = createEvalsPplService(data, isoRange(bounds), controller.signal);
+    fetchResultsPage(ppl, index, filters, sort, pageIndex, pageSize)
+      .then((page) => !controller.signal.aborted && setState({ loading: false, rows: page.rows }))
       .catch(
         (error) =>
           !controller.signal.aborted &&
-          setState({ loading: false, rows: [], beyondLimit: false, error: errorMessage(error) })
+          setState({ loading: false, rows: [], error: errorMessage(error) })
       );
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps

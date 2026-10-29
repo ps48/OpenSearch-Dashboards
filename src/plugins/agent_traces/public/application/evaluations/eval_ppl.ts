@@ -4,7 +4,6 @@
  */
 
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
-import { DataPublicPluginStart } from '../../../../data/public';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import { PplRecord, pplResponseToRecords } from '../pages/sessions/session_utils';
 import {
@@ -64,96 +63,10 @@ const OPTIONAL_FIELDS = new Set<string>([
 ]);
 
 /**
- * Indices queried together: they hold the same optional fields. PPL resolves fields on the
- * whole `source`, and an `eval` script naming a field that some of the indices do not map
- * silently loses those indices' documents (seen on OpenSearch 3.9 with daily indices and
- * dynamic mappings). So each aggregation runs once per group of indices, naming only the
- * fields every index of the group holds, and the rows are added up.
+ * Fields PPL said it does not know, per index pattern, for a few minutes. The index template
+ * maps every field the UI reads, so this is a safety net (an index created before the
+ * template, a custom index pattern): the query runs again without what needs the field.
  */
-export interface IndexGroup {
-  source: string;
-  missing: ReadonlySet<string>;
-}
-
-const OPTIONAL_LIST = Array.from(OPTIONAL_FIELDS);
-
-/** Groups of indices by the optional fields their documents in the range hold. */
-export const groupsFromProbe = (response: unknown): IndexGroup[] => {
-  const raw = (response as { rawResponse?: unknown })?.rawResponse ?? response;
-  const buckets =
-    (
-      raw as {
-        aggregations?: { idx?: { buckets?: Array<Record<string, unknown>> } };
-      }
-    )?.aggregations?.idx?.buckets ?? [];
-  const bySignature = new Map<string, { indices: string[]; missing: Set<string> }>();
-  buckets.forEach((b) => {
-    const missing = new Set(
-      OPTIONAL_LIST.filter((_, i) => !((b[`f${i}`] as { doc_count?: number })?.doc_count ?? 0))
-    );
-    const key = Array.from(missing).sort().join('|');
-    const group = bySignature.get(key) ?? { indices: [], missing };
-    group.indices.push(String(b.key));
-    bySignature.set(key, group);
-  });
-  return Array.from(bySignature.values()).map((g) => ({
-    source: g.indices.sort().join(','),
-    missing: g.missing,
-  }));
-};
-
-/** Index names safe to list in a PPL `source`. */
-const SAFE_INDEX = /^[^\s|'"`,]+$/;
-
-/**
- * One DSL aggregation: the indices with results in the range and, per index, which optional
- * fields any result holds. Undefined when the probe fails (then the pattern is queried as is).
- */
-export const probeIndexGroups = async (
-  data: DataPublicPluginStart,
-  index: string,
-  timeRange?: { from: string; to: string },
-  signal?: AbortSignal
-): Promise<IndexGroup[] | undefined> => {
-  const aggs: Record<string, unknown> = {};
-  OPTIONAL_LIST.forEach((f, i) => {
-    aggs[`f${i}`] = { filter: { exists: { field: f } } };
-  });
-  try {
-    const response = await data.search
-      .search(
-        {
-          params: {
-            index,
-            body: {
-              size: 0,
-              query: timeRange
-                ? {
-                    range: {
-                      [EVAL_FIELDS.time]: {
-                        gte: timeRange.from,
-                        lte: timeRange.to,
-                        format: 'strict_date_optional_time',
-                      },
-                    },
-                  }
-                : { match_all: {} },
-              aggs: { idx: { terms: { field: '_index', size: 1000 }, aggs } },
-            },
-          },
-        },
-        { abortSignal: signal }
-      )
-      .toPromise();
-    const groups = groupsFromProbe(response);
-    if (groups.some((g) => g.source.split(',').some((i) => !SAFE_INDEX.test(i)))) return undefined;
-    return groups;
-  } catch {
-    return undefined;
-  }
-};
-
-/** Fields found missing per index pattern (safety net when no probe ran). */
 const MISSING_TTL_MS = 5 * 60 * 1000;
 const missingByIndex = new Map<string, { at: number; fields: Set<string> }>();
 export const clearMissingFieldsCache = () => missingByIndex.clear();
@@ -178,38 +91,33 @@ export const missingFieldOf = (error: unknown): string | undefined => {
 
 type Build = (missing: ReadonlySet<string>, source: string) => string;
 
-const runGroup = async (ppl: PPLService, group: IndexGroup, build: Build) => {
-  let missing = new Set([...group.missing, ...missingOf(group.source)]);
-  for (let attempt = 0; attempt <= OPTIONAL_FIELDS.size; attempt++) {
-    try {
-      return pplResponseToRecords(
-        await ppl.executeQuery(evalsDataset(group.source), build(missing, group.source))
-      );
-    } catch (error) {
-      // PPL rejects a field no index of the source maps: drop it and retry.
-      const f = missingFieldOf(error);
-      if (!f || !OPTIONAL_FIELDS.has(f) || missing.has(f)) throw error;
-      missing = new Set([...missing, f]);
-      missingByIndex.set(group.source, { at: Date.now(), fields: missing });
-    }
-  }
-  throw new Error('Evaluation query failed');
-};
-
 /**
- * Runs `build(missing, source)` once per index group (or once on the pattern without
- * groups) and returns all rows. Aggregated rows of several groups are added up by the
- * `*FromAgg` helpers.
+ * Runs `build(missing, index)` once against the whole index pattern and returns its rows.
+ * When PPL answers "Field [x] not found" for an optional field, it runs again treating `x`
+ * as absent (`missing`), and remembers that for a few minutes. With `emptyWithout`, a
+ * missing field from that list means there is nothing to read: no rows.
  */
 export const executeEvalPpl = async (
   ppl: PPLService,
   index: string,
   build: Build,
-  groups?: IndexGroup[]
+  options: { emptyWithout?: string[] } = {}
 ): Promise<PplRecord[]> => {
-  const list = groups?.length ? groups : [{ source: index, missing: new Set<string>() }];
-  const rows = await Promise.all(list.map((g) => runGroup(ppl, g, build)));
-  return rows.flat();
+  let missing = new Set(missingOf(index));
+  for (let attempt = 0; attempt <= OPTIONAL_FIELDS.size; attempt++) {
+    try {
+      return pplResponseToRecords(
+        await ppl.executeQuery(evalsDataset(index), build(missing, index))
+      );
+    } catch (error) {
+      const f = missingFieldOf(error);
+      if (f && options.emptyWithout?.includes(f)) return [];
+      if (!f || !OPTIONAL_FIELDS.has(f) || missing.has(f)) throw error;
+      missing = new Set([...missing, f]);
+      missingByIndex.set(index, { at: Date.now(), fields: missing });
+    }
+  }
+  throw new Error('Evaluation query failed');
 };
 
 export interface QueryContext {
@@ -235,15 +143,11 @@ export const fetchEvalResultsWith = async (
   ppl: PPLService,
   index: string,
   filters: EvalFilters,
-  limit: number,
-  groups?: IndexGroup[]
+  limit: number
 ): Promise<EvalResult[]> =>
   (
-    await executeEvalPpl(
-      ppl,
-      index,
-      (missing, source) => buildEvalResultsQuery(filters, limit, source, missing),
-      groups
+    await executeEvalPpl(ppl, index, (missing, source) =>
+      buildEvalResultsQuery(filters, limit, source, missing)
     )
   )
     .map(recordToEvalResult)
@@ -569,13 +473,6 @@ export const RANK_COLUMN = 'evl_rank';
  */
 export const RESULTS_PAGE_SIZES = [25, 50, 100];
 
-/**
- * Rows a merged page may reach: when the query needs the verdict script and the indices fall
- * into several mapping groups, each group returns its first `offset + size` rows and the
- * page is merged in the browser.
- */
-export const MERGED_PAGE_LIMIT = 10000;
-
 /** One page of results under the filters, in the given order. */
 export const buildResultsPageQuery = (
   filters: EvalFilters,
@@ -621,7 +518,7 @@ export const buildResultsPageQuery = (
 
 const RANK: Record<EvalOutcome, number> = { fail: 0, error: 1, neutral: 2, pass: 3 };
 
-/** The browser's order for merged pages, the same as the query's. */
+/** The browser's order of results, the same as the query's. */
 export const compareResults =
   (sort: ResultsSort) =>
   (a: EvalResult, b: EvalResult): number => {
@@ -647,49 +544,20 @@ export const compareResults =
 
 export interface ResultsPage {
   rows: EvalResult[];
-  /** The page lies beyond what a merged page can reach (see `MERGED_PAGE_LIMIT`). */
-  beyondLimit: boolean;
 }
 
-/**
- * One page of the Results table. Without the verdict script (no verdict filter, not sorted by
- * Result) one query pages the whole pattern. With it, one query per index group: a single
- * group pages in PPL; several groups each return their first rows and the page is merged.
- */
+/** One page of the Results table: one query on the index pattern, sorted and paged in PPL. */
 export const fetchResultsPage = async (
   ppl: PPLService,
   index: string,
   filters: EvalFilters,
   sort: ResultsSort,
   pageIndex: number,
-  pageSize: number,
-  groups?: IndexGroup[]
+  pageSize: number
 ): Promise<ResultsPage> => {
   const from = pageIndex * pageSize;
-  const needsScript = !!outcomesFilter(filters) || sort.field === 'result';
-  if (!needsScript || !groups || groups.length <= 1) {
-    const rows = await executeEvalPpl(
-      ppl,
-      index,
-      (missing, source) =>
-        buildResultsPageQuery(filters, sort, from, pageSize, { index: source, missing }),
-      needsScript ? groups : undefined
-    );
-    return { rows: rows.map(recordToEvalResult), beyondLimit: false };
-  }
-  if (from + pageSize > MERGED_PAGE_LIMIT) return { rows: [], beyondLimit: true };
-  const rows = await executeEvalPpl(
-    ppl,
-    index,
-    (missing, source) =>
-      buildResultsPageQuery(filters, sort, 0, from + pageSize, { index: source, missing }),
-    groups
+  const rows = await executeEvalPpl(ppl, index, (missing, source) =>
+    buildResultsPageQuery(filters, sort, from, pageSize, { index: source, missing })
   );
-  return {
-    rows: rows
-      .map(recordToEvalResult)
-      .sort(compareResults(sort))
-      .slice(from, from + pageSize),
-    beyondLimit: false,
-  };
+  return { rows: rows.map(recordToEvalResult) };
 };

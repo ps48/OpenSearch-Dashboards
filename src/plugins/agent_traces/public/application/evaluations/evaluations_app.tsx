@@ -536,7 +536,6 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             total={data.total}
             loading={resultsPage.loading}
             error={resultsPage.error}
-            beyondLimit={resultsPage.beyondLimit}
             sort={resultsSort}
             pageIndex={resultsPageAt.index}
             pageSize={resultsPageAt.size}

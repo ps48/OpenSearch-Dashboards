@@ -126,15 +126,6 @@ describe('ResultsTab', () => {
     });
   });
 
-  it('says when a page cannot be read', () => {
-    render(
-      <I18nProvider>
-        <ResultsTab results={[]} total={20000} beyondLimit onOpenResult={jest.fn()} />
-      </I18nProvider>
-    );
-    expect(screen.getByTestId('agtEvlResultsBeyondLimit')).toBeInTheDocument();
-  });
-
   it('ranks failures before passes for the result sort', () => {
     const [fail, pass] = toResultRows(results);
     expect(fail.rank).toBeLessThan(pass.rank);
