@@ -5,7 +5,7 @@ Traces and Spans).
 
 ## Data
 
-Every query reads one index pattern, `otel-v1-genai-evaluation-*` by default. The index holds
+Every query reads one index pattern, the evaluations dataset's (below). The index holds
 three OpenTelemetry log events, told apart by `eventName`:
 
 | `eventName` | One per | Used by |
@@ -18,19 +18,66 @@ Grades join to agent spans (`otel-v1-apm-span-*`) on `traceId` and `spanId`, and
 `attributes.derived.session.id`. A run without the test case or run events still shows, from
 its grades.
 
-## Setting: evaluations index pattern
+## Evaluations dataset
 
-`agentTraces:evaluationsIndexPattern` (Dashboards Management > Advanced settings, section
-Observability) sets the index pattern read by:
+The page reads the **evaluations dataset**: a logs dataset (index pattern with `signalType:
+logs`) over the evaluation events, `otel-v1-genai-evaluation*` with time field `time` by
+default. It is linked to a traces dataset by a correlation saved object (type
+`correlations`), in the shape of the `trace-to-logs-*` correlation of the trace flyout's logs:
+
+```json
+{
+  "type": "correlations",
+  "attributes": {
+    "correlationType": "trace-to-evaluations-otel-v1-apm-span*",
+    "title": "trace-to-evaluations_otel-v1-apm-span*",
+    "version": "1.0.0",
+    "entities": [
+      { "tracesDataset": { "id": "references[0].id" } },
+      { "evaluationsDataset": { "id": "references[1].id" } }
+    ]
+  },
+  "references": [
+    { "name": "entities[0].index", "type": "index-pattern", "id": "<traces dataset>" },
+    { "name": "entities[1].index", "type": "index-pattern", "id": "<evaluations dataset>" }
+  ]
+}
+```
+
+**Settings** (in the application header) edits it: the traces dataset (default: the first
+traces dataset, the one Agent Traces opens on), the evaluations dataset (any logs dataset; a
+"Create evaluations dataset" action makes `otel-v1-genai-evaluation*` with time field `time`
+and schema mappings timestamp `time`, `traceId`, `spanId` when none exists), and the pass
+rules setting, read only, with a link to Advanced settings. Save creates the correlation, or
+updates it in place. The observability stack's init script creates the same dataset ("Evaluation
+Dataset - Local Cluster") and correlation.
+
+The dataset's index pattern is the PPL `source` of:
 
 - the Agent Evaluations page (Overview, Results, Evaluation runs, run page, Compare, the
   evaluation drill-down and trace comparison grades);
-- the Evaluations column of the Agent Traces tables;
-- the Evaluations tab and chips of the trace details flyout.
+- the Evaluations column of the Agent Traces tables and the Evaluations tab and chips of the
+  trace and session flyouts. Without a correlation these keep reading
+  `otel-v1-genai-evaluation-*`, where Data Prepper writes the events.
 
-Default: `otel-v1-genai-evaluation-*`. Set it when your pipeline writes evaluation events to
-another index, for example `my-team-evals-*`. A value with spaces, quotes or `|` is ignored
-and the default is used.
+A pattern with spaces, quotes or `|` is not used. The trace details flyout's Related logs tab
+also lists the trace's evaluation events, as "Evaluations", when an evaluations dataset is
+correlated with the flyout's traces dataset; Explore Logs queries the dataset like any logs
+dataset (`source = otel-v1-genai-evaluation* | where traceId = '...'`).
+
+## Header and empty states
+
+The breadcrumb, the date picker and Settings share the application header's row (the
+`HeaderControl` right controls, as in APM). On the Evaluation runs tab the header holds the
+runs' own range (7 and 30 days, and a picker) instead of the global one. With the legacy
+navigation the title, the description and the controls make a row at the top of the page.
+
+- No evaluations dataset: what evaluations are, **Get started** (opens Settings), and links to
+  the SDK `score()` / `evaluate()` setup and the Bedrock AgentCore import example.
+- Dataset set, nothing in the range: "No evaluation results in this time range" with Last 24
+  hours and Last 7 days (and Clear filters under filters) on Overview and Results; "No
+  evaluation runs in this range" with Last 30 days on Evaluation runs.
+- Dataset set, no evaluation index in the cluster yet: how results get there.
 
 ## Verdicts
 
@@ -136,6 +183,11 @@ query runs again without what needs `x`, and that is remembered for five minutes
 
 ## Needs attention and Top changes
 
+Overview, top to bottom: Needs attention, Top changes, the KPIs, Score trend and Results over
+time, the evaluation cards (most failing first; each with a mini chart of its results over
+time on a compact time axis), Recent failures. Every chart's tooltip names its bucket or score
+bin.
+
 The Overview opens with up to five findings computed from the aggregations of the range and of
 the previous range of the same length (no LLM), most urgent first:
 
@@ -189,9 +241,9 @@ Each run other than the baseline gets one word, from the same changes, no LLM:
 2. Some better and some worse: **Tradeoff**. Only better: **Improvement**. Only worse:
    **Regression**.
 3. No mean moved: test cases decide only by a margin. Regressed cases outnumbering improved
-   ones by at least 2, or by at least 10% of the cases both runs have, is a Regression; the
-   other way round an Improvement; anything less a **Tie** (one regressed case among twelve,
-   with no mean moved, is a Tie).
+   ones by at least 2 (and by at least 10% of the cases both runs have, in a suite of more
+   than 20) is a Regression; the other way round an Improvement; anything less a **Tie**. A
+   single regressed case with no mean moved is a Tie.
 
 The evidence sentence names the evaluations ("Better on answer_quality, worse on
 latency_budget") or the changed cases, up to three by name ("1 case regressed (Unknown
