@@ -14,6 +14,7 @@ import {
   binRangeText,
   bucketPoint,
   bucketRangeText,
+  compactTicks,
   pointTitle,
 } from './eval_charts';
 import { makeResult } from './eval_test_fixtures';
@@ -32,9 +33,7 @@ jest.mock('@elastic/charts', () => {
           onClick={() => onElementClick([[{ datum: mockDatum }, { specId: 'x' }]])}
         />
       ) : null,
-    Axis: ({ id, ticks }: { id: string; ticks?: number }) => (
-      <span data-test-subj={`chartAxis-${id}`} data-ticks={ticks} />
-    ),
+    Axis: ({ id }: { id: string }) => <span data-test-subj={`chartAxis-${id}`} />,
     Tooltip: () => null,
     BarSeries: () => null,
     LineSeries: () => null,
@@ -129,10 +128,20 @@ describe('chart click-through', () => {
 });
 
 describe('chart axes and tooltips', () => {
-  it('gives a card histogram a compact time axis and no count axis', () => {
-    render(<OutcomeHistogram buckets={[]} bounds={bounds} interval={HOUR} height={72} compact />);
-    expect(screen.getByTestId('chartAxis-time')).toHaveAttribute('data-ticks', '3');
+  it('gives a card histogram a compact time axis: start, middle and end, no count axis', () => {
+    render(<OutcomeHistogram buckets={[]} bounds={bounds} interval={HOUR} height={56} compact />);
+    expect(screen.getByTestId('agtEvlMiniAxis').querySelectorAll('span')).toHaveLength(3);
+    expect(screen.queryByTestId('chartAxis-time')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chartAxis-count')).not.toBeInTheDocument();
+  });
+
+  it('labels the compact axis for the length of the range', () => {
+    const from = Date.UTC(2026, 9, 28, 0);
+    expect(compactTicks({ from, to: from + 12 * HOUR })).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^\d\d:\d\d$/)])
+    );
+    expect(compactTicks({ from, to: from + 2 * 24 * HOUR })[0]).toMatch(/^Oct \d+ \d\d:\d\d$/);
+    expect(compactTicks({ from, to: from + 30 * 24 * HOUR })[2]).toMatch(/^Nov \d+$/);
   });
 
   it('keeps both axes on a full histogram', () => {

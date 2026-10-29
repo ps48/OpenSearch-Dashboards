@@ -149,13 +149,6 @@ const useChartPoint = () => {
   return { clickable: !!actions, wrapperProps, select, popover };
 };
 
-/** Small tick labels without tick marks, for the axis of a chart in a card. */
-export const COMPACT_AXIS_STYLE = {
-  tickLabel: { fontSize: 9, padding: { inner: 1, outer: 0 } },
-  tickLine: { visible: false, size: 0, padding: 0 },
-  axisLine: { visible: false },
-};
-
 /** A time bucket in a tooltip header: its start to its end. */
 export const bucketRangeText = (from: number, to: number): string => {
   const sameDay = formatEvalTime(from, 'YYYY-MM-DD') === formatEvalTime(to, 'YYYY-MM-DD');
@@ -216,7 +209,7 @@ export const OutcomeHistogram: React.FC<{
   return (
     <div
       {...point.wrapperProps}
-      style={{ ...point.wrapperProps.style, height }}
+      style={{ ...point.wrapperProps.style, ...(compact ? {} : { height }) }}
       data-test-subj={rest['data-test-subj'] ?? 'agtEvlOutcomeHistogram'}
     >
       <Chart size={{ height }}>
@@ -238,15 +231,9 @@ export const OutcomeHistogram: React.FC<{
         <Tooltip
           headerFormatter={({ value }) => bucketRangeText(Number(value), Number(value) + interval)}
         />
-        {/* In a card: a few small time ticks (start, middle, end), no count axis. */}
-        <Axis
-          id="time"
-          position={Position.Bottom}
-          tickFormat={formatter}
-          ticks={compact ? 3 : undefined}
-          style={compact ? COMPACT_AXIS_STYLE : undefined}
-          showOverlappingTicks={!compact}
-        />
+        {!compact && (
+          <Axis id="time" position={Position.Bottom} tickFormat={formatter} showOverlappingTicks />
+        )}
         {!compact && <Axis id="count" position={Position.Left} ticks={3} />}
         {OUTCOMES.map((outcome) => (
           <BarSeries
@@ -263,10 +250,28 @@ export const OutcomeHistogram: React.FC<{
           />
         ))}
       </Chart>
+      {/* In a card: three small time labels (start, middle, end), no count axis. */}
+      {compact && <CompactTimeAxis bounds={bounds} />}
       {point.popover}
     </div>
   );
 };
+
+/** Start, middle and end of a range: `HH:mm` within a day, else `MMM D` (plus time if short). */
+export const compactTicks = ({ from, to }: TimeBoundsMs): string[] => {
+  const span = to - from;
+  const format =
+    span <= 24 * 3600 * 1000 ? 'HH:mm' : span <= 3 * 24 * 3600 * 1000 ? 'MMM D HH:mm' : 'MMM D';
+  return [from, from + span / 2, to].map((t) => formatEvalTime(t, format));
+};
+
+const CompactTimeAxis: React.FC<{ bounds: TimeBoundsMs }> = ({ bounds }) => (
+  <div className="agtEvlMiniAxis" data-test-subj="agtEvlMiniAxis" aria-hidden="true">
+    {compactTicks(bounds).map((label, i) => (
+      <span key={i}>{label}</span>
+    ))}
+  </div>
+);
 
 /** Normalized mean score (0 to 1, higher is better) per evaluation over time. */
 export const ScoreTrendChart: React.FC<{
