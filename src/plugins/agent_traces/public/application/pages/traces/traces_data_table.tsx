@@ -107,8 +107,17 @@ export const TracesDataTable: React.FC = () => {
     };
   }, []);
 
+  // Set below; the reset effect fetches the open flyout's trace again through it.
+  const expandTraceRef = useRef<(traceId: string) => Promise<void>>();
+
   // Reset tree expansion and caches when hits change (e.g. sort re-query)
   useEffect(() => {
+    // The open flyout's spans may still be loading: a deep link (openTraceId) opens the flyout
+    // as soon as the first query settles, and a later query (the link's time range applied)
+    // replaces the hits. Aborting that fetch would leave the flyout on "Loading full trace
+    // tree..." for good, so it is fetched again.
+    const flyoutTraceId = flyoutTraceIdRef.current;
+    const interrupted = !!flyoutTraceId && inFlightRef.current.has(flyoutTraceId);
     abortControllerRef.current?.abort();
     setExpandedRows(new Set());
     setChildHitsMap(new Map());
@@ -116,6 +125,7 @@ export const TracesDataTable: React.FC = () => {
     setTraceLoadingState(new Map());
     traceSpansCacheRef.current.clear();
     inFlightRef.current.clear();
+    if (interrupted && flyoutTraceId) expandTraceRef.current?.(flyoutTraceId);
   }, [hits]);
 
   // Sync full tree to flyout
@@ -219,6 +229,7 @@ export const TracesDataTable: React.FC = () => {
     },
     [pplService, datasetParam, formatTs]
   );
+  expandTraceRef.current = expandTrace;
 
   const toggleExpansion = useCallback(
     async (e: React.MouseEvent, id: string, traceId: string) => {
