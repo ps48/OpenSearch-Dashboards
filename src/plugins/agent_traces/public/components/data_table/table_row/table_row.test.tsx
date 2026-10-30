@@ -23,6 +23,9 @@ jest.mock('../../../../../opensearch_dashboards_react/public', () => ({
 }));
 
 // Mock the child components
+// The trace cells' Evaluations marks link to Explore Logs; the Explore plugin is not needed here.
+jest.mock('../../../../../explore/public', () => ({ buildExploreLogsUrl: () => '' }));
+
 jest.mock('../table_cell/source_field_table_cell', () => ({
   SourceFieldTableCell: ({ isShortDots }: { isShortDots: boolean }) => (
     <div data-test-subj="table-source-cell">Source Cell - Short dots: {isShortDots.toString()}</div>
