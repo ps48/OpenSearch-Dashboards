@@ -8,7 +8,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import {
   ChartActionsContext,
+  JudgedLatencyChart,
   OutcomeHistogram,
+  ValueDistributionChart,
+  formatMs,
   ScoreDistributionChart,
   ScoreTrendChart,
   binRangeText,
@@ -37,7 +40,7 @@ jest.mock('@elastic/charts', () => {
     Tooltip: () => null,
     BarSeries: () => null,
     LineSeries: () => null,
-    LineAnnotation: () => null,
+    LineAnnotation: ({ id }: { id: string }) => <span data-test-subj={`chartAnnotation-${id}`} />,
   };
 });
 
@@ -158,5 +161,47 @@ describe('chart axes and tooltips', () => {
     );
     expect(binRangeText(0.4)).toBe('40% to 50%');
     expect(binRangeText(0.9)).toBe('90% to 100%');
+  });
+});
+
+describe('Overview charts', () => {
+  it('draws a value distribution with its threshold line', () => {
+    render(
+      <ValueDistributionChart
+        distribution={{
+          bins: [{ x: 1, outcome: 'fail', count: 2 }],
+          width: 1,
+          min: 1,
+          max: 5,
+          threshold: 4,
+          total: 2,
+        }}
+      />
+    );
+    expect(screen.getByTestId('agtEvlValueDistribution')).toBeInTheDocument();
+    expect(screen.getByTestId('chartAnnotation-threshold')).toBeInTheDocument();
+  });
+
+  it('has no threshold line without a threshold', () => {
+    render(
+      <ValueDistributionChart distribution={{ bins: [], width: 0.1, min: 0, max: 0.9, total: 0 }} />
+    );
+    expect(screen.queryByTestId('chartAnnotation-threshold')).not.toBeInTheDocument();
+  });
+
+  it('draws judged trace latency over the range', () => {
+    render(
+      <JudgedLatencyChart
+        latency={{ points: [], passingCount: 0, failingCount: 0 }}
+        bounds={{ from: 0, to: 3600 * 1000 }}
+      />
+    );
+    expect(screen.getByTestId('agtEvlJudgedLatency')).toBeInTheDocument();
+    expect(screen.getByTestId('chartAxis-latency')).toBeInTheDocument();
+  });
+
+  it('formats latencies', () => {
+    expect(formatMs(850)).toBe('850 ms');
+    expect(formatMs(2500)).toBe('2.5 s');
   });
 });

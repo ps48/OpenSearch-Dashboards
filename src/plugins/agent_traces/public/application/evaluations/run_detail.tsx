@@ -407,7 +407,7 @@ export const RunDetailPage: React.FC<{
       onClick={onBack}
       data-test-subj="agtEvlRunBack"
     >
-      {i18n.translate('agentTraces.evalsPage.backToRuns', { defaultMessage: 'Evaluation runs' })}
+      {i18n.translate('agentTraces.evalsPage.backToRuns', { defaultMessage: 'Test suites' })}
     </EuiButtonEmpty>
   );
 
@@ -629,7 +629,7 @@ export const RunDetailPage: React.FC<{
                   <h2>
                     {run.suiteName ??
                       i18n.translate('agentTraces.evalsPage.noSuite', {
-                        defaultMessage: 'Evaluation run',
+                        defaultMessage: 'Test suite run',
                       })}
                   </h2>
                 </EuiTitle>

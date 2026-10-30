@@ -475,3 +475,102 @@
   color: $euiColorDarkShade;
   font-variant-numeric: tabular-nums;
 }
+
+// Overview evaluations table
+.agtEvlRate {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agtEvlRate__v {
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agtEvlRate__v--fail {
+  color: $euiColorDanger;
+  font-weight: $euiFontWeightSemiBold;
+}
+
+.agtEvlRate__bar {
+  width: 64px;
+  height: 4px;
+  border-radius: 2px;
+  background: $euiColorLightShade;
+  overflow: hidden;
+
+  i {
+    display: block;
+    height: 100%;
+    background: $euiColorMediumShade;
+  }
+}
+
+.agtEvlRate__bar--fail i {
+  background: $euiColorDanger;
+}
+
+.agtEvlChange {
+  font-size: 12px;
+  font-weight: $euiFontWeightSemiBold;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.agtEvlChange--bad {
+  color: $euiColorDangerText;
+  background: tintOrShade($euiColorDanger, 90%, 70%);
+}
+
+.agtEvlChange--good {
+  color: $euiColorSuccessText;
+  background: tintOrShade($euiColorSuccess, 90%, 70%);
+}
+
+.agtEvlChange--flat {
+  color: $euiColorDarkShade;
+  background: $euiColorLightestShade;
+}
+
+// The result open in the side panel.
+.agtEvlTable__row--selected {
+  background: $euiColorLightestShade;
+  box-shadow: inset 3px 0 0 $euiColorPrimary;
+}
+
+// Test suite page: KPI cards
+.agtEvlKpiCard {
+  height: 100%;
+}
+
+.agtEvlKpiBars {
+  display: block;
+  margin: 4px 0 2px;
+}
+
+.agtEvlKpiBars__bar {
+  fill: $euiColorLightShade;
+}
+
+.agtEvlKpiBars__bar--latest {
+  fill: $euiColorPrimary;
+}
+
+.agtEvlKpiBars__bar--worse {
+  fill: $euiColorDanger;
+}
+
+.agtEvlKpiBars__bar--baseline {
+  stroke: $euiColorDarkShade;
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+// Overview chart panels that load their own data
+.agtEvlChartLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

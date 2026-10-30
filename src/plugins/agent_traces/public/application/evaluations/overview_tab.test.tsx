@@ -26,6 +26,9 @@ const aggOf = (list: EvalResult[]): EvalAggregates => ({
 jest.mock('./eval_charts', () => ({
   OutcomeHistogram: () => <div data-test-subj="histogramStub" />,
   ScoreTrendChart: () => <div data-test-subj="trendStub" />,
+  ValueDistributionChart: () => <div data-test-subj="distributionStub" />,
+  JudgedLatencyChart: () => <div data-test-subj="latencyStub" />,
+  formatMs: (ms: number) => `${ms} ms`,
 }));
 
 const bounds = { from: Date.UTC(2026, 9, 26, 0), to: Date.UTC(2026, 9, 27, 0) };
@@ -89,16 +92,15 @@ describe('OverviewTab', () => {
     expect(within(screen.getByTestId('agtEvlKpiSessions')).getByText('1')).toBeInTheDocument();
   });
 
-  it('renders one card per evaluation, most failing first, and filters on click', () => {
+  it('lists every evaluation in a table, most failing first, and drills down on click', () => {
     const { onSelectEvaluation } = renderOverview();
-    const cards = screen.getAllByTestId('agtEvlEvaluatorCard');
-    expect(cards).toHaveLength(2);
-    expect(within(cards[0]).getByText('tool_diversity')).toBeInTheDocument();
-    expect(within(cards[0]).getByTestId('agtEvlCardPassRate')).toHaveTextContent('50%');
-    expect(within(cards[1]).getByText('Bedrock AgentCore')).toBeInTheDocument();
-    expect(within(cards[1]).getByText('Session')).toBeInTheDocument();
-    expect(within(cards[1]).getByText('Very Helpful 100%')).toBeInTheDocument();
-    fireEvent.click(cards[1]);
+    const rows = screen.getAllByTestId('agtEvlEvaluationRow');
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText('tool_diversity')).toBeInTheDocument();
+    expect(within(rows[0]).getByTestId('agtEvlCardPassRate')).toHaveTextContent('50%');
+    expect(within(rows[1]).getByText('Helpfulness')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('session')).toBeInTheDocument();
+    fireEvent.click(rows[1]);
     expect(onSelectEvaluation).toHaveBeenCalledWith('Helpfulness');
   });
 
@@ -109,30 +111,35 @@ describe('OverviewTab', () => {
         makeResult({ name: 'span_coverage', value: 0.5, label: 'Partial' }),
       ]),
     });
-    const card = screen.getByTestId('agtEvlEvaluatorCard');
-    expect(within(card).getByTestId('agtEvlCardMean')).toHaveTextContent('0.75');
-    expect(within(card).getByTestId('agtEvlNoPassRule')).toBeInTheDocument();
-    expect(within(card).queryByTestId('agtEvlCardPassRate')).not.toBeInTheDocument();
+    const row = screen.getByTestId('agtEvlEvaluationRow');
+    expect(within(row).getByTestId('agtEvlCardMean')).toHaveTextContent('mean 0.75');
+    expect(within(row).queryByTestId('agtEvlCardPassRate')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlNoPassRule')).toBeInTheDocument();
     expect(screen.getByTestId('agtEvlKpiPassRateSub')).toHaveTextContent('2 scored without a rule');
   });
 
-  it('offers the traces where an evaluation fails from its card', () => {
+  it('offers the traces where an evaluation fails from its row, without drilling down', () => {
     const showTraces = jest.fn();
-    renderOverview({}, showTraces);
-    const card = screen.getAllByTestId('agtEvlEvaluatorCard')[0];
-    fireEvent.click(within(card).getByTestId('agtEvlShowTracesButton'));
+    const { onSelectEvaluation } = renderOverview({}, showTraces);
+    const row = screen.getAllByTestId('agtEvlEvaluationRow')[0];
+    fireEvent.click(within(row).getByTestId('agtEvlShowTracesButton'));
     fireEvent.click(screen.getByTestId('agtEvlShowTraces-fail'));
     expect(showTraces).toHaveBeenCalledWith({ name: 'tool_diversity', kind: 'fail' });
+    expect(onSelectEvaluation).not.toHaveBeenCalled();
   });
 
-  it('lists recent failures that open the result', () => {
-    const { onOpenResult } = renderOverview();
-    const list = screen.getByTestId('agtEvlRecentFailures');
-    expect(within(list).getByTestId('agtEvlOutcomeBadge')).toHaveTextContent(
-      'Looping on one tool (0.33)'
-    );
-    fireEvent.click(within(list).getByTestId('agtEvlFailureLink'));
-    expect(onOpenResult).toHaveBeenCalledWith(results[0]);
+  it('leaves the failures to the Results tab: no recent failures list', () => {
+    renderOverview();
+    expect(screen.queryByTestId('agtEvlRecentFailures')).not.toBeInTheDocument();
+  });
+
+  it('shows the score distribution of the most failing evaluation with numbers, and a picker', () => {
+    renderOverview();
+    const picker = screen.getByTestId('agtEvlDistributionPicker') as HTMLSelectElement;
+    expect(picker.value).toBe('tool_diversity');
+    // Helpfulness reports labels only: not offered.
+    expect(within(picker).queryByText('Helpfulness')).not.toBeInTheDocument();
+    expect(screen.getByText('Latency of judged traces')).toBeInTheDocument();
   });
 
   it('opens with what needs attention, linked to the drill-down, and no Top changes', () => {
@@ -165,10 +172,10 @@ describe('OverviewTab', () => {
     expect(onShowPrevious).toHaveBeenCalledWith('tool_diversity');
   });
 
-  it('puts the score trend and results over time above the evaluation cards', () => {
+  it('puts the charts between what needs attention and the evaluations table', () => {
     renderOverview();
     const trend = screen.getByTestId('trendStub');
-    const firstCard = screen.getAllByTestId('agtEvlEvaluatorCard')[0];
+    const firstCard = screen.getAllByTestId('agtEvlEvaluationRow')[0];
     const attention = screen.getByTestId('agtEvlNeedsAttention');
     const before = (a: Node, b: Node) =>
       // eslint-disable-next-line no-bitwise

@@ -16,6 +16,7 @@ import { i18n } from '@osd/i18n';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import moment from 'moment-timezone';
+import { useAgentEvalsEnabled } from '../../evaluations/eval_feature_flag';
 import { useTabResults } from '../../utils/hooks/use_tab_results';
 import { useDatasetContext } from '../../context/dataset_context/dataset_context';
 import { useOpenSearchDashboards } from '../../../../../opensearch_dashboards_react/public';
@@ -225,7 +226,13 @@ export const useDataTableCore = ({ defaultColumns }: DataTableCoreOptions) => {
   const { uiSettings } = services;
   const dispatch = useDispatch();
 
-  const columns = useSelector(selectColumns);
+  const storedColumns = useSelector(selectColumns);
+  // Agent Evaluations off: no Evaluations column, whatever the saved column state says.
+  const evalsEnabled = useAgentEvalsEnabled();
+  const columns = useMemo(
+    () => (evalsEnabled ? storedColumns : storedColumns.filter((c) => c !== 'evaluations')),
+    [storedColumns, evalsEnabled]
+  );
   const { dataset } = useDatasetContext();
   const { results } = useTabResults();
   const isQueryLoading = useSelector(selectIsLoading);
@@ -284,8 +291,16 @@ export const useDataTableCore = ({ defaultColumns }: DataTableCoreOptions) => {
       (columns.length === 1 && columns[0] === '_source') ||
       !hasTraceVirtualColumns
     ) {
-      dispatch(setColumns(defaultColumns));
-    } else if (defaultColumns.includes('evaluations') && !columns.includes('evaluations')) {
+      dispatch(
+        setColumns(
+          evalsEnabled ? defaultColumns : defaultColumns.filter((c) => c !== 'evaluations')
+        )
+      );
+    } else if (
+      evalsEnabled &&
+      defaultColumns.includes('evaluations') &&
+      !columns.includes('evaluations')
+    ) {
       // Saved column state from before the Evaluations column existed.
       const at = columns.indexOf('totalTokens');
       const next = [...columns];

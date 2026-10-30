@@ -10,6 +10,7 @@ import { useDispatch } from 'react-redux';
 import { i18n } from '@osd/i18n';
 import { useOpenSearchDashboards } from '../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../types';
+import { useAgentEvalsEnabled } from '../../evaluations/eval_feature_flag';
 import { executeQueries } from '../../utils/state_management/actions/query_actions';
 import {
   EvalTraceFilterPill,
@@ -29,6 +30,7 @@ export const TracesEvalFilterProvider: React.FC = ({ children }) => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const dispatch = useDispatch();
   const activeFilter = useEvalTraceFilter();
+  const evalsEnabled = useAgentEvalsEnabled();
   const rerun = useCallback(() => {
     dispatch(executeQueries({ services }) as never);
   }, [dispatch, services]);
@@ -62,6 +64,8 @@ export const TracesEvalFilterProvider: React.FC = ({ children }) => {
     [services, rerun]
   );
 
+  // Agent Evaluations off: no filter pill, no "Show traces where this fails".
+  if (!evalsEnabled) return <>{children}</>;
   return (
     <ShowTracesContext.Provider value={showTraces}>
       {activeFilter && (

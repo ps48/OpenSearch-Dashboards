@@ -6,6 +6,7 @@
 import React, { useMemo, useState } from 'react';
 import { i18n } from '@osd/i18n';
 import { EuiBadge, EuiIcon, EuiLink, EuiProgress, EuiToolTip } from '@elastic/eui';
+import { useAgentEvalsEnabled } from '../../evaluations/eval_feature_flag';
 import { TableHeaderColumn } from '../../../components/data_table/table_header/table_header_column';
 import { TokenIcon } from '../../../components/data_table/table_cell/trace_utils/trace_utils';
 import { SortOrder } from '../../../helpers/data_table_helper';
@@ -72,6 +73,7 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
   const [sortOrder, setSortOrder] = useState<SortOrder[]>(DEFAULT_SORT);
   const sessionIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
   const sessionEvals = useSessionEvaluations(sessionIds);
+  const evalsEnabled = useAgentEvalsEnabled();
 
   // User ID comes from the optional `user.id` attribute; hide the column when no session has one.
   const hasUserIds = useMemo(() => sessions.some((s) => !!s.userId), [sessions]);
@@ -144,8 +146,8 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
         sortable: false,
       }
     );
-    return cols;
-  }, [hasUserIds]);
+    return evalsEnabled ? cols : cols.filter((c) => c.key !== 'evaluations');
+  }, [hasUserIds, evalsEnabled]);
 
   const sortedSessions = useMemo(() => {
     const [field, direction] = (sortOrder[0] ?? DEFAULT_SORT[0]) as [SessionColumnKey, string];

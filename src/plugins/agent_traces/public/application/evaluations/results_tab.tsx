@@ -81,6 +81,8 @@ export const ResultsTab: React.FC<{
   pageSize?: number;
   onTableChange?: (change: { sort: ResultsSort; pageIndex: number; pageSize: number }) => void;
   onOpenResult: (r: EvalResult) => void;
+  /** The result open in the side panel, highlighted. */
+  selectedId?: string;
 }> = ({
   results,
   total,
@@ -91,6 +93,7 @@ export const ResultsTab: React.FC<{
   pageSize = RESULTS_PAGE_SIZES[0],
   onTableChange,
   onOpenResult,
+  selectedId,
 }) => {
   const rows = useMemo(() => toResultRows(results), [results]);
 
@@ -229,7 +232,7 @@ export const ResultsTab: React.FC<{
         }}
         rowProps={(r: ResultRow) => ({
           onClick: () => onOpenResult(r),
-          className: 'agtEvlTable__row',
+          className: `agtEvlTable__row${r.id === selectedId ? ' agtEvlTable__row--selected' : ''}`,
           'data-test-subj': `agtEvlResultRow-${r.outcome}`,
         })}
         message={i18n.translate('agentTraces.evalsPage.noRows', {

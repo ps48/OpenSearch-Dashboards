@@ -10,11 +10,9 @@ import {
   EuiEmptyPrompt,
   EuiFlexGroup,
   EuiFlexItem,
-  EuiHealth,
   EuiIcon,
   EuiLink,
   EuiLoadingSpinner,
-  EuiPanel,
   EuiPopover,
   EuiPopoverTitle,
   EuiSpacer,
@@ -24,6 +22,9 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import moment from 'moment-timezone';
+import type { ApplicationStart } from '../../../../../../../core/public';
+import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
+import { AGENT_EVALS_NAV_ID } from '../../../../../common';
 import {
   EvalResult,
   LEVEL_LABEL,
@@ -34,14 +35,13 @@ import {
 import {
   LevelPill,
   OUTCOME_BADGE_COLOR,
-  OUTCOME_HEALTH_COLOR,
   OUTCOME_ICON,
   OUTCOME_TEXT,
   VerdictBadge,
-  VerdictSummaryChip,
   countVerdicts,
   summaryAria,
 } from '../../../evaluations/eval_chips';
+import { JudgeIcon, JudgePill, judgeState } from '../../../evaluations/eval_judge_icon';
 import { ShowTracesMenu } from '../../../evaluations/eval_trace_filter';
 import { DatasetRef, useEvalsDataset } from '../../../evaluations/eval_dataset';
 import { parseEvalTime } from '../../../evaluations/eval_aggregations';
@@ -49,7 +49,6 @@ import { buildExploreLogsUrl } from '../../../../../../explore/public';
 import { TraceEvaluations } from './use_trace_evaluations';
 import './trace_evaluations.scss';
 
-const HEALTH_COLOR = OUTCOME_HEALTH_COLOR;
 const BADGE_COLOR = OUTCOME_BADGE_COLOR;
 
 /** PPL timestamps are UTC without a zone ("2026-10-26 09:38:26.94"); show them in local time. */
@@ -143,8 +142,8 @@ export const EvalResultsList: React.FC<{
 );
 
 /**
- * The Evaluations column: one chip per row, `✗ 2 · ✓ 4 · 3 scored`, red only when something
- * failed. Clicking it lists every result; a result opens the trace on its Evaluations tab.
+ * The Evaluations column: one judge pill per row, `⚖ 2 failing of 4` (red) or `⚖ 4 passing`
+ * (green). Clicking it lists every result; a result opens the trace on its Evaluations tab.
  */
 export const EvalSummaryCell: React.FC<{
   results: EvalResult[];
@@ -166,9 +165,10 @@ export const EvalSummaryCell: React.FC<{
         anchorPosition="downLeft"
         panelPaddingSize="s"
         button={
-          <VerdictSummaryChip
+          <JudgePill
             counts={counts}
             onClick={() => setOpen(!open)}
+            aria-label={summaryAria(counts)}
             data-test-subj="agentTracesEvalSummary"
           />
         }
@@ -197,45 +197,128 @@ export const EvalSummaryCell: React.FC<{
   );
 };
 
-/** Trace flyout header: `2 FAILED · 6 PASSED · 3 SCORED`; opens the Evaluations tab. */
-export const EvalHeaderSummary: React.FC<{ results: EvalResult[]; onClick: () => void }> = ({
-  results,
-  onClick,
-}) => {
+export type HeaderVerdictFilter = 'fail';
+
+/**
+ * Trace flyout header: `2 FAILED` `1 PASSED` `1 ERRORED` `1 SCORED` chips. FAILED toggles the
+ * span filter (only spans with a failing evaluation stay bright); the others open the tab.
+ */
+export const EvalHeaderSummary: React.FC<{
+  results: EvalResult[];
+  onClick: () => void;
+  activeFilter?: HeaderVerdictFilter;
+  onToggleFailFilter?: () => void;
+}> = ({ results, onClick, activeFilter, onToggleFailFilter }) => {
   const counts = countVerdicts(results);
-  const parts = [
-    counts.fail &&
-      i18n.translate('agentTraces.flyout.evalsFailed', {
+  const chips: Array<{ key: string; count: number; text: string; onChip: () => void }> = [
+    {
+      key: 'fail',
+      count: counts.fail,
+      text: i18n.translate('agentTraces.flyout.evalsFailed', {
         defaultMessage: '{count} FAILED',
         values: { count: counts.fail },
       }),
-    counts.pass &&
-      i18n.translate('agentTraces.flyout.evalsPassed', {
+      onChip: onToggleFailFilter ?? onClick,
+    },
+    {
+      key: 'pass',
+      count: counts.pass,
+      text: i18n.translate('agentTraces.flyout.evalsPassed', {
         defaultMessage: '{count} PASSED',
         values: { count: counts.pass },
       }),
-    counts.error &&
-      i18n.translate('agentTraces.flyout.evalsErrored', {
+      onChip: onClick,
+    },
+    {
+      key: 'error',
+      count: counts.error,
+      text: i18n.translate('agentTraces.flyout.evalsErrored', {
         defaultMessage: '{count} ERRORED',
         values: { count: counts.error },
       }),
-    counts.neutral &&
-      i18n.translate('agentTraces.flyout.evalsScored', {
+      onChip: onClick,
+    },
+    {
+      key: 'neutral',
+      count: counts.neutral,
+      text: i18n.translate('agentTraces.flyout.evalsScored', {
         defaultMessage: '{count} SCORED',
         values: { count: counts.neutral },
       }),
-  ].filter((p): p is string => !!p);
+      onChip: onClick,
+    },
+  ];
   return (
-    <EuiLink
-      onClick={onClick}
-      color={counts.fail ? 'danger' : 'text'}
+    <span
       className="agtEvlHeaderSummary"
       aria-label={summaryAria(counts)}
       data-test-subj="agentTracesFlyoutEvalSummary"
     >
-      {parts.join(' · ')}
-    </EuiLink>
+      {chips
+        .filter((c) => c.count > 0)
+        .map((c) => {
+          const active = c.key === 'fail' && activeFilter === 'fail';
+          return (
+            <button
+              key={c.key}
+              type="button"
+              className={`agtEvlTally agtEvlTally--${c.key}${active ? ' agtEvlTally--active' : ''}`}
+              onClick={c.onChip}
+              aria-pressed={c.key === 'fail' && onToggleFailFilter ? active : undefined}
+              title={
+                c.key === 'fail' && onToggleFailFilter
+                  ? active
+                    ? i18n.translate('agentTraces.flyout.evalsFailedClear', {
+                        defaultMessage: 'Show all spans',
+                      })
+                    : i18n.translate('agentTraces.flyout.evalsFailedFilter', {
+                        defaultMessage: 'Highlight spans with a failing evaluation',
+                      })
+                  : undefined
+              }
+              data-test-subj={`agentTracesFlyoutEvalTally-${c.key}`}
+            >
+              {c.text}
+            </button>
+          );
+        })}
+    </span>
   );
+};
+
+/** Spans whose results include a failure. */
+export const failingSpanIds = (bySpanId: Record<string, EvalResult[]>): Set<string> =>
+  new Set(Object.keys(bySpanId).filter((id) => bySpanId[id].some((r) => r.outcome === 'fail')));
+
+/** Trace Map marks for a span's evaluations: the judge pill, and a red banner when one failed. */
+export const flowEvalDecoration = (
+  results: EvalResult[] | undefined
+): { className?: string; badge?: React.ReactNode } | undefined => {
+  if (!results || results.length === 0) return undefined;
+  const counts = countVerdicts(results);
+  const failing = results.filter((r) => r.outcome === 'fail');
+  if (failing.length === 0) {
+    return {
+      className: 'agtEvlFlowNode',
+      badge: <JudgePill counts={counts} data-test-subj="agentTracesFlowEvalMark" />,
+    };
+  }
+  const names = Array.from(new Set(failing.map((r) => r.name)));
+  return {
+    className: 'agtEvlFlowNode agtEvlFlowNode--fail',
+    badge: (
+      <div className="agtEvlFlowBanner" data-test-subj="agentTracesFlowEvalBanner">
+        <JudgeIcon />
+        <span className="eui-textTruncate">
+          {i18n.translate('agentTraces.flowView.failingEvals', {
+            defaultMessage:
+              '{count, plural, one {# failing evaluation} other {# failing evaluations}} · {names}',
+            values: { count: failing.length, names: names.join(', ') },
+          })}
+        </span>
+      </div>
+    ),
+  };
 };
 
 /** A span's evaluations in the trace tree: a count, with a red dot when one failed. */
@@ -251,26 +334,29 @@ export const SpanEvalMark: React.FC<{ results?: EvalResult[] }> = ({ results }) 
       ))}
     >
       <span
-        className="agtEvlSpanMark"
+        className={`agtEvlSpanMark agtEvlSpanMark--${judgeState(counts)}`}
         aria-label={summaryAria(counts)}
         data-test-subj="agentTracesSpanEvalMark"
         data-failed={counts.fail > 0 ? 'true' : 'false'}
       >
-        {counts.fail > 0 && <span className="agtEvlSpanMark__dot" />}
-        <EuiIcon type="visGauge" size="s" />
-        {results.length}
+        <JudgeIcon />
+        {counts.fail > 0 ? `${counts.fail}/${results.length}` : results.length}
       </span>
     </EuiToolTip>
   );
 };
 
+/** Literal `\n` sequences some judges emit become real line breaks. */
+export const proseOf = (text: string): string => text.replace(/(?:\\r)?\\n/g, '\n').trim();
+
 const ExplanationText: React.FC<{ text: string }> = ({ text }) => {
   const [expanded, setExpanded] = useState(false);
-  const long = text.length > 280;
+  const prose = proseOf(text);
+  const long = prose.length > 280;
   return (
-    <EuiText size="xs" className="agtEvl__explanation">
+    <EuiText size="s" className="agtEvl__explanation" data-test-subj="agentTracesEvalExplanation">
       <p>
-        {expanded || !long ? text : truncate(text, 280)}{' '}
+        {expanded || !long ? prose : truncate(prose, 280)}{' '}
         {long && (
           <EuiLink onClick={() => setExpanded(!expanded)} data-test-subj="agentTracesEvalMore">
             {expanded
@@ -283,33 +369,77 @@ const ExplanationText: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-/** One result with its explanation, evaluator and target. */
+/** The score on its scale when the scale is known: `1 / 5`, else the label or value. */
+export const scoreOnScale = (r: EvalResult): string => {
+  if (r.value === undefined) return r.label ?? '';
+  const v = Number.isInteger(r.value) ? String(r.value) : r.value.toFixed(2);
+  if (r.scoreMax !== undefined && r.scoreMax !== 1) return `${v} / ${r.scoreMax}`;
+  return r.label ? `${r.label} (${v})` : v;
+};
+
+/** `1 / 5 · Fail`, tinted by verdict. */
+export const VerdictScoreChip: React.FC<{ result: EvalResult }> = ({ result: r }) => {
+  const score = scoreOnScale(r);
+  return (
+    <span
+      className={`agtEvlVerdictChip agtEvlVerdictChip--${r.outcome}`}
+      data-test-subj="agentTracesEvalVerdict"
+      data-outcome={r.outcome}
+    >
+      {score ? `${score} · ` : ''}
+      {OUTCOME_TEXT[r.outcome]}
+    </span>
+  );
+};
+
+const HOUR = 60 * 60 * 1000;
+
+/** The result opened in the Evaluations app's Results tab (its flyout), around its time. */
+export const resultInEvaluationsPath = (r: Pick<EvalResult, 'id' | 'time'>): string => {
+  const t = parseEvalTime(r.time);
+  const time = Number.isFinite(t)
+    ? `(from:'${new Date(t - HOUR).toISOString()}',to:'${new Date(t + HOUR).toISOString()}')`
+    : `(from:now-7d,to:now)`;
+  const id = r.id.replace(/!/g, '!!').replace(/'/g, "!'");
+  return `#/?_g=(time:${time})&_a=(result:'${encodeURIComponent(id)}',tab:results)`;
+};
+
+const OpenInResults: React.FC<{ result: EvalResult }> = ({ result }) => {
+  const { services } = useOpenSearchDashboards<{ application?: ApplicationStart }>();
+  const application = services?.application;
+  if (!application) return null;
+  return (
+    <EuiLink
+      onClick={() =>
+        application.navigateToApp(AGENT_EVALS_NAV_ID, { path: resultInEvaluationsPath(result) })
+      }
+      data-test-subj="agentTracesEvalOpenInResults"
+    >
+      {i18n.translate('agentTraces.evals.openInResults', {
+        defaultMessage: 'Open in Evaluations → Results',
+      })}
+    </EuiLink>
+  );
+};
+
+/** One result as a row: name, `1 / 5 · Fail`, the judged span, the explanation as prose. */
 export const EvalResultItem: React.FC<{
   result: EvalResult;
   targetLabel?: string;
   onTargetClick?: () => void;
 }> = ({ result: r, targetLabel, onTargetClick }) => (
-  <EuiPanel paddingSize="s" hasBorder className="agtEvl__item" data-test-subj="agentTracesEvalItem">
+  <div className="agtEvl__item" data-test-subj="agentTracesEvalItem" data-outcome={r.outcome}>
     <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false} wrap>
-      <EuiFlexItem grow={false}>
-        <EuiHealth color={HEALTH_COLOR[r.outcome]}>{OUTCOME_TEXT[r.outcome]}</EuiHealth>
-      </EuiFlexItem>
       <EuiFlexItem grow={false}>
         <EuiText size="s">
           <strong>{r.name}</strong>
         </EuiText>
       </EuiFlexItem>
       <EuiFlexItem grow={false}>
-        <EuiText size="s">{formatScore(r)}</EuiText>
-      </EuiFlexItem>
-      <EuiFlexItem grow={false}>
-        <LevelPill level={r.level} />
-      </EuiFlexItem>
-      <EuiFlexItem grow={false}>
-        <ShowTracesMenu name={r.name} label={r.label} value={r.value} />
+        <VerdictScoreChip result={r} />
       </EuiFlexItem>
       {targetLabel && (
-        <EuiFlexItem grow={false}>
+        <EuiFlexItem grow={false} className="agtEvl__target">
           {onTargetClick ? (
             <EuiLink onClick={onTargetClick} data-test-subj="agentTracesEvalTarget">
               <EuiText size="xs">{targetLabel}</EuiText>
@@ -321,15 +451,29 @@ export const EvalResultItem: React.FC<{
           )}
         </EuiFlexItem>
       )}
+      <EuiFlexItem />
+      <EuiFlexItem grow={false}>
+        <ShowTracesMenu name={r.name} label={r.label} value={r.value} />
+      </EuiFlexItem>
     </EuiFlexGroup>
     {r.explanation && <ExplanationText text={r.explanation} />}
-    <EuiText size="xs" color="subdued">
-      {r.evaluator}
-      {r.evaluatorVersion ? ` ${r.evaluatorVersion}` : ''} · {SOURCE_LABEL[r.source] ?? r.source}
-      {r.onlineConfig ? ` · ${r.onlineConfig}` : ''}
-      {r.errorType ? ` · error: ${r.errorType}` : ''} · {formatTime(r.time)}
-    </EuiText>
-  </EuiPanel>
+    <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false} wrap>
+      <EuiFlexItem>
+        <EuiText size="xs" color="subdued">
+          {LEVEL_LABEL[r.level] ?? r.level} · {r.evaluator}
+          {r.evaluatorVersion ? ` ${r.evaluatorVersion}` : ''} ·{' '}
+          {SOURCE_LABEL[r.source] ?? r.source}
+          {r.onlineConfig ? ` · ${r.onlineConfig}` : ''}
+          {r.errorType ? ` · error: ${r.errorType}` : ''} · {formatTime(r.time)}
+        </EuiText>
+      </EuiFlexItem>
+      <EuiFlexItem grow={false}>
+        <EuiText size="xs">
+          <OpenInResults result={r} />
+        </EuiText>
+      </EuiFlexItem>
+    </EuiFlexGroup>
+  </div>
 );
 
 const Section: React.FC<{ title: string; count: number }> = ({ title, count, children }) => (

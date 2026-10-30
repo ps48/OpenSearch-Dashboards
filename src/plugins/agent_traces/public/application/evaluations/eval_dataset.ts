@@ -6,6 +6,7 @@
 import { useEffect } from 'react';
 import { BehaviorSubject } from 'rxjs';
 import { useObservable } from 'react-use';
+import { useAgentEvalsEnabled } from './eval_feature_flag';
 import { SavedObjectsClientContract } from '../../../../../core/public';
 import { getWorkspaceIdFromUrl } from '../../../../../core/public/utils';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
@@ -339,11 +340,12 @@ export const useEvalsDataset = (options: { force?: boolean } = {}) => {
   const client = services?.savedObjects?.client;
   const workspaceId = currentWorkspaceId(services);
   const state = useObservable(state$, state$.getValue());
+  const evalsEnabled = useAgentEvalsEnabled();
   useEffect(() => {
-    if (client) loadEvalsDataset(client, { ...options, workspaceId });
+    if (client && evalsEnabled) loadEvalsDataset(client, { ...options, workspaceId });
     // Load once per mount; `force` is read on mount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, workspaceId]);
+  }, [client, workspaceId, evalsEnabled]);
   return {
     ...state,
     workspaceId,
@@ -362,6 +364,9 @@ export const useEvalsDataset = (options: { force?: boolean } = {}) => {
  */
 export const useEvalsIndexPattern = (): string | undefined => {
   const { status, config, unavailable } = useEvalsDataset();
+  // Agent Evaluations off: no index, so no eval query runs anywhere in Agent Traces.
+  const evalsEnabled = useAgentEvalsEnabled();
+  if (!evalsEnabled) return undefined;
   if (unavailable) return AGENT_EVALS_INDEX_PATTERN;
   if (status === 'ready' || status === 'error') return config?.index ?? AGENT_EVALS_INDEX_PATTERN;
   return undefined;

@@ -22,6 +22,11 @@ export const configSchema = schema.object({
   }),
   agentTraces: schema.object({
     enabled: schema.boolean({ defaultValue: false }),
+    // Agent Evaluations (Evaluations app, eval columns and marks in Agent Traces).
+    // Takes effect only when agentTraces.enabled is also true.
+    evaluations: schema.object({
+      enabled: schema.boolean({ defaultValue: false }),
+    }),
   }),
   pplAnalyze: schema.object({
     enabled: schema.boolean({ defaultValue: false }),

@@ -32,6 +32,7 @@ export class AgentTracesPlugin implements Plugin<AgentTracesPluginSetup, AgentTr
     core.capabilities.registerProvider(() => ({
       agentTraces: {
         agentTracesEnabled: false,
+        agentEvalsEnabled: false,
       },
     }));
 
@@ -53,6 +54,11 @@ export class AgentTracesPlugin implements Plugin<AgentTracesPluginSetup, AgentTr
           agentTraces: {
             ...(capabilities.agentTraces || {}),
             agentTracesEnabled: config.agentTraces?.enabled ?? false,
+            // Agent Evaluations need both explore.agentTraces.enabled and
+            // explore.agentTraces.evaluations.enabled.
+            agentEvalsEnabled: !!(
+              config.agentTraces?.enabled && config.agentTraces?.evaluations?.enabled
+            ),
           },
         };
       } catch (error) {

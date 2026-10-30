@@ -6,6 +6,8 @@
 import { i18n } from '@osd/i18n';
 import { BehaviorSubject } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
+import { setEvalTraceFilter } from './application/evaluations/eval_trace_filter_store';
+import { isAgentEvalsEnabled } from './application/evaluations/eval_feature_flag';
 import {
   App,
   AppMountParameters,
@@ -357,6 +359,10 @@ export class AgentTracesPlugin implements Plugin<
             coreStart.application.navigateToApp('discover', { replace: true });
             return () => {};
           }
+          if (!isAgentEvalsEnabled(coreStart.application.capabilities)) {
+            coreStart.application.navigateToApp(AGENT_TRACES_NAV_ID, { replace: true });
+            return () => {};
+          }
           const { renderEvaluationsApp } = await import('./application/evaluations');
           evalsHistory = params.history;
           evalsTracker.appMounted();
@@ -441,13 +447,21 @@ export class AgentTracesPlugin implements Plugin<
     const agentTracesNavStatus = capabilities.agentTraces?.agentTracesEnabled
       ? AppNavLinkStatus.visible
       : AppNavLinkStatus.hidden;
+    const agentEvalsNavStatus = isAgentEvalsEnabled(capabilities)
+      ? AppNavLinkStatus.visible
+      : AppNavLinkStatus.hidden;
+    // Agent Evaluations off: drop a "traces where an evaluation fails" filter kept from a
+    // session where they were on, so it cannot narrow the Traces and Spans queries.
+    if (!isAgentEvalsEnabled(capabilities)) setEvalTraceFilter(undefined);
     Object.values(this.stateUpdaterByApp).forEach((updater) => {
       updater.next((app) => {
+        if (app.id === AGENT_EVALS_NAV_ID) {
+          return { navLinkStatus: agentEvalsNavStatus };
+        }
         if (
           app.id === PLUGIN_ID ||
           app.id === AGENT_TRACES_NAV_ID ||
-          app.id === AGENT_SPANS_NAV_ID ||
-          app.id === AGENT_EVALS_NAV_ID
+          app.id === AGENT_SPANS_NAV_ID
         ) {
           return { navLinkStatus: agentTracesNavStatus };
         }

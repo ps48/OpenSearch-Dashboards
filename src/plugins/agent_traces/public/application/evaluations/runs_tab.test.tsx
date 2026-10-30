@@ -6,18 +6,44 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
-import { RunsTab } from './runs_tab';
+import { RunsTab, groupBySuite, resetLastSuite } from './runs_tab';
 import { EMPTY_RUN_EVENTS, EvalResult, RunEvents } from './eval_data';
 import { summarizeRuns } from './eval_aggregations';
 import { makeResult, twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
 
+// The suite page reads its operational numbers itself: stubbed here.
+jest.mock('./use_suite_kpis', () => ({
+  ...jest.requireActual('./use_suite_kpis'),
+  useSuiteKpis: () => ({ loading: false, byRun: new Map() }),
+}));
+jest.mock('./eval_dataset', () => ({
+  ...jest.requireActual('./eval_dataset'),
+  useEvalsIndexPattern: () => 'otel-v1-genai-evaluation*',
+  useSpansIndexPattern: () => 'otel-v1-apm-span-*',
+}));
+jest.mock('../../../../opensearch_dashboards_react/public', () => ({
+  ...jest.requireActual('../../../../opensearch_dashboards_react/public'),
+  useOpenSearchDashboards: () => ({ services: { data: {} } }),
+}));
+jest.mock('./eval_charts', () => ({
+  ...jest.requireActual('./eval_charts'),
+  SuiteTrendChart: () => <div data-test-subj="agtEvlSuiteTrendStub" />,
+}));
+
 type RenderProps = Partial<React.ComponentProps<typeof RunsTab>> & {
   results?: EvalResult[];
   events?: RunEvents;
+  /** Runs are listed per suite: open the first suite (default). */
+  openSuite?: boolean;
 };
 
 /** The runs list and the compared runs from the same grades and events. */
-const renderRuns = ({ results = twoRunFixture(), events, ...props }: RenderProps = {}) => {
+const renderRuns = ({
+  results = twoRunFixture(),
+  events,
+  openSuite = true,
+  ...props
+}: RenderProps = {}) => {
   const onCompareChange = jest.fn();
   const onOpenTrace = jest.fn();
   render(
@@ -31,8 +57,12 @@ const renderRuns = ({ results = twoRunFixture(), events, ...props }: RenderProps
       />
     </I18nProvider>
   );
+  const suiteLink = screen.queryAllByTestId('agtEvlSuiteLink')[0];
+  if (openSuite && suiteLink) fireEvent.click(suiteLink);
   return { onCompareChange, onOpenTrace };
 };
+
+beforeEach(() => resetLastSuite());
 
 describe('RunsTab', () => {
   it('explains how to produce runs when there are none', () => {
@@ -40,20 +70,22 @@ describe('RunsTab', () => {
     expect(screen.getByTestId('agtEvlNoRuns')).toHaveTextContent('test.suite.run.id');
   });
 
-  it('lists runs with cases and per-evaluation means with their change, no verdict word', () => {
+  it("lists a suite's runs without per-evaluation columns or a verdict word", () => {
     renderRuns();
     const table = screen.getByTestId('agtEvlRunsTable');
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText('run-2')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('0.57')).toBeInTheDocument();
-    expect(within(table).queryByTestId('agtEvlRegression')).not.toBeInTheDocument();
+    // Per-evaluation scores are on the run page, not in this table.
+    expect(within(table).queryByText('0.57')).not.toBeInTheDocument();
+    expect(within(table).queryByTestId('agtEvlRunsDelta')).not.toBeInTheDocument();
     expect(table).not.toHaveTextContent('Regression');
-    // Against the previous run of the suite: 0.65 to 0.57, worse.
-    const delta = within(rows[0]).getByTestId('agtEvlRunsDelta');
-    expect(delta).toHaveTextContent('↓8 pp');
-    expect(delta).toHaveAttribute('data-change', 'regressed');
-    expect(within(rows[1]).queryByTestId('agtEvlRunsDelta')).not.toBeInTheDocument();
+  });
+
+  it('lists no runs before a suite is picked', () => {
+    renderRuns({ openSuite: false });
+    expect(screen.getByTestId('agtEvlSuitesTable')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlRunsTable')).not.toBeInTheDocument();
   });
 
   it('shows the agent version, model, status and usage from the run metadata', () => {
@@ -255,5 +287,33 @@ describe('RunsTab with test case and run events', () => {
     expect(within(flyout).getByTestId('agtEvlCaseInput')).toHaveTextContent('Not recorded');
     fireEvent.click(within(flyout).getByTestId('agtEvlCaseTrace-candidate'));
     expect(onOpenTrace).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('test suites', () => {
+  it('groups runs by suite, newest run first, and filters runs by the picked suite', () => {
+    const runs = summarizeRuns(twoRunFixture());
+    const suites = groupBySuite(runs);
+    expect(suites).toHaveLength(new Set(runs.map((r) => r.suiteName)).size);
+    expect(suites[0].latest.started).toBeGreaterThanOrEqual(
+      suites[0].runs[suites[0].runs.length - 1].started
+    );
+    renderRuns({ openSuite: false });
+    expect(screen.getByTestId('agtEvlSuitesTable')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByTestId('agtEvlSuiteLink')[0]);
+    expect(screen.getByText(`Runs of ${suites[0].name}`)).toBeInTheDocument();
+  });
+
+  it('opens a suite page with KPI cards, its trend, a baseline tag and a way back', () => {
+    renderRuns({ openSuite: false });
+    fireEvent.click(screen.getAllByTestId('agtEvlSuiteLink')[0]);
+    expect(screen.getByTestId('agtEvlSuiteDetail')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlSuitesTable')).toBeNull();
+    expect(screen.getByTestId('agtEvlKpi-casesPassed')).toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlSuiteTrendStub')).toBeInTheDocument();
+    // The latest run is measured against the run before it.
+    expect(screen.getAllByTestId('agtEvlRunBaselineBadge')).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('agtEvlSuiteBack'));
+    expect(screen.getByTestId('agtEvlSuitesTable')).toBeInTheDocument();
   });
 });

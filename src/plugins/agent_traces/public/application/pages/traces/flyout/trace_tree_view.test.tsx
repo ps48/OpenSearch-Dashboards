@@ -173,4 +173,30 @@ describe('TraceTreeView toolbar', () => {
     expect(onExpandAll).toHaveBeenCalled();
     expect(onCollapseAll).toHaveBeenCalled();
   });
+
+  it('dims spans outside the highlighted set (the FAILED chip)', () => {
+    const failing = makeNode({
+      id: 'n1',
+      label: 'failing span',
+      traceRow: { spanId: 's1' } as any,
+    });
+    const passing = makeNode({
+      id: 'n2',
+      label: 'passing span',
+      traceRow: { spanId: 's2' } as any,
+    });
+    const { rerender } = render(
+      <TraceTreeView
+        {...defaultProps}
+        traceTreeData={[failing, passing]}
+        highlightedSpanIds={new Set(['s1'])}
+      />
+    );
+    const rowOf = (text: string) =>
+      screen.getByText(text).closest('.agentTracesFlyout__treeRow') as HTMLElement;
+    expect(rowOf('failing span')).not.toHaveClass('agentTracesFlyout__treeRow--dimmed');
+    expect(rowOf('passing span')).toHaveClass('agentTracesFlyout__treeRow--dimmed');
+    rerender(<TraceTreeView {...defaultProps} traceTreeData={[failing, passing]} />);
+    expect(rowOf('passing span')).not.toHaveClass('agentTracesFlyout__treeRow--dimmed');
+  });
 });

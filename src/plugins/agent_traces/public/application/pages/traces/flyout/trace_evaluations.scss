@@ -3,7 +3,16 @@
 }
 
 .agtEvl__item {
-  margin-bottom: $euiSizeXS;
+  padding: $euiSizeS 0;
+  border-bottom: $euiBorderThin;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.agtEvl__target {
+  min-width: 0;
 }
 
 .agtEvl__explanation {
@@ -53,9 +62,147 @@
 }
 
 .agtEvlHeaderSummary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: $euiSizeXS;
+}
+
+// Header tally chips: `2 FAILED` `1 PASSED` `1 SCORED`.
+.agtEvlTally {
+  padding: 1px $euiSizeS;
+  border: 1px solid transparent;
+  border-radius: $euiBorderRadiusSmall;
+  font-size: $euiFontSizeXS;
+  font-weight: $euiFontWeightBold;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: $euiSizeL;
+  cursor: pointer;
+
+  &--fail {
+    color: $euiColorDangerText;
+    background: tintOrShade($euiColorDanger, 88%, 70%);
+  }
+
+  &--pass {
+    color: $euiColorSuccessText;
+    background: tintOrShade($euiColorSuccess, 88%, 70%);
+  }
+
+  &--error {
+    color: $euiColorWarningText;
+    background: tintOrShade($euiColorWarning, 85%, 70%);
+  }
+
+  &--neutral {
+    color: $euiTextSubduedColor;
+    background: $euiColorLightestShade;
+  }
+
+  &--active {
+    border-color: $euiColorDanger;
+    box-shadow: inset 0 0 0 1px $euiColorDanger;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $euiFocusRingColor;
+  }
+}
+
+// `1 / 5 · Fail`
+.agtEvlVerdictChip {
+  display: inline-block;
+  padding: 0 $euiSizeS;
+  border-radius: $euiBorderRadiusSmall;
   font-size: $euiFontSizeXS;
   font-weight: $euiFontWeightSemiBold;
   font-variant-numeric: tabular-nums;
+  line-height: $euiSizeL;
+  color: $euiTextSubduedColor;
+  background: $euiColorLightestShade;
+
+  &--fail {
+    color: $euiColorDangerText;
+    background: tintOrShade($euiColorDanger, 88%, 70%);
+  }
+
+  &--pass {
+    color: $euiColorSuccessText;
+    background: tintOrShade($euiColorSuccess, 88%, 70%);
+  }
+
+  &--error {
+    color: $euiColorWarningText;
+    background: tintOrShade($euiColorWarning, 85%, 70%);
+  }
+}
+
+// `⚖ 2 failing of 4` in the traces table, sessions table and on Trace Map nodes.
+.agtEvlJudgePill {
+  display: inline-flex;
+  align-items: center;
+  gap: $euiSizeXS;
+  max-width: 100%;
+  padding: 0 $euiSizeS 0 $euiSizeXS + 2px;
+  border: 1px solid $euiColorLightShade;
+  border-radius: $euiSizeL;
+  font-size: $euiFontSizeXS;
+  font-weight: $euiFontWeightSemiBold;
+  font-variant-numeric: tabular-nums;
+  line-height: $euiSizeL - 2px;
+  white-space: nowrap;
+  color: $euiTextSubduedColor;
+  background: $euiColorEmptyShade;
+
+  &--fail {
+    color: $euiColorDangerText;
+    border-color: tintOrShade($euiColorDanger, 60%, 40%);
+    background: tintOrShade($euiColorDanger, 90%, 70%);
+  }
+
+  &--pass {
+    color: $euiColorSuccessText;
+    border-color: tintOrShade($euiColorSuccess, 60%, 40%);
+    background: tintOrShade($euiColorSuccess, 90%, 70%);
+  }
+
+  &--error {
+    color: $euiColorWarningText;
+    border-color: tintOrShade($euiColorWarning, 50%, 40%);
+  }
+}
+
+button.agtEvlJudgePill {
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+// Trace Map: a judged node keeps its card; a failing one gets a red outline and banner.
+.agtEvlFlowNode--fail {
+  outline: 2px solid $euiColorDanger;
+}
+
+.agtEvlFlowNode--fail > .agentTracesFlow__nodeBadge {
+  top: -($euiSizeL + $euiSizeXS);
+  left: 0;
+  right: 0;
+}
+
+.agtEvlFlowBanner {
+  display: flex;
+  align-items: center;
+  gap: $euiSizeXS;
+  padding: 2px $euiSizeS;
+  border-radius: $euiBorderRadius $euiBorderRadius 0 0;
+  color: $euiColorGhost;
+  background: $euiColorDanger;
+  font-size: $euiFontSizeXS;
+  font-weight: $euiFontWeightSemiBold;
+  line-height: $euiSizeL - 4px;
+  min-width: 0;
 }
 
 .agtEvlSpanMark {
@@ -72,10 +219,21 @@
   line-height: $euiSizeM + 2px;
   vertical-align: middle;
 
-  &__dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: $euiColorDanger;
+  &--fail {
+    color: $euiColorDangerText;
+    border-color: $euiColorDanger;
+    background: tintOrShade($euiColorDanger, 90%, 70%);
+    font-weight: $euiFontWeightSemiBold;
+  }
+
+  &--error {
+    color: $euiColorWarningText;
+    border-color: $euiColorWarning;
+  }
+
+  &--pass {
+    color: $euiColorSuccessText;
+    border-color: $euiColorSuccess;
+    background: tintOrShade($euiColorSuccess, 90%, 70%);
   }
 }

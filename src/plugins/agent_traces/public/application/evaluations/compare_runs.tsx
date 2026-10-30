@@ -993,7 +993,7 @@ export const CompareRuns: React.FC<CompareRunsProps> = ({
           >
             {backLabel ??
               i18n.translate('agentTraces.evalsPage.backToRuns', {
-                defaultMessage: 'Evaluation runs',
+                defaultMessage: 'Test suites',
               })}
           </EuiButtonEmpty>
         </EuiFlexItem>

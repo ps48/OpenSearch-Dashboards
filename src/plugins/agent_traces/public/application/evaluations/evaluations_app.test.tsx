@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { resetLastSuite } from './runs_tab';
 import React from 'react';
 import { Subject } from 'rxjs';
 import { createBrowserHistory } from 'history';
@@ -23,6 +24,8 @@ jest.mock('../../../../data/public', () => ({
 jest.mock('./eval_charts', () => ({
   OutcomeHistogram: () => <div />,
   ScoreTrendChart: () => <div />,
+  SuiteTrendChart: () => <div />,
+  ScoreDistributionChart: () => <div />,
   ChartActionsContext: jest.requireActual('react').createContext(undefined),
 }));
 jest.mock('./result_flyout', () => ({
@@ -151,6 +154,7 @@ const renderApp = (hash = '', extra: Record<string, unknown> = {}) => {
 };
 
 beforeEach(() => {
+  resetLastSuite();
   evalData = {
     loading: false,
     indexMissing: false,
@@ -192,7 +196,7 @@ describe('EvaluationsApp', () => {
     expect(screen.getByText(/Scores and judgments on your agents/)).toBeInTheDocument();
     expect(document.querySelector('.euiSuperDatePicker')).not.toBeNull();
     expect(screen.getByTestId('agtEvlOverview')).toBeInTheDocument();
-    expect(screen.getAllByTestId('agtEvlEvaluatorCard')).toHaveLength(2);
+    expect(screen.getAllByTestId('agtEvlEvaluationRow')).toHaveLength(2);
   });
 
   it('switches tabs and keeps the tab in the URL', async () => {
@@ -227,7 +231,7 @@ describe('EvaluationsApp', () => {
 
   it('shows the runs tab with runs fetched only while it is open', () => {
     renderApp('#/?_a=(tab:runs)');
-    expect(screen.getByTestId('agtEvlRunsTable')).toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlSuitesTable')).toBeInTheDocument();
     const lastCall = mockUseRunResults.mock.calls[mockUseRunResults.mock.calls.length - 1];
     expect((lastCall as unknown[])[4]).toBe(true);
   });
@@ -340,13 +344,14 @@ describe('EvaluationsApp', () => {
     ][0] as Array<{ text: string }>;
     expect(crumbs.map((c) => c.text)).toEqual([
       'Agent Evaluations',
-      'Evaluation runs',
+      'Test suites',
       summarizeRuns(twoRunFixture()).find((r) => r.runId === 'run-1')?.suiteName,
     ]);
   });
 
-  it('opens a run from the runs list on its own route, and Evaluation runs goes back', async () => {
+  it('opens a run from the runs list on its own route, and Test suites goes back', async () => {
     const history = renderApp('#/?_a=(tab:runs)');
+    fireEvent.click(screen.getAllByTestId('agtEvlSuiteLink')[0]);
     fireEvent.click(screen.getAllByTestId('agtEvlRunLink')[0]);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -372,11 +377,7 @@ describe('EvaluationsApp', () => {
     const crumbs = services.chrome.setBreadcrumbs.mock.calls[
       services.chrome.setBreadcrumbs.mock.calls.length - 1
     ][0] as Array<{ text: string }>;
-    expect(crumbs.map((c) => c.text)).toEqual([
-      'Agent Evaluations',
-      'Evaluation runs',
-      'Compare runs',
-    ]);
+    expect(crumbs.map((c) => c.text)).toEqual(['Agent Evaluations', 'Test suites', 'Compare runs']);
   });
 
   it('opens the compare page from the run page', async () => {
@@ -388,7 +389,7 @@ describe('EvaluationsApp', () => {
 
   it('opens the drill-down of an evaluation from its card', () => {
     renderApp();
-    fireEvent.click(screen.getAllByTestId('agtEvlEvaluatorCard')[0]);
+    fireEvent.click(screen.getAllByTestId('agtEvlEvaluationRow')[0]);
     expect(screen.getByTestId('agtEvlDrilldown')).toBeInTheDocument();
     const call =
       mockUseEvaluationResults.mock.calls[mockUseEvaluationResults.mock.calls.length - 1];

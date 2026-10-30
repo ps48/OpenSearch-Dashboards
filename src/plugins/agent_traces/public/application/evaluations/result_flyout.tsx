@@ -5,13 +5,16 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  EuiAccordion,
   EuiButton,
   EuiButtonEmpty,
   EuiCallOut,
   EuiCode,
+  EuiCodeBlock,
   EuiDescriptionList,
   EuiFlexGroup,
   EuiFlexItem,
+  EuiButtonIcon,
   EuiFlyout,
   EuiFlyoutBody,
   EuiFlyoutHeader,
@@ -277,12 +280,127 @@ interface Loadable<T> {
   value?: T;
 }
 
+/** Query for the stored documents that may be `r` (picked client-side by id). */
+export const buildRawEventQuery = (
+  r: EvalResult,
+  index: string = AGENT_EVALS_INDEX_PATTERN
+): string | undefined => {
+  const target = r.traceId
+    ? `\`${EVAL_FIELDS.targetTraceId}\` = ${quote(r.traceId)}`
+    : r.sessionId
+      ? `\`${EVAL_FIELDS.sessionId}\` = ${quote(r.sessionId)}`
+      : undefined;
+  // No trace or session: the latest events of the evaluation, picked by id.
+  const name = `\`${EVAL_FIELDS.name}\` = ${quote(r.name)}`;
+  return `source = ${index} | where ${EVAL_EVENT_WHERE} | where ${
+    target ? `${target} and ${name}` : name
+  } | sort - \`${EVAL_FIELDS.time}\` | head 200`;
+};
+
+/** The whole stored event, read only when the section is opened. */
+const RawEvent: React.FC<{ result: EvalResult; index: string }> = ({ result, index }) => {
+  const { services } = useOpenSearchDashboards<EvaluationsServices>();
+  const [open, setOpen] = useState(false);
+  const [doc, setDoc] = useState<Loadable<Record<string, unknown> | null>>({ loading: true });
+
+  useEffect(() => setDoc({ loading: true }), [result]);
+  useEffect(() => {
+    if (!open || !doc.loading) return;
+    const query = buildRawEventQuery(result, index);
+    if (!query) {
+      setDoc({ loading: false, value: null });
+      return;
+    }
+    const controller = new AbortController();
+    createEvalsPplService(services.data, undefined, controller.signal)
+      .executeQuery(withoutTimeRange(evalsDataset(index)), query)
+      .then((response) => {
+        if (controller.signal.aborted) return;
+        const rows = pplResponseToRecords(response);
+        const row = rows.find((x) => recordToEvalResult(x).id === result.id) ?? null;
+        setDoc({ loading: false, value: row });
+      })
+      .catch(
+        (e) => !controller.signal.aborted && setDoc({ loading: false, error: errorMessage(e) })
+      );
+    return () => controller.abort();
+    // doc.loading is the only part of doc read here
+  }, [open, doc.loading, result, index, services.data]);
+
+  return (
+    <EuiAccordion
+      id="agtEvlRawEvent"
+      data-test-subj="agtEvlRawEvent"
+      onToggle={setOpen}
+      buttonContent={
+        <EuiTitle size="xs">
+          <h3>
+            {i18n.translate('agentTraces.evalsPage.rawEvent', { defaultMessage: 'Raw event' })}
+          </h3>
+        </EuiTitle>
+      }
+      extraAction={
+        <EuiText size="xs" color="subdued">
+          <EuiCode transparentBackground>{index}</EuiCode>
+        </EuiText>
+      }
+      paddingSize="s"
+    >
+      {doc.loading && <EuiLoadingContent lines={4} />}
+      {doc.error && <EuiCallOut size="s" color="danger" iconType="alert" title={doc.error} />}
+      {!doc.loading && !doc.error && !doc.value && (
+        <EuiText size="s" color="subdued">
+          <FormattedMessage
+            id="agentTraces.evalsPage.rawEventMissing"
+            defaultMessage="The stored event was not found."
+          />
+        </EuiText>
+      )}
+      {doc.value && (
+        <EuiCodeBlock
+          language="json"
+          fontSize="s"
+          paddingSize="s"
+          isCopyable
+          overflowHeight={420}
+          data-test-subj="agtEvlRawEventJson"
+        >
+          {JSON.stringify(doc.value, null, 2)}
+        </EuiCodeBlock>
+      )}
+    </EuiAccordion>
+  );
+};
+
 export const ResultFlyout: React.FC<{
   result: EvalResult;
   onClose: () => void;
   onOpenResult: (r: EvalResult) => void;
-}> = ({ result, onClose, onOpenResult }) => {
+  /** The rows the result came from: ↑/↓ and j/k step through them. */
+  siblings?: EvalResult[];
+}> = ({ result, onClose, onOpenResult, siblings }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
+  const position = siblings ? siblings.findIndex((r) => r.id === result.id) : -1;
+  const step = (delta: number) => {
+    if (!siblings || position < 0) return;
+    const next = siblings[position + delta];
+    if (next) onOpenResult(next);
+  };
+  // j / k step like a mail client; typing in a field does not.
+  useEffect(() => {
+    if (!siblings) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'j') step(1);
+      if (e.key === 'k') step(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // step reads position and siblings, both in the deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siblings, position]);
   // Shown on the Evaluations page, where the dataset is already loaded.
   const index = useEvalsIndexPattern() ?? AGENT_EVALS_INDEX_PATTERN;
   const spansIndex = useSpansIndexPattern();
@@ -403,7 +521,7 @@ export const ResultFlyout: React.FC<{
           ) : undefined,
         ],
         [
-          i18n.translate('agentTraces.evalsPage.suiteRun', { defaultMessage: 'Evaluation run' }),
+          i18n.translate('agentTraces.evalsPage.suiteRun', { defaultMessage: 'Test suite run' }),
           result.runId ? `${result.suiteName ?? ''} ${result.runId}`.trim() : undefined,
         ],
         [
@@ -426,6 +544,8 @@ export const ResultFlyout: React.FC<{
     [result]
   );
 
+  // No mask, not a push flyout: the table stays visible and clickable beside the panel, and
+  // the page header and table are not squeezed.
   return (
     <EuiFlyout
       onClose={onClose}
@@ -435,6 +555,45 @@ export const ResultFlyout: React.FC<{
       data-test-subj="agtEvlResultFlyout"
     >
       <EuiFlyoutHeader hasBorder>
+        {siblings && position >= 0 && (
+          <EuiFlexGroup gutterSize="xs" alignItems="center" responsive={false}>
+            <EuiFlexItem grow={false}>
+              <EuiButtonIcon
+                iconType="arrowUp"
+                display="base"
+                size="s"
+                isDisabled={position === 0}
+                onClick={() => step(-1)}
+                aria-label={i18n.translate('agentTraces.evalsPage.prevResult', {
+                  defaultMessage: 'Previous result (k)',
+                })}
+                data-test-subj="agtEvlPrevResult"
+              />
+            </EuiFlexItem>
+            <EuiFlexItem grow={false}>
+              <EuiButtonIcon
+                iconType="arrowDown"
+                display="base"
+                size="s"
+                isDisabled={position === siblings.length - 1}
+                onClick={() => step(1)}
+                aria-label={i18n.translate('agentTraces.evalsPage.nextResult', {
+                  defaultMessage: 'Next result (j)',
+                })}
+                data-test-subj="agtEvlNextResult"
+              />
+            </EuiFlexItem>
+            <EuiFlexItem grow={false}>
+              <EuiText size="xs" color="subdued" data-test-subj="agtEvlResultPosition">
+                {i18n.translate('agentTraces.evalsPage.resultPosition', {
+                  defaultMessage: '{n} of {total} · j / k to step',
+                  values: { n: position + 1, total: siblings.length },
+                })}
+              </EuiText>
+            </EuiFlexItem>
+          </EuiFlexGroup>
+        )}
+        {siblings && position >= 0 && <EuiSpacer size="s" />}
         <EuiTitle size="s">
           <h2 id="agtEvlFlyoutTitle">{result.name}</h2>
         </EuiTitle>
@@ -485,7 +644,7 @@ export const ResultFlyout: React.FC<{
                   onClick={() => openTrace(traceId, aroundMs)}
                   data-test-subj="agtEvlOpenTrace"
                 >
-                  {i18n.translate('agentTraces.evalsPage.openTrace', {
+                  {i18n.translate('agentTraces.evalsPage.openTraceInAgentTraces', {
                     defaultMessage: 'Open trace in Agent Traces',
                   })}
                 </EuiButton>
@@ -641,6 +800,8 @@ export const ResultFlyout: React.FC<{
             </ul>
           )}
         </Section>
+        <EuiHorizontalRule margin="s" />
+        <RawEvent result={result} index={index} />
       </EuiFlyoutBody>
     </EuiFlyout>
   );

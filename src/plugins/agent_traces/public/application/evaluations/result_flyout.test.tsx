@@ -60,7 +60,8 @@ const setup = (
     name: 'tool_diversity',
     judgeTraceId: 'judge1',
     onlineConfig: 'cfg',
-  })
+  }),
+  siblings?: Array<ReturnType<typeof makeResult>>
 ) => {
   const search = jest.fn(
     (request: { params: { body: { query: { queries: Array<{ query: string }> } } } }) => {
@@ -76,7 +77,12 @@ const setup = (
   render(
     <I18nProvider>
       <OpenSearchDashboardsContextProvider services={services}>
-        <ResultFlyout result={result} onClose={jest.fn()} onOpenResult={onOpenResult} />
+        <ResultFlyout
+          result={result}
+          onClose={jest.fn()}
+          onOpenResult={onOpenResult}
+          siblings={siblings}
+        />
       </OpenSearchDashboardsContextProvider>
     </I18nProvider>
   );
@@ -84,6 +90,21 @@ const setup = (
 };
 
 describe('ResultFlyout', () => {
+  it('steps through the table rows with the arrows and j / k', () => {
+    const rows = ['a', 'self', 'c'].map((id) => makeResult({ id, traceId: 't1', spanId: 's1' }));
+    const { onOpenResult } = setup(rows[1], rows);
+    expect(screen.getByTestId('agtEvlResultPosition')).toHaveTextContent('2 of 3');
+    fireEvent.click(screen.getByTestId('agtEvlNextResult'));
+    expect(onOpenResult).toHaveBeenLastCalledWith(rows[2]);
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(onOpenResult).toHaveBeenLastCalledWith(rows[0]);
+  });
+
+  it('shows no stepping outside a table', () => {
+    setup();
+    expect(screen.queryByTestId('agtEvlResultPosition')).toBeNull();
+  });
+
   it('shows the result, evaluator details and the judged span with its messages', async () => {
     setup();
     const flyout = screen.getByTestId('agtEvlResultFlyout');

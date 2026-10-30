@@ -41,6 +41,7 @@ import {
   shortId,
 } from './eval_components';
 import type { EvaluationsServices } from '.';
+import type { Distribution, JudgedLatency } from './use_overview_charts';
 
 const useChartThemes = () => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
@@ -621,3 +622,145 @@ export const SuiteTrendChart: React.FC<{
     </div>
   );
 };
+
+const formatScore = (v: number) =>
+  Number.isInteger(v) ? String(v) : Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2);
+
+/**
+ * How one evaluation's values spread: bars stacked by verdict (failing, passing, scored
+ * without a rule), with the declared threshold as a dashed line.
+ */
+export const ValueDistributionChart: React.FC<{
+  distribution: Distribution;
+  height?: number;
+}> = ({ distribution, height = 220 }) => {
+  const { chartsTheme, baseTheme } = useChartThemes();
+  const { bins, width, min, max, threshold } = distribution;
+  const edge = (x: number) =>
+    width === 1 && Number.isInteger(x)
+      ? formatScore(x)
+      : `${formatScore(x)}–${formatScore(x + width)}`;
+  return (
+    <div style={{ height }} data-test-subj="agtEvlValueDistribution">
+      <Chart size={{ height }}>
+        <Settings
+          theme={chartsTheme}
+          baseTheme={baseTheme}
+          showLegend={false}
+          xDomain={{ min, max, minInterval: width }}
+        />
+        <Tooltip headerFormatter={({ value }) => edge(Number(value))} />
+        <Axis
+          id="value"
+          position={Position.Bottom}
+          tickFormat={(v: number) => formatScore(v)}
+          title={i18n.translate('agentTraces.evalsPage.valueAxis', { defaultMessage: 'Score' })}
+        />
+        <Axis id="count" position={Position.Left} ticks={3} />
+        {threshold !== undefined && (
+          <LineAnnotation
+            id="threshold"
+            domainType={AnnotationDomainType.XDomain}
+            dataValues={[
+              {
+                dataValue: threshold,
+                details: i18n.translate('agentTraces.evalsPage.thresholdLine', {
+                  defaultMessage: 'Threshold {value}',
+                  values: { value: formatScore(threshold) },
+                }),
+              },
+            ]}
+            style={{
+              line: {
+                stroke: euiThemeVars.euiTextColor,
+                strokeWidth: 1,
+                opacity: 0.8,
+                dash: [4, 3],
+              },
+            }}
+          />
+        )}
+        {OUTCOMES.map((outcome) => (
+          <BarSeries
+            key={outcome}
+            id={outcome}
+            name={OUTCOME_TEXT[outcome]}
+            xScaleType={ScaleType.Linear}
+            yScaleType={ScaleType.Linear}
+            xAccessor="x"
+            yAccessors={['count']}
+            stackAccessors={['x']}
+            color={OUTCOME_CHART_COLOR[outcome]}
+            data={bins.filter((d) => d.outcome === outcome)}
+          />
+        ))}
+      </Chart>
+    </div>
+  );
+};
+
+const formatMs = (ms: number) =>
+  ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`;
+
+/** p50 latency of failing vs passing judged traces over time. */
+export const JudgedLatencyChart: React.FC<{
+  latency: JudgedLatency;
+  bounds: TimeBoundsMs;
+  height?: number;
+}> = ({ latency, bounds, height = 220 }) => {
+  const { chartsTheme, baseTheme } = useChartThemes();
+  const formatter = useMemo(() => niceTimeFormatter([bounds.from, bounds.to]), [bounds]);
+  const series = [
+    {
+      group: 'passing' as const,
+      name: i18n.translate('agentTraces.evalsPage.latencyPassing', {
+        defaultMessage: 'Passing p50',
+      }),
+      color: OUTCOME_CHART_COLOR.neutral,
+    },
+    {
+      group: 'failing' as const,
+      name: i18n.translate('agentTraces.evalsPage.latencyFailing', {
+        defaultMessage: 'Failing p50',
+      }),
+      color: OUTCOME_CHART_COLOR.fail,
+    },
+  ];
+  return (
+    <div style={{ height }} data-test-subj="agtEvlJudgedLatency">
+      <Chart size={{ height }}>
+        <Settings
+          theme={chartsTheme}
+          baseTheme={baseTheme}
+          showLegend
+          legendPosition={Position.Top}
+          xDomain={{ min: bounds.from, max: bounds.to }}
+        />
+        <Tooltip headerFormatter={({ value }) => formatEvalTime(Number(value))} />
+        <Axis id="time" position={Position.Bottom} tickFormat={formatter} showOverlappingTicks />
+        <Axis
+          id="latency"
+          position={Position.Left}
+          ticks={4}
+          tickFormat={(v: number) => formatMs(v)}
+        />
+        {series.map((s) => (
+          <LineSeries
+            key={s.group}
+            id={s.group}
+            name={s.name}
+            xScaleType={ScaleType.Time}
+            yScaleType={ScaleType.Linear}
+            xAccessor="x"
+            yAccessors={['p50']}
+            color={s.color}
+            data={latency.points.filter((p) => p.group === s.group)}
+            lineSeriesStyle={{ point: { visible: true, radius: 2 } }}
+          />
+        ))}
+      </Chart>
+    </div>
+  );
+};
+
+export { formatMs };

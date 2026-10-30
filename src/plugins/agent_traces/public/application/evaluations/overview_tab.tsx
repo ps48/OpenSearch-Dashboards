@@ -3,14 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  EuiFlexGrid,
+  EuiBasicTableColumn,
   EuiFlexGroup,
+  EuiInMemoryTable,
   EuiFlexItem,
   EuiIcon,
   EuiLink,
+  EuiLoadingChart,
   EuiPanel,
+  EuiSelect,
   EuiSpacer,
   EuiText,
   EuiTitle,
@@ -19,6 +22,7 @@ import {
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import {
+  EvalFilters,
   EvalOutcome,
   EvalResult,
   EvaluatorSummary,
@@ -35,7 +39,23 @@ import {
 import { Finding, needsAttention } from './eval_attention';
 import type { EvalAggregates } from './use_eval_data';
 import { ShowTracesMenu, useShowTraces } from './eval_trace_filter';
-import { OutcomeHistogram, ScoreTrendChart } from './eval_charts';
+import {
+  JudgedLatencyChart,
+  OutcomeHistogram,
+  ScoreTrendChart,
+  ValueDistributionChart,
+  formatMs,
+} from './eval_charts';
+import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
+import { currentEvalsIndexPattern, useSpansIndexPattern } from './eval_dataset';
+import {
+  Distribution,
+  JUDGED_TRACES_LIMIT,
+  JudgedLatency,
+  useJudgedTraceLatency,
+  useScoreDistribution,
+} from './use_overview_charts';
+import type { EvaluationsServices } from '.';
 import { AGENT_EVALS_DOCS_URL, LAST_24H, LAST_7D, NoResultsInRange } from './eval_empty_states';
 import {
   LevelBadge,
@@ -735,6 +755,421 @@ export const NeedsAttention: React.FC<{
   </EuiPanel>
 );
 
+/** Change of the pass rate against the previous period, in points: `↘ 12 pts`. */
+const ChangeChip: React.FC<{ current?: number; previous?: number }> = ({ current, previous }) => {
+  if (current === undefined || previous === undefined)
+    return (
+      <EuiText size="s" color="subdued">
+        -
+      </EuiText>
+    );
+  const pts = Math.round((current - previous) * 100);
+  if (pts === 0) return <span className="agtEvlChange agtEvlChange--flat">0</span>;
+  return (
+    <span className={`agtEvlChange agtEvlChange--${pts < 0 ? 'bad' : 'good'}`}>
+      {pts < 0 ? '↘' : '↗'} {Math.abs(pts)} pts
+    </span>
+  );
+};
+
+/** All evaluations in the range, worst first: one row each, like Datadog and Langfuse. */
+export const EvaluationsTable: React.FC<{
+  summaries: EvaluatorSummary[];
+  previousByName: Map<string, EvaluatorSummary>;
+  bucketsByName: Map<string, OutcomeBucket[]>;
+  bounds: TimeBoundsMs;
+  interval: number;
+  onSelect: (name: string) => void;
+}> = ({ summaries, previousByName, bucketsByName, bounds, interval, onSelect }) => {
+  const columns: Array<EuiBasicTableColumn<EvaluatorSummary>> = [
+    {
+      field: 'name',
+      name: i18n.translate('agentTraces.evalsPage.tblEvaluation', { defaultMessage: 'Evaluation' }),
+      sortable: true,
+      render: (name: string) => <strong>{name}</strong>,
+    },
+    {
+      field: 'levels',
+      name: i18n.translate('agentTraces.evalsPage.tblLevel', { defaultMessage: 'Level' }),
+      width: '90px',
+      render: (levels: string[]) => (
+        <EuiText size="s" color="subdued">
+          {levels.join(', ')}
+        </EuiText>
+      ),
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.tblPassRate', { defaultMessage: 'Pass rate' }),
+      width: '180px',
+      sortable: (s: EvaluatorSummary) => summaryPassRate(s) ?? 2,
+      render: (s: EvaluatorSummary) => {
+        const rate = summaryPassRate(s);
+        if (rate === undefined)
+          return (
+            <EuiText size="s" color="subdued" data-test-subj="agtEvlCardMean">
+              {s.mean !== undefined
+                ? i18n.translate('agentTraces.evalsPage.tblMean', {
+                    defaultMessage: 'mean {value}',
+                    values: { value: formatValue(s.mean) },
+                  })
+                : (s.labels[0]?.label ?? '-')}
+            </EuiText>
+          );
+        return (
+          <span className="agtEvlRate" data-test-subj="agtEvlCardPassRate">
+            <span
+              className={s.failCount > 0 ? 'agtEvlRate__v agtEvlRate__v--fail' : 'agtEvlRate__v'}
+            >
+              {formatPercent(rate)}
+            </span>
+            <span className={`agtEvlRate__bar${s.failCount > 0 ? ' agtEvlRate__bar--fail' : ''}`}>
+              <i style={{ width: `${Math.round(rate * 100)}%` }} />
+            </span>
+          </span>
+        );
+      },
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.tblChange', { defaultMessage: 'Change' }),
+      width: '100px',
+      render: (s: EvaluatorSummary) => {
+        const prev = previousByName.get(s.name);
+        return <ChangeChip current={summaryPassRate(s)} previous={prev && summaryPassRate(prev)} />;
+      },
+    },
+    {
+      field: 'failCount',
+      name: i18n.translate('agentTraces.evalsPage.failing', { defaultMessage: 'Failing' }),
+      sortable: true,
+      align: 'right',
+      width: '90px',
+      render: (n: number) =>
+        n > 0 ? (
+          <strong style={{ color: OUTCOME_CHART_COLOR.fail }}>{formatCount(n)}</strong>
+        ) : (
+          <EuiText size="s" color="subdued">
+            0
+          </EuiText>
+        ),
+    },
+    {
+      field: 'count',
+      name: i18n.translate('agentTraces.evalsPage.cardCount', { defaultMessage: 'Results' }),
+      sortable: true,
+      align: 'right',
+      width: '90px',
+      render: (n: number) => formatCount(n),
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.tblTrend', { defaultMessage: 'Over time' }),
+      width: '160px',
+      render: (s: EvaluatorSummary) => (
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events
+        <div onClick={(e) => e.stopPropagation()} style={{ width: 140 }}>
+          <OutcomeHistogram
+            buckets={bucketsByName.get(s.name) ?? []}
+            bounds={bounds}
+            interval={interval}
+            height={28}
+            compact
+            name={s.name}
+          />
+        </div>
+      ),
+    },
+    {
+      name: '',
+      width: '48px',
+      align: 'right',
+      render: (s: EvaluatorSummary) => (
+        // The menu opens its own popover, not the drill-down.
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events
+        <div onClick={(e) => e.stopPropagation()}>
+          <ShowTracesMenu name={s.name} labels={s.labels.slice(0, 5).map((l) => l.label)} />
+        </div>
+      ),
+    },
+  ];
+  return (
+    <EuiInMemoryTable<EvaluatorSummary>
+      items={summaries}
+      columns={columns}
+      itemId="name"
+      search={{
+        box: {
+          incremental: true,
+          placeholder: i18n.translate('agentTraces.evalsPage.tblSearch', {
+            defaultMessage: 'Filter evaluations',
+          }),
+        },
+      }}
+      pagination={summaries.length > 25 ? { initialPageSize: 25 } : false}
+      rowProps={(s: EvaluatorSummary) => ({
+        onClick: () => onSelect(s.name),
+        style: { cursor: 'pointer' },
+        'data-test-subj': 'agtEvlEvaluationRow',
+      })}
+      data-test-subj="agtEvlEvaluationsTable"
+    />
+  );
+};
+
+const NO_FILTERS: EvalFilters = {};
+
+const ChartLoading: React.FC<{ height: number }> = ({ height }) => (
+  <div className="agtEvlChartLoading" style={{ height }} data-test-subj="agtEvlChartLoading">
+    <EuiLoadingChart size="l" />
+  </div>
+);
+
+const ChartNote: React.FC<{ height: number; testSubj?: string; color?: 'subdued' | 'danger' }> = ({
+  height,
+  testSubj,
+  color = 'subdued',
+  children,
+}) => (
+  <div className="agtEvlChartLoading" style={{ height }} data-test-subj={testSubj}>
+    <EuiText size="s" color={color} textAlign="center">
+      {children}
+    </EuiText>
+  </div>
+);
+
+const CHART_HEIGHT = 220;
+
+/** Evaluations that report numbers, most failing first (as the summaries come). */
+export const distributionCandidates = (summaries: EvaluatorSummary[]) =>
+  summaries.filter((s) => s.mean !== undefined);
+
+/** The distribution shown first: the most failing evaluation with numbers. */
+export const defaultDistributionName = (summaries: EvaluatorSummary[]): string | undefined => {
+  const candidates = distributionCandidates(summaries);
+  return (candidates.find((s) => s.failCount > 0) ?? candidates[0])?.name;
+};
+
+/** "Passes at 4 or higher", or the mean when no threshold is declared. */
+export const distributionLabel = (
+  d: Distribution,
+  direction: EvaluatorSummary['direction'] = 'maximize'
+): string => {
+  if (d.threshold !== undefined) {
+    const value = formatValue(d.threshold);
+    return direction === 'minimize'
+      ? i18n.translate('agentTraces.evalsPage.passesBelow', {
+          defaultMessage: 'Passes at {value} or lower',
+          values: { value },
+        })
+      : i18n.translate('agentTraces.evalsPage.passesAbove', {
+          defaultMessage: 'Passes at {value} or higher',
+          values: { value },
+        });
+  }
+  const mean = d.mean === undefined ? '-' : formatValue(d.mean);
+  const ruled = d.bins.some((b) => b.outcome === 'pass' || b.outcome === 'fail');
+  return ruled
+    ? i18n.translate('agentTraces.evalsPage.distMean', {
+        defaultMessage: 'Mean {mean}',
+        values: { mean },
+      })
+    : i18n.translate('agentTraces.evalsPage.distNoRule', {
+        defaultMessage: 'No pass rule · mean {mean}',
+        values: { mean },
+      });
+};
+
+/** One evaluation's score distribution, with a picker of the evaluations that report numbers. */
+export const ScoreDistributionPanel: React.FC<{
+  summaries: EvaluatorSummary[];
+  bounds: TimeBoundsMs;
+  filters: EvalFilters;
+  index?: string;
+}> = ({ summaries, bounds, filters, index }) => {
+  const { services } = useOpenSearchDashboards<EvaluationsServices>();
+  const candidates = useMemo(() => distributionCandidates(summaries), [summaries]);
+  const [picked, setPicked] = useState<string>();
+  const name =
+    picked && candidates.some((c) => c.name === picked)
+      ? picked
+      : defaultDistributionName(summaries);
+  const summary = candidates.find((c) => c.name === name);
+  const dist = useScoreDistribution(
+    services?.data,
+    bounds,
+    filters,
+    name,
+    index ?? currentEvalsIndexPattern()
+  );
+  const body = () => {
+    if (!name)
+      return (
+        <ChartNote height={CHART_HEIGHT} testSubj="agtEvlDistributionEmpty">
+          <FormattedMessage
+            id="agentTraces.evalsPage.distNone"
+            defaultMessage="No evaluation reports numeric scores in this range."
+          />
+        </ChartNote>
+      );
+    if (dist.error)
+      return (
+        <ChartNote height={CHART_HEIGHT} color="danger">
+          {dist.error}
+        </ChartNote>
+      );
+    if (dist.loading) return <ChartLoading height={CHART_HEIGHT} />;
+    if (!dist.value)
+      return (
+        <ChartNote height={CHART_HEIGHT} testSubj="agtEvlDistributionEmpty">
+          <FormattedMessage
+            id="agentTraces.evalsPage.distNoValues"
+            defaultMessage="No scores for this evaluation in this range."
+          />
+        </ChartNote>
+      );
+    return (
+      <>
+        <EuiText size="xs" color="subdued" data-test-subj="agtEvlDistributionLabel">
+          {distributionLabel(dist.value, summary?.direction)}
+        </EuiText>
+        <ValueDistributionChart distribution={dist.value} height={CHART_HEIGHT - 20} />
+      </>
+    );
+  };
+  return (
+    <EuiPanel hasBorder paddingSize="m" className="agtEvlChartPanel">
+      <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+        <EuiFlexItem>
+          <SectionHeader
+            title={
+              <FormattedMessage
+                id="agentTraces.evalsPage.distTitle"
+                defaultMessage="Score distribution"
+              />
+            }
+            help={
+              <FormattedMessage
+                id="agentTraces.evalsPage.distHelp"
+                defaultMessage="How the scores of one evaluation spread, by verdict. The dashed line is its pass threshold."
+              />
+            }
+          />
+        </EuiFlexItem>
+        {candidates.length > 0 && (
+          <EuiFlexItem grow={false} style={{ minWidth: 200 }}>
+            <EuiSelect
+              compressed
+              options={candidates.map((c) => ({ value: c.name, text: c.name }))}
+              value={name}
+              onChange={(e) => setPicked(e.target.value)}
+              aria-label={i18n.translate('agentTraces.evalsPage.distPick', {
+                defaultMessage: 'Evaluation',
+              })}
+              data-test-subj="agtEvlDistributionPicker"
+            />
+          </EuiFlexItem>
+        )}
+      </EuiFlexGroup>
+      <EuiSpacer size="s" />
+      {body()}
+    </EuiPanel>
+  );
+};
+
+/** "Failing traces run 1.6× slower (p50 2.6 s vs 1.6 s)". */
+export const latencyNote = (l: JudgedLatency): string | undefined => {
+  if (l.ratio === undefined || l.failingP50 === undefined || l.passingP50 === undefined)
+    return undefined;
+  const values = {
+    ratio: l.ratio >= 1 ? l.ratio.toFixed(1) : (1 / l.ratio).toFixed(1),
+    failing: formatMs(l.failingP50),
+    passing: formatMs(l.passingP50),
+  };
+  if (l.ratio >= 1.2)
+    return i18n.translate('agentTraces.evalsPage.latencySlower', {
+      defaultMessage: 'Failing traces run {ratio}× slower (p50 {failing} vs {passing})',
+      values: { ratio: values.ratio, failing: values.failing, passing: values.passing },
+    });
+  if (l.ratio <= 1 / 1.2)
+    return i18n.translate('agentTraces.evalsPage.latencyFaster', {
+      defaultMessage: 'Failing traces run {ratio}× faster (p50 {failing} vs {passing})',
+      values: { ratio: values.ratio, failing: values.failing, passing: values.passing },
+    });
+  return i18n.translate('agentTraces.evalsPage.latencySame', {
+    defaultMessage: 'Failing and passing traces take about as long (p50 {failing} vs {passing})',
+    values: { failing: values.failing, passing: values.passing },
+  });
+};
+
+/** p50 latency of the traces the results judged: failing vs passing. */
+export const JudgedLatencyPanel: React.FC<{
+  bounds: TimeBoundsMs;
+  filters: EvalFilters;
+  index?: string;
+}> = ({ bounds, filters, index }) => {
+  const { services } = useOpenSearchDashboards<EvaluationsServices>();
+  const spansIndex = useSpansIndexPattern();
+  const latency = useJudgedTraceLatency(
+    services?.data,
+    bounds,
+    filters,
+    index ?? currentEvalsIndexPattern(),
+    spansIndex
+  );
+  const body = () => {
+    if (latency.error)
+      return (
+        <ChartNote height={CHART_HEIGHT} color="danger">
+          {latency.error}
+        </ChartNote>
+      );
+    if (latency.loading || !latency.value) return <ChartLoading height={CHART_HEIGHT} />;
+    const l = latency.value;
+    if (l.passingCount + l.failingCount === 0)
+      return (
+        <ChartNote height={CHART_HEIGHT} testSubj="agtEvlLatencyEmpty">
+          <FormattedMessage
+            id="agentTraces.evalsPage.latencyNone"
+            defaultMessage="No judged traces found in {index}."
+            values={{ index: spansIndex }}
+          />
+        </ChartNote>
+      );
+    const note = latencyNote(l);
+    return (
+      <>
+        <EuiText size="xs" color="subdued" data-test-subj="agtEvlLatencyNote">
+          {note ??
+            i18n.translate('agentTraces.evalsPage.latencyCounts', {
+              defaultMessage: '{failing} failing and {passing} passing traces',
+              values: { failing: l.failingCount, passing: l.passingCount },
+            })}
+        </EuiText>
+        <JudgedLatencyChart latency={l} bounds={bounds} height={CHART_HEIGHT - 20} />
+      </>
+    );
+  };
+  return (
+    <EuiPanel hasBorder paddingSize="m" className="agtEvlChartPanel">
+      <SectionHeader
+        title={
+          <FormattedMessage
+            id="agentTraces.evalsPage.latencyTitle"
+            defaultMessage="Latency of judged traces"
+          />
+        }
+        help={
+          <FormattedMessage
+            id="agentTraces.evalsPage.latencyHelp"
+            defaultMessage="Median duration of the root span of traces with a failing evaluation, and of traces where every evaluation passed (up to {limit} of each)."
+            values={{ limit: JUDGED_TRACES_LIMIT }}
+          />
+        }
+      />
+      <EuiSpacer size="s" />
+      {body()}
+    </EuiPanel>
+  );
+};
+
 export const OverviewTab: React.FC<{
   current: EvalAggregates;
   previous?: Pick<EvalAggregates, 'summaries' | 'kpis'>;
@@ -752,6 +1187,9 @@ export const OverviewTab: React.FC<{
   onSelectRange?: (from: string) => void;
   /** Empty range under filters: clears them. */
   onClearFilters?: () => void;
+  /** The page's filters and evaluations index, for the charts that query on their own. */
+  filters?: EvalFilters;
+  index?: string;
 }> = ({
   current,
   previous,
@@ -765,6 +1203,8 @@ export const OverviewTab: React.FC<{
   onShowPrevious,
   onSelectRange,
   onClearFilters,
+  filters = NO_FILTERS,
+  index,
 }) => {
   const findings = useMemo(
     () => needsAttention(current.summaries, previous?.summaries, runs),
@@ -789,16 +1229,16 @@ export const OverviewTab: React.FC<{
 
   return (
     <div data-test-subj="agtEvlOverview">
+      {/* The headline numbers, what needs attention, the charts, then every evaluation. */}
+      <KpiRow current={current.kpis} previous={previous?.kpis} />
+      <EuiSpacer size="m" />
       <NeedsAttention
         findings={findings}
         onSelectEvaluation={onSelectEvaluation}
         onOpenRun={onOpenRun}
         onShowPrevious={onShowPrevious}
       />
-      <EuiSpacer size="m" />
-      <KpiRow current={current.kpis} previous={previous?.kpis} />
       <EuiSpacer size="l" />
-      {/* Trends first, then the evaluations, then the failures. */}
       <EuiFlexGroup gutterSize="m">
         <EuiFlexItem grow={3}>
           <EuiPanel hasBorder paddingSize="m" className="agtEvlChartPanel">
@@ -826,7 +1266,7 @@ export const OverviewTab: React.FC<{
               title={
                 <FormattedMessage
                   id="agentTraces.evalsPage.resultsOverTime"
-                  defaultMessage="Results over time"
+                  defaultMessage="Results by verdict"
                 />
               }
               help={
@@ -846,46 +1286,42 @@ export const OverviewTab: React.FC<{
           </EuiPanel>
         </EuiFlexItem>
       </EuiFlexGroup>
-      <EuiSpacer size="l" />
-      <SectionHeader
-        title={
-          <FormattedMessage id="agentTraces.evalsPage.byEvaluation" defaultMessage="Evaluations" />
-        }
-        count={current.summaries.length}
-        help={
-          <FormattedMessage
-            id="agentTraces.evalsPage.byEvaluationHelp"
-            defaultMessage="Most failing first. Select one to see where it fails."
+      <EuiSpacer size="m" />
+      <EuiFlexGroup gutterSize="m">
+        <EuiFlexItem grow={3}>
+          <ScoreDistributionPanel
+            summaries={current.summaries}
+            bounds={bounds}
+            filters={filters}
+            index={index}
           />
-        }
-      />
-      <EuiSpacer size="s" />
-      <EuiFlexGrid columns={3} gutterSize="m">
-        {current.summaries.map((s) => (
-          <EuiFlexItem key={s.name}>
-            <EvaluatorCard
-              summary={s}
-              previous={previousByName.get(s.name)}
-              buckets={current.bucketsByName.get(s.name) ?? []}
-              bounds={bounds}
-              interval={interval}
-              onSelect={onSelectEvaluation}
-            />
-          </EuiFlexItem>
-        ))}
-      </EuiFlexGrid>
+        </EuiFlexItem>
+        <EuiFlexItem grow={2}>
+          <JudgedLatencyPanel bounds={bounds} filters={filters} index={index} />
+        </EuiFlexItem>
+      </EuiFlexGroup>
       <EuiSpacer size="l" />
       <EuiPanel hasBorder paddingSize="m">
         <SectionHeader
           title={
             <FormattedMessage
-              id="agentTraces.evalsPage.recentFailures"
-              defaultMessage="Recent failures"
+              id="agentTraces.evalsPage.byEvaluation"
+              defaultMessage="Evaluations"
             />
           }
+          count={current.summaries.length}
         />
         <EuiSpacer size="s" />
-        <RecentFailures results={failures} onOpenResult={onOpenResult} />
+        <EvaluationsTable
+          summaries={current.summaries}
+          previousByName={previousByName}
+          bucketsByName={current.bucketsByName}
+          bounds={bounds}
+          interval={interval}
+          onSelect={onSelectEvaluation}
+        />
+        <EuiSpacer size="s" />
+        <NoPassRuleHint />
       </EuiPanel>
     </div>
   );

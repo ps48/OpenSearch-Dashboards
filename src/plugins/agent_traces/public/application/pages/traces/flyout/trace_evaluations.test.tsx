@@ -13,7 +13,13 @@ import {
   SpanEvalMark,
   TraceEvaluationsTab,
   evaluationsLogsUrl,
+  failingSpanIds,
+  flowEvalDecoration,
+  proseOf,
+  resultInEvaluationsPath,
+  scoreOnScale,
 } from './trace_evaluations';
+import { judgeSummaryText } from '../../../evaluations/eval_judge_icon';
 import { resetEvalsDatasetState } from '../../../evaluations/eval_dataset';
 import { groupTraceEvaluations } from './use_trace_evaluations';
 import { indexRowEvaluations, rowResults } from '../row_evaluations_context';
@@ -129,11 +135,26 @@ describe('EvalSummaryCell', () => {
     result({ name: 'good2', assessment: 'pass' }),
   ];
 
-  it('shows one chip with fail, pass and scored counts, red when something failed', () => {
+  it('shows one judge pill, red with the failing count when something failed', () => {
     render(<EvalSummaryCell results={cellResults} />);
     const chip = screen.getByTestId('agentTracesEvalSummary');
-    expect(chip).toHaveTextContent('✗ 1 · ✓ 2 · 1 scored');
-    expect(chip.className).toContain('euiBadge');
+    expect(chip).toHaveTextContent('1 failing of 4');
+    expect(chip).toHaveClass('agtEvlJudgePill--fail');
+    expect(screen.getByTestId('agtEvlJudgeIcon')).toBeInTheDocument();
+  });
+
+  it('is green and says passing when every result passed', () => {
+    render(
+      <EvalSummaryCell
+        results={[
+          result({ name: 'a', assessment: 'pass' }),
+          result({ name: 'b', assessment: 'pass' }),
+        ]}
+      />
+    );
+    const chip = screen.getByTestId('agentTracesEvalSummary');
+    expect(chip).toHaveTextContent('2 passing');
+    expect(chip).toHaveClass('agtEvlJudgePill--pass');
   });
 
   it('lists every result failures first, with the first explanation line, and opens the trace', () => {
@@ -168,17 +189,54 @@ describe('EvalHeaderSummary and SpanEvalMark', () => {
         onClick={onClick}
       />
     );
-    const link = screen.getByTestId('agentTracesFlyoutEvalSummary');
-    expect(link).toHaveTextContent('1 FAILED · 1 PASSED · 1 SCORED');
-    fireEvent.click(link);
+    const tally = screen.getByTestId('agentTracesFlyoutEvalSummary');
+    expect(tally).toHaveTextContent('1 FAILED1 PASSED1 SCORED');
+    expect(screen.queryByTestId('agentTracesFlyoutEvalTally-error')).toBeNull();
+    fireEvent.click(screen.getByTestId('agentTracesFlyoutEvalTally-pass'));
     expect(onClick).toHaveBeenCalled();
+  });
+
+  it('toggles the failing-span filter from the FAILED chip', () => {
+    const onClick = jest.fn();
+    const onToggle = jest.fn();
+    const results = [
+      result({ name: 'a', assessment: 'fail' }),
+      result({ name: 'b', errorType: 'Boom' }),
+    ];
+    const { rerender } = render(
+      <EvalHeaderSummary results={results} onClick={onClick} onToggleFailFilter={onToggle} />
+    );
+    const failed = screen.getByTestId('agentTracesFlyoutEvalTally-fail');
+    expect(failed).toHaveTextContent('1 FAILED');
+    expect(failed).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('agentTracesFlyoutEvalTally-error')).toHaveTextContent('1 ERRORED');
+    fireEvent.click(failed);
+    expect(onToggle).toHaveBeenCalled();
+    expect(onClick).not.toHaveBeenCalled();
+    rerender(
+      <EvalHeaderSummary
+        results={results}
+        onClick={onClick}
+        onToggleFailFilter={onToggle}
+        activeFilter="fail"
+      />
+    );
+    expect(screen.getByTestId('agentTracesFlyoutEvalTally-fail')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByTestId('agentTracesFlyoutEvalTally-fail')).toHaveClass(
+      'agtEvlTally--active'
+    );
   });
 
   it('marks a span with its count and a red dot when one failed', () => {
     render(<SpanEvalMark results={[result({ assessment: 'fail' }), result({ value: 1 })]} />);
     const mark = screen.getByTestId('agentTracesSpanEvalMark');
-    expect(mark).toHaveTextContent('2');
+    expect(mark).toHaveTextContent('1/2');
     expect(mark).toHaveAttribute('data-failed', 'true');
+    expect(mark).toHaveClass('agtEvlSpanMark--fail');
+    expect(screen.getByTestId('agtEvlJudgeIcon')).toBeInTheDocument();
   });
 });
 
@@ -190,10 +248,91 @@ describe('EvalResultItem', () => {
         result={result({ label: 'correct', value: 5, assessment: 'pass', explanation: long })}
       />
     );
-    expect(screen.getByText('Pass')).toBeInTheDocument();
-    expect(screen.getByText('correct (5)')).toBeInTheDocument();
+    expect(screen.getByTestId('agentTracesEvalVerdict')).toHaveTextContent('correct (5) · Pass');
+    expect(screen.getByTestId('agentTracesEvalItem')).not.toHaveClass('euiPanel');
     fireEvent.click(screen.getByTestId('agentTracesEvalMore'));
     expect(screen.getByText(long, { exact: false })).toBeInTheDocument();
+  });
+
+  it('shows the score on its scale and the explanation as prose', () => {
+    render(
+      <EvalResultItem
+        result={result({
+          value: 1,
+          scoreMax: 5,
+          threshold: 4,
+          explanation: 'Did not call search_flights.\\nRefused instead.',
+        })}
+        targetLabel="invoke_agent travel_planner"
+      />
+    );
+    expect(screen.getByTestId('agentTracesEvalVerdict')).toHaveTextContent('1 / 5 · Fail');
+    expect(screen.getByTestId('agentTracesEvalExplanation').textContent).toContain(
+      'Did not call search_flights.\nRefused instead.'
+    );
+    expect(screen.getByTestId('agentTracesEvalExplanation').textContent).not.toContain('\\n');
+    expect(screen.getByText('invoke_agent travel_planner')).toBeInTheDocument();
+  });
+});
+
+describe('score and link helpers', () => {
+  it('formats scores on their scale', () => {
+    expect(scoreOnScale(result({ value: 1, scoreMax: 5 }))).toBe('1 / 5');
+    expect(scoreOnScale(result({ value: 0.5, scoreMax: 1 }))).toBe('0.50');
+    expect(scoreOnScale(result({ label: 'correct' }))).toBe('correct');
+  });
+
+  it('turns literal newlines into line breaks', () => {
+    expect(proseOf('a\\nb\\r\\nc')).toBe('a\nb\nc');
+  });
+
+  it('links a result to the Evaluations Results tab around its time', () => {
+    const path = resultInEvaluationsPath({ id: "t|s|it's", time: '2026-10-28 14:56:00' });
+    expect(path).toContain('tab:results');
+    expect(path).toContain("result:'");
+    expect(path).toContain('2026-10-28T13:56:00.000Z');
+    expect(path).toContain(encodeURIComponent("t|s|it!'s"));
+  });
+
+  it('words the judge pill', () => {
+    expect(judgeSummaryText({ pass: 2, fail: 1, error: 0, neutral: 1 })).toBe('1 failing of 4');
+    expect(judgeSummaryText({ pass: 3, fail: 0, error: 0, neutral: 0 })).toBe('3 passing');
+    expect(judgeSummaryText({ pass: 0, fail: 0, error: 0, neutral: 2 })).toBe('2 scored');
+  });
+});
+
+describe('Trace Map decoration', () => {
+  it('banners failing nodes with the failing names', () => {
+    const decoration = flowEvalDecoration([
+      result({ name: 'answer_quality', assessment: 'fail' }),
+      result({ name: 'tool_selection', assessment: 'fail' }),
+      result({ name: 'latency', assessment: 'pass' }),
+    ]);
+    expect(decoration?.className).toContain('agtEvlFlowNode--fail');
+    render(<>{decoration?.badge}</>);
+    expect(screen.getByTestId('agentTracesFlowEvalBanner')).toHaveTextContent(
+      '2 failing evaluations · answer_quality, tool_selection'
+    );
+  });
+
+  it('marks passing nodes with a green pill and leaves unjudged ones alone', () => {
+    const decoration = flowEvalDecoration([result({ assessment: 'pass' })]);
+    expect(decoration?.className).not.toContain('--fail');
+    render(<>{decoration?.badge}</>);
+    expect(screen.getByTestId('agentTracesFlowEvalMark')).toHaveClass('agtEvlJudgePill--pass');
+    expect(flowEvalDecoration(undefined)).toBeUndefined();
+    expect(flowEvalDecoration([])).toBeUndefined();
+  });
+
+  it('lists the spans with a failing result', () => {
+    expect(
+      Array.from(
+        failingSpanIds({
+          s1: [result({ assessment: 'fail' })],
+          s2: [result({ assessment: 'pass', spanId: 's2' })],
+        })
+      )
+    ).toEqual(['s1']);
   });
 });
 

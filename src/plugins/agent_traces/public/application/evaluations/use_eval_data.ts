@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { i18n } from '@osd/i18n';
 import { DataPublicPluginStart } from '../../../../data/public';
 import { PplRecord, pplResponseToRecords, withoutTimeRange } from '../pages/sessions/session_utils';
@@ -306,12 +306,18 @@ export const useEvalData = (
   filters: EvalFilters,
   refreshKey: number,
   index: string = AGENT_EVALS_INDEX_PATTERN,
-  view: 'overview' | 'results' = 'overview'
+  view: 'overview' | 'results' = 'overview',
+  /** Fetch only while this view's tab is shown. */
+  enabled = true
 ): EvalData => {
   const [state, setState] = useState<EvalData>(EMPTY);
   const key = JSON.stringify([bounds, filters, refreshKey, index, view]);
+  // A tab keeps its data when you leave and come back: it fetches again only for a new
+  // range, filter or a click on Refresh.
+  const loadedKey = useRef<string>();
 
   useEffect(() => {
+    if (!enabled || loadedKey.current === key) return;
     const controller = new AbortController();
     setState((s) => ({ ...s, loading: true, error: undefined }));
     const range = isoRange(bounds);
@@ -355,6 +361,7 @@ export const useEvalData = (
     run()
       .then(({ agg, previous, results, allFacets, warnings }) => {
         if (controller.signal.aborted) return;
+        loadedKey.current = key;
         setState({
           loading: false,
           indexMissing: false,
@@ -371,6 +378,7 @@ export const useEvalData = (
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
+        loadedKey.current = key;
         setState({
           ...EMPTY,
           loading: false,
@@ -381,7 +389,7 @@ export const useEvalData = (
     return () => controller.abort();
     // `key` captures bounds, filters and refreshKey by value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, key]);
+  }, [data, key, enabled]);
 
   return state;
 };
@@ -482,8 +490,9 @@ export const useRunResults = (
 ): RunData => {
   const [state, setState] = useState<RunData>(EMPTY_RUN_DATA);
   const key = JSON.stringify([bounds, filters.names, filters.search, refreshKey, index]);
+  const loadedKey = useRef<string>();
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || loadedKey.current === key) return;
     const controller = new AbortController();
     setState((s) => ({ ...s, loading: true, error: undefined }));
     // Level, source and outcome filters do not apply: a run is compared on all its results.
@@ -496,6 +505,7 @@ export const useRunResults = (
     )
       .then(({ runs, truncated, warnings }) => {
         if (controller.signal.aborted) return;
+        loadedKey.current = key;
         setState({ loading: false, indexMissing: false, runs, truncated, warnings });
       })
       .catch((error) => {
@@ -707,13 +717,18 @@ export const useResultsPage = (
     rows: [],
   });
   const key = JSON.stringify([bounds, filters, refreshKey, index, sort, pageIndex, pageSize]);
+  const loadedKey = useRef<string>();
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || loadedKey.current === key) return;
     const controller = new AbortController();
     setState((s) => ({ ...s, loading: true, error: undefined }));
     const ppl = createEvalsPplService(data, isoRange(bounds), controller.signal);
     fetchResultsPage(ppl, index, filters, sort, pageIndex, pageSize)
-      .then((page) => !controller.signal.aborted && setState({ loading: false, rows: page.rows }))
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        loadedKey.current = key;
+        setState({ loading: false, rows: page.rows });
+      })
       .catch(
         (error) =>
           !controller.signal.aborted &&

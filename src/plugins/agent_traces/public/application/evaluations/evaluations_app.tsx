@@ -99,7 +99,7 @@ interface QuickRange {
 const TAB_LABELS: Record<EvalTab, string> = {
   overview: i18n.translate('agentTraces.evalsPage.tabOverview', { defaultMessage: 'Overview' }),
   results: i18n.translate('agentTraces.evalsPage.tabResults', { defaultMessage: 'Results' }),
-  runs: i18n.translate('agentTraces.evalsPage.tabRuns', { defaultMessage: 'Evaluation runs' }),
+  runs: i18n.translate('agentTraces.evalsPage.tabRuns', { defaultMessage: 'Test suites' }),
 };
 
 /** Quick ranges next to the runs time picker: offline runs are looked at by week or month. */
@@ -237,7 +237,6 @@ const useTimeRange = (services: EvaluationsServices) => {
       timefilter
         .getRefreshIntervalUpdate$()
         .subscribe(() => setRefreshInterval(timefilter.getRefreshInterval())),
-      timefilter.getAutoRefreshFetch$().subscribe(() => setRefreshKey((k) => k + 1)),
     ];
     // The time may have changed before these subscriptions existed.
     setTime(sameTime(timefilter.getTime()));
@@ -412,14 +411,27 @@ const EvaluationsBody: React.FC<{
 }> = ({ index, state, setState, time, runsTime, onNavigate, onLoadingChange }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
   const filters = useMemo(() => filtersOf(state), [state]);
-  const data = useEvalData(
+  // Each tab loads its own data the first time it is opened, and keeps it until the range,
+  // a filter or Refresh changes.
+  const overviewData = useEvalData(
     services.data,
     time.bounds,
     filters,
     time.refreshKey,
     index,
-    state.tab === 'results' ? 'results' : 'overview'
+    'overview',
+    state.tab === 'overview'
   );
+  const resultsData = useEvalData(
+    services.data,
+    time.bounds,
+    filters,
+    time.refreshKey,
+    index,
+    'results',
+    state.tab === 'results'
+  );
+  const data = state.tab === 'results' ? resultsData : overviewData;
   // Results table: sorted and paged in the query; a new range or filter starts on page 1.
   const [resultsSort, setResultsSort] = useState<ResultsSort>(DEFAULT_RESULTS_SORT);
   const [resultsPageAt, setResultsPageAt] = useState({
@@ -592,6 +604,7 @@ const EvaluationsBody: React.FC<{
               setResultsPageAt({ index: pageIndex, size: pageSize });
             }}
             onOpenResult={openResult}
+            selectedId={state.result}
           />
         </>
       );
@@ -620,6 +633,8 @@ const EvaluationsBody: React.FC<{
           }}
           onSelectRange={selectRange}
           onClearFilters={filtersActive ? clearFilters : undefined}
+          filters={filters}
+          index={index}
         />
       </>
     );
@@ -679,6 +694,7 @@ const EvaluationsBody: React.FC<{
             setState({ result: undefined });
           }}
           onOpenResult={openResult}
+          siblings={state.tab === 'results' ? resultsPage.rows : undefined}
         />
       )}
     </>
@@ -753,7 +769,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
       },
       {
         text: i18n.translate('agentTraces.evalsPage.crumbRuns', {
-          defaultMessage: 'Evaluation runs',
+          defaultMessage: 'Test suites',
         }),
         ...crumbLink(openRunsList),
       },
@@ -818,11 +834,8 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
       compressed
       start={time.time.from}
       end={time.time.to}
-      isPaused={time.refreshInterval.pause}
-      refreshInterval={time.refreshInterval.value}
       onTimeChange={time.onTimeChange}
       onRefresh={time.onRefresh}
-      onRefreshChange={time.onRefreshChange}
       isLoading={loading}
       dateFormat={services.uiSettings.get('dateFormat')}
       commonlyUsedRanges={quickRanges}

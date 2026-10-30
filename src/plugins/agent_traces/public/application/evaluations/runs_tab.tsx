@@ -35,6 +35,7 @@ import { ChangeDelta, CompareRuns, agentModelOf, agentVersionOf, shortModel } fr
 import { MAX_COMPARE_RUNS } from './eval_url_state';
 import { LAST_30D, NoResultsInRange } from './eval_empty_states';
 import type { RunsDetailState } from './use_eval_data';
+import { SuiteDetail } from './suite_detail';
 
 /** No runs in the runs range: what runs are, and one click to the last 30 days. */
 export const NoRunsPrompt: React.FC<{ onSelectRange?: (from: string) => void }> = ({
@@ -159,6 +160,137 @@ export const RunStatusPill: React.FC<{ run: RunSummary }> = ({ run }) => {
   );
 };
 
+export interface SuiteSummary {
+  name: string;
+  /** Runs of the suite, newest first. */
+  runs: RunSummary[];
+  latest: RunSummary;
+  previous?: RunSummary;
+}
+
+const NO_SUITE = '(no suite name)';
+
+/** Runs grouped by `test.suite.name`, the suite with the most recent run first. */
+export const groupBySuite = (runs: RunSummary[]): SuiteSummary[] => {
+  const bySuite = new Map<string, RunSummary[]>();
+  runs.forEach((r) => {
+    const key = r.suiteName ?? NO_SUITE;
+    bySuite.set(key, [...(bySuite.get(key) ?? []), r]);
+  });
+  return Array.from(bySuite.entries())
+    .map(([name, list]) => {
+      const sorted = [...list].sort((a, b) => b.started - a.started);
+      return { name, runs: sorted, latest: sorted[0], previous: sorted[1] };
+    })
+    .sort((a, b) => b.latest.started - a.latest.started);
+};
+
+/** Change in passed cases of the latest run against the previous run of the suite. */
+const SuiteChange: React.FC<{ suite: SuiteSummary }> = ({ suite }) => {
+  if (!suite.previous) {
+    return (
+      <EuiText size="xs" color="subdued">
+        -
+      </EuiText>
+    );
+  }
+  const delta = suite.latest.casesPassed - suite.previous.casesPassed;
+  if (delta === 0) {
+    return (
+      <EuiBadge color="hollow" data-test-subj="agtEvlSuiteChange">
+        {i18n.translate('agentTraces.evalsPage.suiteSame', { defaultMessage: 'same' })}
+      </EuiBadge>
+    );
+  }
+  return (
+    <EuiBadge color={delta < 0 ? 'danger' : 'success'} data-test-subj="agtEvlSuiteChange">
+      {i18n.translate('agentTraces.evalsPage.suiteChange', {
+        defaultMessage: '{arrow} {count} {count, plural, one {case} other {cases}}',
+        values: { arrow: delta < 0 ? '↘' : '↗', count: Math.abs(delta) },
+      })}
+    </EuiBadge>
+  );
+};
+
+/** The first level: one row per test suite. */
+export const SuitesTable: React.FC<{
+  suites: SuiteSummary[];
+  selected?: string;
+  onSelect: (name?: string) => void;
+}> = ({ suites, selected, onSelect }) => {
+  const columns: Array<EuiBasicTableColumn<SuiteSummary>> = [
+    {
+      field: 'name',
+      name: i18n.translate('agentTraces.evalsPage.colSuiteName', { defaultMessage: 'Test suite' }),
+      render: (name: string) => (
+        <EuiLink
+          onClick={() => onSelect(selected === name ? undefined : name)}
+          data-test-subj="agtEvlSuiteLink"
+        >
+          <strong>{name}</strong>
+        </EuiLink>
+      ),
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.colSuiteLatest', {
+        defaultMessage: 'Latest run',
+      }),
+      render: (suite: SuiteSummary) => <MiniCaseSplit run={suite.latest} />,
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.colSuiteChange', {
+        defaultMessage: 'Change vs previous run',
+      }),
+      render: (suite: SuiteSummary) => <SuiteChange suite={suite} />,
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.colSuiteRuns', { defaultMessage: 'Runs' }),
+      width: '80px',
+      render: (suite: SuiteSummary) => (
+        <EuiText size="xs" className="agtEvlNum">
+          {suite.runs.length}
+        </EuiText>
+      ),
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.colSuiteCases', { defaultMessage: 'Cases' }),
+      width: '80px',
+      render: (suite: SuiteSummary) => (
+        <EuiText size="xs" className="agtEvlNum">
+          {suite.latest.cases}
+        </EuiText>
+      ),
+    },
+    {
+      name: i18n.translate('agentTraces.evalsPage.colSuiteLastRun', {
+        defaultMessage: 'Last run',
+      }),
+      render: (suite: SuiteSummary) => (
+        <EuiText size="xs" color="subdued">
+          {formatEvalTime(new Date(suite.latest.started).toISOString())}
+        </EuiText>
+      ),
+    },
+  ];
+  return (
+    <EuiInMemoryTable<SuiteSummary>
+      compressed
+      className="agtEvlDenseTable"
+      items={suites}
+      itemId="name"
+      columns={columns}
+      rowProps={(suite: SuiteSummary) => ({
+        className: suite.name === selected ? 'euiTableRow-isSelected' : undefined,
+        'data-test-subj': 'agtEvlSuiteRow',
+      })}
+      pagination={
+        suites.length > 10 ? { initialPageSize: 10, pageSizeOptions: [10, 25] } : undefined
+      }
+      data-test-subj="agtEvlSuitesTable"
+    />
+  );
+};
+
 /** Run metadata keys holding token counts or cost, when producers attach them. */
 const metadataKey = (runs: RunSummary[], test: RegExp) =>
   runs
@@ -202,6 +334,13 @@ const usageColumns = (runs: RunSummary[]): Array<EuiBasicTableColumn<RunSummary>
   return columns;
 };
 
+/** The suite last opened in this browser session. */
+let lastSuite: string | undefined;
+/** For tests: start from the suite list. */
+export const resetLastSuite = () => {
+  lastSuite = undefined;
+};
+
 export const RunsTab: React.FC<{
   /** Runs in the runs time range, newest first (see `useRunResults`). */
   runs: RunSummary[];
@@ -230,10 +369,23 @@ export const RunsTab: React.FC<{
   onSelectRange,
 }) => {
   const [selection, setSelection] = useState<RunSummary[]>([]);
-  const evaluatorNames = useMemo(
-    () => Array.from(new Set(runs.flatMap((r) => Object.keys(r.evaluators)))).sort(),
-    [runs]
+  // Back from a run's page, the suite it was opened from is still the one shown.
+  const [suite, setSuiteState] = useState<string | undefined>(() => lastSuite);
+  const setSuite = (next: string | undefined) => {
+    lastSuite = next;
+    setSuiteState(next);
+  };
+  const suites = useMemo(() => groupBySuite(runs), [runs]);
+  const shownRuns = useMemo(
+    () => (suite ? runs.filter((r) => (r.suiteName ?? NO_SUITE) === suite) : runs),
+    [runs, suite]
   );
+  // The run the latest run of the shown suite is measured against: the run before it.
+  const suiteBaselineId = useMemo(() => {
+    if (!suite) return undefined;
+    const latest = [...shownRuns].sort((a, b) => b.started - a.started)[0];
+    return latest?.previousRunId;
+  }, [suite, shownRuns]);
 
   if (compare) {
     const baselineId = baseline && compare.includes(baseline) ? baseline : compare[0];
@@ -262,7 +414,6 @@ export const RunsTab: React.FC<{
   }
 
   if (runs.length === 0) return <NoRunsPrompt onSelectRange={onSelectRange} />;
-  const byId = new Map(runs.map((r) => [r.runId, r]));
 
   const sameSuite = selection.every((r) => (r.suiteName ?? '') === (selection[0]?.suiteName ?? ''));
   const countOk = selection.length >= 2 && selection.length <= MAX_COMPARE_RUNS;
@@ -300,6 +451,15 @@ export const RunsTab: React.FC<{
               )}
             </EuiToolTip>
           </EuiFlexItem>
+          {runId === suiteBaselineId && (
+            <EuiFlexItem grow={false}>
+              <EuiBadge color="hollow" data-test-subj="agtEvlRunBaselineBadge">
+                {i18n.translate('agentTraces.evalsPage.baselineBadge', {
+                  defaultMessage: 'baseline',
+                })}
+              </EuiBadge>
+            </EuiFlexItem>
+          )}
         </EuiFlexGroup>
       ),
     },
@@ -307,7 +467,7 @@ export const RunsTab: React.FC<{
       field: 'suiteName',
       name: i18n.translate('agentTraces.evalsPage.colSuite', { defaultMessage: 'Suite' }),
       sortable: true,
-      render: (suite?: string) => suite ?? '-',
+      render: (suiteName?: string) => suiteName ?? '-',
     },
     {
       field: 'started',
@@ -363,48 +523,7 @@ export const RunsTab: React.FC<{
       width: '190px',
       render: (_passed: number, run: RunSummary) => <MiniCaseSplit run={run} />,
     },
-    ...evaluatorNames.map((name): EuiBasicTableColumn<RunSummary> => ({
-      name: (
-        <EuiToolTip
-          content={i18n.translate('agentTraces.evalsPage.colEvaluatorMeanTip', {
-            defaultMessage: '{name}: mean score, or pass rate for labels',
-            values: { name },
-          })}
-        >
-          <span>{name}</span>
-        </EuiToolTip>
-      ),
-      render: (run: RunSummary) => {
-        const previous = run.previousRunId ? byId.get(run.previousRunId) : undefined;
-        const now = run.evaluators[name];
-        const before = previous?.evaluators[name];
-        return (
-          <EuiFlexGroup gutterSize="xs" alignItems="baseline" responsive={false} wrap={false}>
-            <EuiFlexItem grow={false}>
-              <EuiText size="xs" className="agtEvlNum">
-                {formatAggregate(now)}
-              </EuiText>
-            </EuiFlexItem>
-            {now && before && (
-              <EuiFlexItem grow={false}>
-                <EuiToolTip
-                  content={i18n.translate('agentTraces.evalsPage.vsPreviousRun', {
-                    defaultMessage: 'Against the previous run of the suite ({previous}): {before}',
-                    values: { previous: previous?.runId, before: formatAggregate(before) },
-                  })}
-                >
-                  <ChangeDelta
-                    text={formatAggregateDelta(before, now)}
-                    change={compareValues(before, now).change}
-                    data-test-subj="agtEvlRunsDelta"
-                  />
-                </EuiToolTip>
-              </EuiFlexItem>
-            )}
-          </EuiFlexGroup>
-        );
-      },
-    })),
+    // Per-evaluation scores live on the run's own page, not as columns here.
     ...usageColumns(runs),
     {
       field: 'agentName',
@@ -416,49 +535,83 @@ export const RunsTab: React.FC<{
   return (
     <div data-test-subj="agtEvlRuns">
       <SectionHeader
-        title={i18n.translate('agentTraces.evalsPage.runsTitle', {
-          defaultMessage: 'Evaluation runs',
+        title={i18n.translate('agentTraces.evalsPage.suitesTitle', {
+          defaultMessage: 'Test suites',
         })}
-        count={runs.length}
-        help={i18n.translate('agentTraces.evalsPage.runsHelp', {
+        count={suites.length}
+        help={i18n.translate('agentTraces.evalsPage.suitesHelp', {
           defaultMessage:
-            'Open a run for its test cases, or select 2 to 5 runs of a suite to compare.',
+            'A test suite is a fixed set of test cases, such as a benchmark or an experiment, that you run your agent against. Each run is scored, so you can track quality over time and compare runs.',
         })}
-        actions={
-          <EuiToolTip content={compareHint}>
-            <EuiButton
-              size="s"
-              fill
-              iconType="merge"
-              isDisabled={!canCompare}
-              onClick={() => {
-                // Oldest first: the oldest run is the baseline (A).
-                const ordered = [...selection].sort((x, y) => x.started - y.started);
-                onCompareChange(ordered.map((r) => r.runId));
-              }}
-              data-test-subj="agtEvlCompareButton"
-            >
-              {i18n.translate('agentTraces.evalsPage.compare', {
-                defaultMessage: 'Compare ({count})',
-                values: { count: selection.length },
-              })}
-            </EuiButton>
-          </EuiToolTip>
-        }
       />
       <EuiSpacer size="s" />
-      <EuiInMemoryTable<RunSummary>
-        compressed
-        className="agtEvlDenseTable"
-        items={runs}
-        itemId="runId"
-        columns={columns}
-        isSelectable
-        selection={{ onSelectionChange: setSelection }}
-        pagination={{ initialPageSize: 20, pageSizeOptions: [20, 50] }}
-        sorting={{ sort: { field: 'started', direction: 'desc' } }}
-        data-test-subj="agtEvlRunsTable"
-      />
+      {suite ? (
+        <SuiteDetail
+          suite={suite}
+          suiteName={suite === NO_SUITE ? undefined : suite}
+          suites={suites.map((x) => x.name)}
+          runs={shownRuns}
+          onSelect={setSuite}
+          onOpenRun={onOpenRun}
+        />
+      ) : (
+        <SuitesTable suites={suites} selected={suite} onSelect={setSuite} />
+      )}
+      {/* Runs are shown per suite only: the suite list is the entry point. */}
+      {suite && (
+        <>
+          <EuiSpacer size="l" />
+          <SectionHeader
+            title={i18n.translate('agentTraces.evalsPage.runsOfSuite', {
+              defaultMessage: 'Runs of {suite}',
+              values: { suite },
+            })}
+            count={shownRuns.length}
+            help={i18n.translate('agentTraces.evalsPage.runsHelp', {
+              defaultMessage:
+                'Open a run for its test cases, or select 2 to 5 runs of a suite to compare.',
+            })}
+            actions={
+              <EuiToolTip content={compareHint}>
+                <EuiButton
+                  size="s"
+                  fill
+                  iconType="merge"
+                  isDisabled={!canCompare}
+                  onClick={() => {
+                    // Oldest first: the oldest run is the baseline (A).
+                    const ordered = [...selection].sort((x, y) => x.started - y.started);
+                    onCompareChange(ordered.map((r) => r.runId));
+                  }}
+                  data-test-subj="agtEvlCompareButton"
+                >
+                  {selection.length === 2 && canCompare
+                    ? i18n.translate('agentTraces.evalsPage.compareTwo', {
+                        defaultMessage: 'Compare 2 runs →',
+                      })
+                    : i18n.translate('agentTraces.evalsPage.compare', {
+                        defaultMessage: 'Compare ({count})',
+                        values: { count: selection.length },
+                      })}
+                </EuiButton>
+              </EuiToolTip>
+            }
+          />
+          <EuiSpacer size="s" />
+          <EuiInMemoryTable<RunSummary>
+            compressed
+            className="agtEvlDenseTable"
+            items={shownRuns}
+            itemId="runId"
+            columns={columns.filter((c) => !('field' in c && c.field === 'suiteName'))}
+            isSelectable
+            selection={{ onSelectionChange: setSelection }}
+            pagination={{ initialPageSize: 20, pageSizeOptions: [20, 50] }}
+            sorting={{ sort: { field: 'started', direction: 'desc' } }}
+            data-test-subj="agtEvlRunsTable"
+          />
+        </>
+      )}
     </div>
   );
 };
