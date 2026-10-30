@@ -180,9 +180,9 @@ until the mappings are added to them (`PUT <index>/_mapping` with the template's
 Safety net: when PPL answers "Field [x] not found" (no index of the pattern maps `x`), the
 query runs again without what needs `x`, and that is remembered for five minutes.
 
-## Needs attention and Top changes
+## Needs attention
 
-Overview, top to bottom: Needs attention, Top changes, the KPIs, Score trend and Results over
+Overview, top to bottom: Needs attention, the KPIs, Score trend and Results over
 time, the evaluation cards (most failing first; each with a mini chart of its results over
 time on a compact time axis), Recent failures. Every chart's tooltip names its bucket or score
 bin.
@@ -199,9 +199,8 @@ the previous range of the same length (no LLM), most urgent first:
 5. evaluations with results in the previous range and none in this one ("no results in this
    period"), linked to the previous range.
 
-Without any: "Nothing needs attention in this range." Top changes then lists, per evaluation,
-its pass rate (or its mean without a pass rule) with the change against the previous range,
-worst change first (pass-rate points, or the mean normalized to its range), at most six.
+Without any: "Nothing needs attention in this range." There is no Top changes row: the
+evaluation cards show each pass rate or mean with its change.
 
 ## Traces where an evaluation fails
 

@@ -135,16 +135,14 @@ describe('OverviewTab', () => {
     expect(onOpenResult).toHaveBeenCalledWith(results[0]);
   });
 
-  it('opens with what needs attention and the top changes, linked to the drill-down', () => {
+  it('opens with what needs attention, linked to the drill-down, and no Top changes', () => {
     const { onSelectEvaluation } = renderOverview();
     const drop = screen.getByTestId('agtEvlFinding-drop');
     expect(drop).toHaveTextContent('tool_diversity: pass rate fell 50 points to 50% (from 100%)');
     fireEvent.click(within(drop).getByTestId('agtEvlFindingLink'));
     expect(onSelectEvaluation).toHaveBeenCalledWith('tool_diversity');
-    const top = screen.getAllByTestId('agtEvlTopChange');
-    expect(top[0]).toHaveTextContent('tool_diversity');
-    expect(within(top[0]).getByTestId('agtEvlTopChangeDelta')).toHaveTextContent('↓50 pp');
-    expect(top[1]).toHaveTextContent('new');
+    expect(screen.queryByTestId('agtEvlTopChanges')).not.toBeInTheDocument();
+    expect(screen.queryByText('Top changes')).not.toBeInTheDocument();
   });
 
   it('says when nothing needs attention, and names a silent evaluation', () => {

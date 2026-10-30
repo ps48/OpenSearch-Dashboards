@@ -4,10 +4,10 @@
  */
 
 import { EvaluatorSummary, summaryPassRate } from './eval_data';
-import { ChangeKind, RunSummary, isRegression } from './eval_aggregations';
+import { RunSummary, isRegression } from './eval_aggregations';
 
 /**
- * "Needs attention" and "Top changes" on the Overview: plain findings computed from the
+ * "Needs attention" on the Overview: plain findings computed from the
  * aggregations of the current and the previous period (and the runs in the range), no LLM.
  */
 
@@ -16,7 +16,6 @@ export const MIN_DROP = 0.01;
 export const MAX_FINDINGS = 5;
 /** "Lowest pass rate" is worth a finding below this pass rate, or after a drop. */
 export const LOW_PASS_RATE = 0.8;
-export const MAX_TOP_CHANGES = 6;
 
 export type Finding =
   | { kind: 'drop'; name: string; from: number; to: number }
@@ -117,79 +116,4 @@ export const needsAttention = (
     .forEach((s) => findings.push({ kind: 'silent', name: s.name, previousCount: s.count }));
 
   return findings.slice(0, MAX_FINDINGS);
-};
-
-export interface TopChange {
-  name: string;
-  /** Pass rate when the evaluation has a pass rule, else the mean. */
-  metric: 'passRate' | 'mean';
-  value: number;
-  previous?: number;
-  /** Signed change on a 0..1 scale where positive is better (pass rate, normalized mean). */
-  score?: number;
-  change?: ChangeKind;
-}
-
-/**
- * Per evaluation, the pass rate (or the mean without a pass rule) against the previous
- * period, worst change first; evaluations without a previous value last. At most six.
- */
-export const topChanges = (
-  current: EvaluatorSummary[],
-  previous: EvaluatorSummary[] | undefined
-): TopChange[] => {
-  const before = new Map((previous ?? []).map((s) => [s.name, s]));
-  const items = current
-    .map((s): TopChange | undefined => {
-      const p = before.get(s.name);
-      const rate = summaryPassRate(s);
-      if (rate !== undefined) {
-        const was = p ? summaryPassRate(p) : undefined;
-        const score = was !== undefined ? rate - was : undefined;
-        return {
-          name: s.name,
-          metric: 'passRate',
-          value: rate,
-          previous: was,
-          score,
-          change:
-            score === undefined
-              ? undefined
-              : score > 0.005
-                ? 'improved'
-                : score < -0.005
-                  ? 'regressed'
-                  : 'unchanged',
-        };
-      }
-      if (s.mean === undefined) return undefined;
-      const score =
-        s.normalizedMean !== undefined && p?.normalizedMean !== undefined
-          ? s.normalizedMean - p.normalizedMean
-          : undefined;
-      return {
-        name: s.name,
-        metric: 'mean',
-        value: s.mean,
-        previous: p?.mean,
-        score,
-        // Without a known range there is no better or worse: neutral.
-        change:
-          score === undefined
-            ? undefined
-            : score > 0.005
-              ? 'improved'
-              : score < -0.005
-                ? 'regressed'
-                : 'unchanged',
-      };
-    })
-    .filter((t): t is TopChange => !!t);
-  return items
-    .sort((a, b) => {
-      const ka = a.score ?? (a.previous !== undefined ? 0 : Infinity);
-      const kb = b.score ?? (b.previous !== undefined ? 0 : Infinity);
-      return ka - kb || a.name.localeCompare(b.name);
-    })
-    .slice(0, MAX_TOP_CHANGES);
 };

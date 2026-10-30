@@ -32,9 +32,7 @@ import {
   TimeBoundsMs,
   parseEvalTime,
 } from './eval_aggregations';
-import { Finding, TopChange, needsAttention, topChanges } from './eval_attention';
-import { formatPointsDelta, formatValueDelta } from './eval_compare';
-import { ChangeDelta } from './compare_runs';
+import { Finding, needsAttention } from './eval_attention';
 import type { EvalAggregates } from './use_eval_data';
 import { ShowTracesMenu, useShowTraces } from './eval_trace_filter';
 import { OutcomeHistogram, ScoreTrendChart } from './eval_charts';
@@ -737,89 +735,6 @@ export const NeedsAttention: React.FC<{
   </EuiPanel>
 );
 
-/** Per evaluation, pass rate (or mean) and its change against the previous period. */
-export const TopChangesRow: React.FC<{
-  changes: TopChange[];
-  onSelectEvaluation: (name: string) => void;
-}> = ({ changes, onSelectEvaluation }) => {
-  if (changes.length === 0) return null;
-  return (
-    <div data-test-subj="agtEvlTopChanges">
-      <SectionHeader
-        title={
-          <FormattedMessage id="agentTraces.evalsPage.topChanges" defaultMessage="Top changes" />
-        }
-        help={
-          <FormattedMessage
-            id="agentTraces.evalsPage.topChangesHelp"
-            defaultMessage="Pass rate, or the mean without a pass rule, against the previous period. Worst change first."
-          />
-        }
-      />
-      <EuiSpacer size="s" />
-      <EuiFlexGroup gutterSize="s" responsive={false} wrap>
-        {changes.map((c) => {
-          const delta =
-            c.previous === undefined
-              ? undefined
-              : c.metric === 'passRate'
-                ? formatPointsDelta(c.value - c.previous)
-                : formatValueDelta(c.value - c.previous);
-          return (
-            <EuiFlexItem key={c.name} grow={false} style={{ minWidth: 150, maxWidth: 220 }}>
-              <EuiPanel
-                hasBorder
-                paddingSize="s"
-                className="agtEvlCard"
-                onClick={() => onSelectEvaluation(c.name)}
-                data-test-subj="agtEvlTopChange"
-              >
-                <EuiText size="xs" className="eui-textTruncate">
-                  <span title={c.name}>{c.name}</span>
-                </EuiText>
-                <EuiFlexGroup gutterSize="xs" alignItems="baseline" responsive={false}>
-                  <EuiFlexItem grow={false}>
-                    <EuiText size="s" className="agtEvlNum">
-                      <strong>
-                        {c.metric === 'passRate' ? formatPercent(c.value) : formatValue(c.value)}
-                      </strong>
-                    </EuiText>
-                  </EuiFlexItem>
-                  <EuiFlexItem grow={false}>
-                    {delta ? (
-                      <ChangeDelta
-                        text={delta}
-                        change={c.change}
-                        data-test-subj="agtEvlTopChangeDelta"
-                      />
-                    ) : (
-                      <EuiText size="xs" color="subdued">
-                        <FormattedMessage
-                          id="agentTraces.evalsPage.topChangeNew"
-                          defaultMessage="new"
-                        />
-                      </EuiText>
-                    )}
-                  </EuiFlexItem>
-                </EuiFlexGroup>
-                <EuiText size="xs" color="subdued">
-                  {c.metric === 'passRate'
-                    ? i18n.translate('agentTraces.evalsPage.topChangePassRate', {
-                        defaultMessage: 'pass rate',
-                      })
-                    : i18n.translate('agentTraces.evalsPage.topChangeMean', {
-                        defaultMessage: 'mean',
-                      })}
-                </EuiText>
-              </EuiPanel>
-            </EuiFlexItem>
-          );
-        })}
-      </EuiFlexGroup>
-    </div>
-  );
-};
-
 export const OverviewTab: React.FC<{
   current: EvalAggregates;
   previous?: Pick<EvalAggregates, 'summaries' | 'kpis'>;
@@ -855,10 +770,6 @@ export const OverviewTab: React.FC<{
     () => needsAttention(current.summaries, previous?.summaries, runs),
     [current, previous, runs]
   );
-  const changes = useMemo(
-    () => topChanges(current.summaries, previous?.summaries),
-    [current, previous]
-  );
   const previousByName = useMemo(
     () => new Map((previous?.summaries ?? []).map((s) => [s.name, s])),
     [previous]
@@ -885,8 +796,6 @@ export const OverviewTab: React.FC<{
         onShowPrevious={onShowPrevious}
       />
       <EuiSpacer size="m" />
-      <TopChangesRow changes={changes} onSelectEvaluation={onSelectEvaluation} />
-      {changes.length > 0 && <EuiSpacer size="m" />}
       <KpiRow current={current.kpis} previous={previous?.kpis} />
       <EuiSpacer size="l" />
       {/* Trends first, then the evaluations, then the failures. */}
