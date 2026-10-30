@@ -58,12 +58,16 @@ describe('deep links', () => {
       expect(getEvalTraceFilter()).toBeUndefined();
     });
 
-    it('stays for other links, and for a link that keeps it', () => {
+    it('stays for links that open no trace or session', () => {
       expect(clearEvalTraceFilterForDeepLink('#/?_a=(ui:(activeTabId:traces))')).toBe(false);
-      expect(clearEvalTraceFilterForDeepLink('#/?openTraceId=abc&keepEvalTraceFilter=1')).toBe(
-        false
-      );
       expect(getEvalTraceFilter()).toEqual(filter);
+    });
+
+    it('is cleared whatever else the link holds (there is no parameter to keep it)', () => {
+      expect(clearEvalTraceFilterForDeepLink('#/?openTraceId=abc&keepEvalTraceFilter=1')).toBe(
+        true
+      );
+      expect(getEvalTraceFilter()).toBeUndefined();
     });
   });
 });

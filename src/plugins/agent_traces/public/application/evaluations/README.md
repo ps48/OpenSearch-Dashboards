@@ -275,6 +275,5 @@ The Verdict filter (Pass, Fail, Evaluator error, Scored) is in the filter bar.
   `#/?_g=(time:(...))&_a=(ui:(activeTabId:traces))&openSessionId=<id>`: the session view
   (its traces and session results) opens once and the parameter leaves the URL, like
   `openTraceId` for traces. Either link clears a persisted "traces where it fails" filter
-  first, so the flyout opens over the unfiltered table; a link that should keep the filter
-  adds `keepEvalTraceFilter=1`.
+  first, always, so the flyout opens over the unfiltered table.
 - Evaluation drill-down on Overview: `_a=(evaluation:'<gen_ai.evaluation.name>')`.

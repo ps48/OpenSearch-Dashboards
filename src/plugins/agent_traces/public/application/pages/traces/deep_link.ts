@@ -8,19 +8,17 @@ import { getEvalTraceFilter, setEvalTraceFilter } from '../../evaluations/eval_t
 
 /** The deep-link parameters that open one trace or session flyout. */
 export const DEEP_LINK_PARAMS = ['openTraceId', 'openSessionId'];
-/** A deep link that keeps the persisted evaluation trace filter says so with this parameter. */
-export const KEEP_EVAL_FILTER_PARAM = 'keepEvalTraceFilter';
 
 /**
  * Opening a trace or a session from a link starts from the unfiltered table: a persisted
- * "traces where an evaluation fails" filter (from an earlier visit) is cleared first, unless
- * the link asks to keep it. Run on app mount, before the first query.
+ * "traces where an evaluation fails" filter (from an earlier visit) is always cleared first.
+ * Run on app mount, before the first query.
  * Returns whether a filter was cleared.
  */
 export const clearEvalTraceFilterForDeepLink = (hash = window.location.hash): boolean => {
   const params = new URLSearchParams(hash.split('?')[1] ?? '');
   const opensOne = DEEP_LINK_PARAMS.some((name) => !!params.get(name));
-  if (!opensOne || params.has(KEEP_EVAL_FILTER_PARAM) || !getEvalTraceFilter()) return false;
+  if (!opensOne || !getEvalTraceFilter()) return false;
   setEvalTraceFilter(undefined);
   return true;
 };
