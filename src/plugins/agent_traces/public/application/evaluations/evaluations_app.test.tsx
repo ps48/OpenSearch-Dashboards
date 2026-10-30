@@ -394,8 +394,15 @@ describe('EvaluationsApp', () => {
     });
     expect(await screen.findByTestId('agtEvlNoDataset')).toBeInTheDocument();
     expect(document.querySelector('.euiSuperDatePicker')).toBeNull();
-    expect(screen.getByTestId('agtEvlSdkDocsLink')).toHaveTextContent('score()');
-    expect(screen.getByTestId('agtEvlAgentCoreLink')).toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlEvalsDocsLink')).toHaveAttribute(
+      'href',
+      'https://observability.opensearch.org/docs/agent-evals/'
+    );
+    expect(screen.getByTestId('agtEvlAiObservabilityDocsLink')).toHaveAttribute(
+      'href',
+      'https://observability.opensearch.org/docs/ai-observability/'
+    );
+    expect(screen.getByTestId('agtEvlNoDataset')).not.toHaveTextContent(/AgentCore/);
     expect(mockUseEvalData).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('agtEvlGetStarted'));
     expect(await screen.findByTestId('agtEvlSettingsModal')).toBeInTheDocument();

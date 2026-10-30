@@ -73,7 +73,7 @@ runs' own range (7 and 30 days, and a picker) instead of the global one. With th
 navigation the title, the description and the controls make a row at the top of the page.
 
 - No evaluations dataset: what evaluations are, **Get started** (opens Settings), and links to
-  the SDK `score()` / `evaluate()` setup and the Bedrock AgentCore import example.
+  the Agent evaluations docs and the AI observability docs.
 - Dataset set, nothing in the range: "No evaluation results in this time range" with Last 24
   hours and Last 7 days (and Clear filters under filters) on Overview and Results; "No
   evaluation runs in this range" with Last 30 days on Evaluation runs.

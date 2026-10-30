@@ -20,11 +20,10 @@ import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import { euiThemeVars } from '@osd/ui-shared-deps/theme';
 
-/** Where the SDK `score()` / `evaluate()` setup and the AgentCore import example live. */
-export const EVALS_SDK_DOCS_URL =
-  'https://observability.opensearch.org/docs/agent-evals/evaluation/';
-export const EVALS_AGENTCORE_EXAMPLE_URL =
-  'https://github.com/opensearch-project/observability-stack/tree/main/examples/agentcore-evals';
+/** The Agent evaluations docs (producing results, pass rules) and the AI observability docs. */
+export const AGENT_EVALS_DOCS_URL = 'https://observability.opensearch.org/docs/agent-evals/';
+export const AI_OBSERVABILITY_DOCS_URL =
+  'https://observability.opensearch.org/docs/ai-observability/';
 
 /**
  * A small picture of what the page shows: a trace's steps, each with a pass or fail grade, and
@@ -169,27 +168,25 @@ export const NoEvalsDatasetPrompt: React.FC<{
       <EuiFlexGroup gutterSize="l" justifyContent="center" responsive={false} wrap>
         <EuiFlexItem grow={false}>
           <EuiLink
-            href={EVALS_SDK_DOCS_URL}
+            href={AGENT_EVALS_DOCS_URL}
             target="_blank"
             external
-            data-test-subj="agtEvlSdkDocsLink"
+            data-test-subj="agtEvlEvalsDocsLink"
           >
-            <FormattedMessage
-              id="agentTraces.evalsEmpty.sdkLink"
-              defaultMessage="Score traces with the SDK: {score} and {evaluate}"
-              values={{ score: <code>score()</code>, evaluate: <code>evaluate()</code> }}
-            />
+            {i18n.translate('agentTraces.evalsEmpty.evalsDocsLink', {
+              defaultMessage: 'Agent evaluations docs',
+            })}
           </EuiLink>
         </EuiFlexItem>
         <EuiFlexItem grow={false}>
           <EuiLink
-            href={EVALS_AGENTCORE_EXAMPLE_URL}
+            href={AI_OBSERVABILITY_DOCS_URL}
             target="_blank"
             external
-            data-test-subj="agtEvlAgentCoreLink"
+            data-test-subj="agtEvlAiObservabilityDocsLink"
           >
-            {i18n.translate('agentTraces.evalsEmpty.agentCoreLink', {
-              defaultMessage: 'Import Bedrock AgentCore evaluations',
+            {i18n.translate('agentTraces.evalsEmpty.aiObservabilityDocsLink', {
+              defaultMessage: 'AI observability docs',
             })}
           </EuiLink>
         </EuiFlexItem>
