@@ -297,6 +297,49 @@ export const buildSummaryAggQuery = (filters: EvalFilters, ctx: QueryContext = {
   ].join(' | ');
 };
 
+const FACET_GROUPS = [EVAL_FIELDS.name, EVAL_FIELDS.level, EVAL_FIELDS.source];
+
+/**
+ * The filter options: results per evaluation name, level, source and verdict keys in the
+ * range, under no filter (`executeVerdictAgg` sets the verdict), so every picker lists what
+ * the range holds, with counts.
+ */
+export const buildFacetsAggQuery = (ctx: QueryContext = {}): string => {
+  const missing = ctx.missing ?? new Set<string>();
+  const { evals, by } = withVerdictKeys(ctx, FACET_GROUPS.filter(present(missing)).map(field));
+  return [
+    ...baseCommands({}, { ...ctx, verdictWhere: undefined }),
+    ...evals,
+    `stats count() as n by ${by.join(', ')}`,
+    `head ${AGG_ROWS_LIMIT}`,
+  ].join(' | ');
+};
+
+/** One group of the filter options: a name, level, source and verdict with its count. */
+export interface Facet {
+  name: string;
+  level: string;
+  source: string;
+  outcome: EvalOutcome;
+  count: number;
+}
+
+const text = (v: unknown) => (v === null || v === undefined ? '' : String(v));
+
+/** The filter options of the range (`buildFacetsAggQuery`), with the verdict applied. */
+export const fetchFacets = async (ppl: PPLService, index: string): Promise<Facet[]> => {
+  const agg = await executeVerdictAgg(ppl, index, (missing, source, clauses) =>
+    buildFacetsAggQuery({ index: source, missing, clauses })
+  );
+  return agg.rows.map((row) => ({
+    name: text(row[EVAL_FIELDS.name]),
+    level: text(row[EVAL_FIELDS.level]),
+    source: text(row[EVAL_FIELDS.source]),
+    outcome: row[VERDICT_COLUMN] as EvalOutcome,
+    count: Number(row.n ?? 0),
+  }));
+};
+
 /** PPL span of a bucket size: `5m`, `3h`, `1d`. */
 export const spanUnit = (intervalMs: number): string => {
   const units: Array<[number, string]> = [

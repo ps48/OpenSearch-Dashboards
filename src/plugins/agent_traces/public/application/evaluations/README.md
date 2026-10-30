@@ -248,6 +248,16 @@ drill-down's trend and histogram, or a run's score histogram: a small menu offer
 
 The Verdict filter (Pass, Fail, Evaluator error, Scored) is in the filter bar.
 
+## Filter options
+
+Every option of the filter bar (Evaluation names, Level, Source, Verdict) comes from the data
+of the current range, with its count: one aggregation, `stats count() by` the evaluation name,
+level, source and the verdict keys under no filter, the verdict applied in the browser. Nothing
+is a fixed list: a level or source the range does not hold is not offered, and a selected
+value the range does not hold stays listed, with 0. Sources read OpenSearch SDK
+(`opensearch-sdk`), Bedrock AgentCore (`agentcore`), OpenTelemetry (`otel`), any other value
+as is.
+
 ## Links
 
 - Compare: `_a=(tab:runs,compare:!('<run A>','<run B>',...),baseline:'<run>')`; without

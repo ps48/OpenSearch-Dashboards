@@ -20,6 +20,7 @@ import {
   toAggRows,
   trendFromAgg,
   clearMissingFieldsCache,
+  fetchFacets,
 } from './eval_ppl';
 import { EVAL_FIELDS } from './eval_data';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
@@ -315,6 +316,26 @@ describe('Results paging', () => {
     evl_vb0: -1,
     evl_tc: -2,
     ...r,
+  });
+
+  it('reads the filter options with their verdicts from one aggregation', async () => {
+    const { executeQuery, ppl } = pplWithGroups([
+      group({ n: 3, [F.level]: 'trace', [F.assessment]: 'fail' }),
+      group({ n: 2, [F.level]: 'trace', [F.assessment]: 'pass', [F.source]: 'agentcore' }),
+    ]);
+    const facets = await fetchFacets(ppl, 'evals-*');
+    expect(executeQuery).toHaveBeenCalledTimes(1);
+    expect(executeQuery.mock.calls[0][1]).toMatch(/^source = evals-\* \|/);
+    expect(facets).toEqual([
+      {
+        name: 'answer_quality',
+        level: 'trace',
+        source: 'opensearch-sdk',
+        outcome: 'fail',
+        count: 3,
+      },
+      { name: 'answer_quality', level: 'trace', source: 'agentcore', outcome: 'pass', count: 2 },
+    ]);
   });
 
   it('reads a page of one query without a verdict filter', async () => {

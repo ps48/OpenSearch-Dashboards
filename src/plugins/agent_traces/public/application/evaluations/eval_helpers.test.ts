@@ -4,7 +4,6 @@
  */
 
 import {
-  buildEvalFacetsQuery,
   buildEvalResultsQuery,
   buildRunDetailQuery,
   buildRunEventsQuery,
@@ -28,6 +27,7 @@ import { errorMessage, fetchAggregates, isIndexMissing, queryProblem } from './u
 import { clearMissingFieldsCache } from './eval_ppl';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import { buildSameTargetQuery, sameTarget } from './result_flyout';
+import { buildFacetsAggQuery } from './eval_ppl';
 import { makeResult } from './eval_test_fixtures';
 
 const GRADES_ONLY = "where `eventName` = 'gen_ai.evaluation.result'";
@@ -36,7 +36,7 @@ describe('eval queries', () => {
   it('reads grades only, never test case or run events', () => {
     expect(buildEvalResultsQuery()).toContain(GRADES_ONLY);
     expect(buildEvalResultsQuery({ runsOnly: true })).toContain(GRADES_ONLY);
-    expect(buildEvalFacetsQuery()).toContain(GRADES_ONLY);
+    expect(buildFacetsAggQuery()).toContain(GRADES_ONLY);
     expect(buildTraceEvalsQuery('t1', 's1')).toContain(GRADES_ONLY);
     expect(buildTracesEvalsQuery(['t1', 't2'])).toContain(GRADES_ONLY);
     expect(buildSameTargetQuery(makeResult({ traceId: 't' }))).toContain(GRADES_ONLY);
@@ -56,10 +56,16 @@ describe('eval queries', () => {
       'isnotnull(`attributes.test.suite.run.id`)'
     );
   });
-  it('builds the facets query', () => {
-    expect(buildEvalFacetsQuery({ levels: ['session'] })).toMatch(
-      /where \(`attributes.derived.evaluation.level` = 'session'\) \| stats count\(\) as results by/
+  it('builds the facets query: every filter field and the verdict keys, under no filter', () => {
+    const q = buildFacetsAggQuery();
+    expect(q).toMatch(
+      /stats count\(\) as n by `attributes.gen_ai.evaluation.name`, `attributes.derived.evaluation.level`, `attributes.derived.evaluation.source`, /
     );
+    expect(q).not.toContain("= 'session'");
+    // An index without a level field still lists names and sources.
+    expect(
+      buildFacetsAggQuery({ missing: new Set(['attributes.derived.evaluation.level']) })
+    ).not.toContain('`attributes.derived.evaluation.level`,');
   });
 });
 

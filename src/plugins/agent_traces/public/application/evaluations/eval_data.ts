@@ -376,19 +376,6 @@ export const buildEvalResultsQuery = (
     `head ${limit}`,
   ].join(' | ');
 
-/** Result counts per evaluation name, level and source: the filter options and the total. */
-export const buildEvalFacetsQuery = (
-  filters: EvalFilters = {},
-  index: string = AGENT_EVALS_INDEX_PATTERN
-): string =>
-  [
-    `source = ${index}`,
-    ...buildEvalWhere(filters).map((c) => `where ${c}`),
-    `stats count() as results by ${field(EVAL_FIELDS.name)}, ${field(EVAL_FIELDS.level)}, ${field(
-      EVAL_FIELDS.source
-    )}`,
-  ].join(' | ');
-
 /** Results that judged a trace, its spans, or its session. */
 export const buildTraceEvalsQuery = (
   traceId: string,

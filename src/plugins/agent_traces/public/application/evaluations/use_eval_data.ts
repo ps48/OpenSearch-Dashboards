@@ -18,7 +18,6 @@ import {
   RunDetailData,
   outcomesFilter,
   RunEvents,
-  buildEvalFacetsQuery,
   buildEvalResultsQuery,
   buildRunDetailQuery,
   createEvalsPplService,
@@ -36,6 +35,7 @@ import {
 } from './eval_aggregations';
 import {
   AGG_ROWS_LIMIT,
+  Facet,
   VerdictAgg,
   buildDistinctAggQuery,
   buildSummaryAggQuery,
@@ -45,6 +45,7 @@ import {
   executeEvalPpl,
   executeVerdictAgg,
   fetchEvalResultsWith,
+  fetchFacets,
   fetchResultsPage,
   keepOutcomes,
   kpisFromAgg,
@@ -53,6 +54,8 @@ import {
   trendFromAgg,
   whereForOutcomes,
 } from './eval_ppl';
+
+export type { Facet } from './eval_ppl';
 import { MATCH_NONE, verdictKeyPlan } from './eval_verdict_keys';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import type { RunSummary } from './eval_aggregations';
@@ -120,21 +123,6 @@ export const isIndexMissing = (error: unknown): boolean =>
   /no such index|index_not_found|IndexNotFound/i.test(
     `${errorMessage(error)} ${String((error as { message?: unknown })?.message ?? '')}`
   );
-
-export interface Facet {
-  name: string;
-  level: string;
-  source: string;
-  count: number;
-}
-
-const toFacets = (response: unknown): Facet[] =>
-  pplResponseToRecords(response).map((row) => ({
-    name: String(row[EVAL_FIELDS.name] ?? ''),
-    level: String(row[EVAL_FIELDS.level] ?? ''),
-    source: String(row[EVAL_FIELDS.source] ?? ''),
-    count: Number(row.results ?? 0),
-  }));
 
 const isoRange = ({ from, to }: TimeBoundsMs) => ({
   from: new Date(from).toISOString(),
@@ -354,8 +342,8 @@ export const useEvalData = (
           : Promise.resolve([] as EvalResult[]),
         settle(
           PART.facets,
-          current.executeQuery(evalsDataset(index), buildEvalFacetsQuery({}, index)),
-          undefined as unknown,
+          fetchFacets(current, index),
+          undefined as Facet[] | undefined,
           warnings
         ),
       ]);
@@ -373,7 +361,7 @@ export const useEvalData = (
           results,
           // Unknown, not zero, when the counts could not be read.
           total: agg.failed ? undefined : agg.kpis.results,
-          facets: allFacets === undefined ? [] : toFacets(allFacets),
+          facets: allFacets ?? [],
           current: agg,
           previous: previous && { summaries: previous.summaries, kpis: previous.kpis },
           interval,

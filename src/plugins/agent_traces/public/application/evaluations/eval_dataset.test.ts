@@ -18,7 +18,6 @@ import {
   spansIndexOf,
 } from './eval_dataset';
 import {
-  buildEvalFacetsQuery,
   buildEvalResultsQuery,
   buildRunDetailQuery,
   buildRunEventsQuery,
@@ -27,6 +26,7 @@ import {
   evalsDataset,
 } from './eval_data';
 import { buildSameTargetQuery } from './result_flyout';
+import { buildFacetsAggQuery } from './eval_ppl';
 import { makeResult } from './eval_test_fixtures';
 
 const patterns: Record<string, Record<string, string>> = {
@@ -244,7 +244,7 @@ describe('evaluations app config', () => {
     const index = 'my-evals-*';
     const queries = [
       buildEvalResultsQuery({}, 10, index),
-      buildEvalFacetsQuery({}, index),
+      buildFacetsAggQuery({ index }),
       buildTraceEvalsQuery('t1', undefined, 10, index),
       buildTracesEvalsQuery(['t1'], 10, index),
       buildRunEventsQuery(10, index),

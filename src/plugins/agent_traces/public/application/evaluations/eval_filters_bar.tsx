@@ -15,41 +15,53 @@ import {
   EuiSwitch,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { EvalOutcome, LEVEL_LABEL, SOURCE_LABEL } from './eval_data';
+import { EvalOutcome } from './eval_data';
 import { EvalAppState, hasActiveFilters } from './eval_url_state';
 import { Facet } from './use_eval_data';
 import { OUTCOME_TEXT, levelLabel, shortId, sourceLabel } from './eval_components';
 
-const VERDICT_OPTIONS: Array<EuiComboBoxOptionOption<string>> = (
-  ['fail', 'pass', 'error', 'neutral'] as EvalOutcome[]
-).map((o) => ({ label: OUTCOME_TEXT[o], value: o }));
+/** Verdicts in their usual order: failures first. */
+const OUTCOME_ORDER: EvalOutcome[] = ['fail', 'pass', 'error', 'neutral'];
 
 type Patch = Partial<EvalAppState>;
+type Option = EuiComboBoxOptionOption<string>;
+type FacetKey = keyof Pick<Facet, 'name' | 'level' | 'source' | 'outcome'>;
 
-/** Options from the data plus the known values and the current selection, deduplicated. */
-const optionsFor = (
-  values: string[],
+/**
+ * Options from the data of the range (`stats ... by` the field), most results first, each
+ * with its count; a selected value the range does not hold stays listed, with 0.
+ */
+export const optionsFor = (
   counts: Map<string, number>,
-  label: (v: string) => string
-): Array<EuiComboBoxOptionOption<string>> =>
-  Array.from(new Set(values))
-    .sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b))
-    .map((value) => ({
-      label: counts.has(value) ? `${label(value)} (${counts.get(value)})` : label(value),
-      value,
-    }));
+  selectedValues: string[],
+  label: (v: string) => string,
+  order?: (a: string, b: string) => number
+): Option[] =>
+  Array.from(new Set([...counts.keys(), ...selectedValues]))
+    .filter((v) => v !== '')
+    .sort(
+      (a, b) =>
+        (order ? order(a, b) : 0) ||
+        (counts.get(b) ?? 0) - (counts.get(a) ?? 0) ||
+        a.localeCompare(b)
+    )
+    .map((value) => ({ label: `${label(value)} (${counts.get(value) ?? 0})`, value }));
 
-const countBy = (facets: Facet[], key: keyof Pick<Facet, 'name' | 'level' | 'source'>) => {
+export const countBy = (facets: Facet[], key: FacetKey) => {
   const counts = new Map<string, number>();
-  facets.forEach((f) => counts.set(f[key], (counts.get(f[key]) ?? 0) + f.count));
+  facets.forEach((f) => {
+    const v = f[key];
+    if (v) counts.set(v, (counts.get(v) ?? 0) + f.count);
+  });
   return counts;
 };
 
-const selected = (
-  options: Array<EuiComboBoxOptionOption<string>>,
-  values: string[]
-): Array<EuiComboBoxOptionOption<string>> =>
+const selected = (options: Option[], values: string[]): Option[] =>
   values.map((v) => options.find((o) => o.value === v) ?? { label: v, value: v });
+
+const outcomeLabel = (v: string) => OUTCOME_TEXT[v as EvalOutcome] ?? v;
+const byOutcomeOrder = (a: string, b: string) =>
+  OUTCOME_ORDER.indexOf(a as EvalOutcome) - OUTCOME_ORDER.indexOf(b as EvalOutcome);
 
 export const EvalFiltersBar: React.FC<{
   state: EvalAppState;
@@ -59,27 +71,23 @@ export const EvalFiltersBar: React.FC<{
   const [search, setSearch] = useState(state.q);
   useEffect(() => setSearch(state.q), [state.q]);
 
-  const { nameOptions, levelOptions, sourceOptions } = useMemo(() => {
-    const names = countBy(facets, 'name');
-    const levels = countBy(facets, 'level');
-    const sources = countBy(facets, 'source');
-    return {
-      nameOptions: optionsFor([...names.keys(), ...state.names], names, (v) => v),
-      levelOptions: optionsFor(
-        [...Object.keys(LEVEL_LABEL), ...levels.keys(), ...state.levels].filter(Boolean),
-        levels,
-        levelLabel
+  // Every option comes from the range's data, with its count; nothing is a fixed list.
+  const { nameOptions, levelOptions, sourceOptions, verdictOptions } = useMemo(
+    () => ({
+      nameOptions: optionsFor(countBy(facets, 'name'), state.names, (v) => v),
+      levelOptions: optionsFor(countBy(facets, 'level'), state.levels, levelLabel),
+      sourceOptions: optionsFor(countBy(facets, 'source'), state.sources, sourceLabel),
+      verdictOptions: optionsFor(
+        countBy(facets, 'outcome'),
+        state.verdicts,
+        outcomeLabel,
+        byOutcomeOrder
       ),
-      sourceOptions: optionsFor(
-        [...Object.keys(SOURCE_LABEL), ...sources.keys(), ...state.sources].filter(Boolean),
-        sources,
-        sourceLabel
-      ),
-    };
-  }, [facets, state.names, state.levels, state.sources]);
+    }),
+    [facets, state.names, state.levels, state.sources, state.verdicts]
+  );
 
-  const values = (options: Array<EuiComboBoxOptionOption<string>>) =>
-    options.map((o) => o.value ?? o.label);
+  const values = (options: Option[]) => options.map((o) => o.value ?? o.label);
 
   return (
     <EuiFlexGroup gutterSize="s" alignItems="center" wrap responsive={false}>
@@ -141,8 +149,8 @@ export const EvalFiltersBar: React.FC<{
           aria-label={i18n.translate('agentTraces.evalsPage.filterVerdictsLabel', {
             defaultMessage: 'Verdict',
           })}
-          options={VERDICT_OPTIONS}
-          selectedOptions={selected(VERDICT_OPTIONS, state.verdicts)}
+          options={verdictOptions}
+          selectedOptions={selected(verdictOptions, state.verdicts)}
           onChange={(options) => onChange({ verdicts: values(options) as EvalOutcome[] })}
           data-test-subj="agtEvlFilterVerdicts"
         />

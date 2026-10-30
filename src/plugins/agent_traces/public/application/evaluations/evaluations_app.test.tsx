@@ -150,7 +150,15 @@ beforeEach(() => {
     current: aggOf(results),
     total: 2,
     interval: 3600 * 1000,
-    facets: [{ name: 'tool_diversity', level: 'span', source: 'opensearch-sdk', count: 1 }],
+    facets: [
+      {
+        name: 'tool_diversity',
+        level: 'span',
+        source: 'opensearch-sdk',
+        outcome: 'fail',
+        count: 1,
+      },
+    ],
     truncated: false,
   };
   runData = {
