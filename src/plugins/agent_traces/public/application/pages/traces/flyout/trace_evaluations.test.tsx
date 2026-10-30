@@ -241,7 +241,7 @@ describe('TraceEvaluationsTab', () => {
 
 describe('View in Logs', () => {
   const config = {
-    correlationId: 'cfg',
+    configId: 'cfg',
     tracesDataset: { id: 'tr', title: 'otel-v1-apm-span*' },
     evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation*', timeFieldName: 'time' },
     index: 'otel-v1-genai-evaluation*',
@@ -272,7 +272,7 @@ describe('View in Logs', () => {
     );
     const { rerender } = render(tab);
     expect(screen.queryByTestId('agtEvlViewInLogs')).not.toBeInTheDocument();
-    act(() => resetEvalsDatasetState({ status: 'ready', config, configs: [config] }));
+    act(() => resetEvalsDatasetState({ status: 'ready', config }));
     rerender(tab);
     expect(screen.getByTestId('agtEvlViewInLogs')).toHaveTextContent('View in Logs');
     expect(screen.getByTestId('agtEvlViewInLogs').getAttribute('href')).toContain("!'t1!'");

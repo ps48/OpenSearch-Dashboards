@@ -717,7 +717,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
         next.from === DEFAULT_RUNS_TIME.from && next.to === DEFAULT_RUNS_TIME.to ? undefined : next,
     })
   );
-  // The evaluations dataset from its correlation, read again on every visit to the page.
+  // The evaluations dataset from the workspace's config, read again on every visit to the page.
   const dataset = useEvalsDataset({ force: true });
   const datasetLoading =
     !dataset.unavailable && (dataset.status === 'idle' || dataset.status === 'loading');
@@ -863,6 +863,8 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
       {settingsOpen && (
         <EvalSettingsModal
           config={config}
+          configId={dataset.configId}
+          workspaceId={dataset.workspaceId}
           onClose={(saved) => {
             setSettingsOpen(false);
             if (saved) dataset.refresh();

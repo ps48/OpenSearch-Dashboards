@@ -22,15 +22,16 @@ its grades.
 
 The page reads the **evaluations dataset**: a logs dataset (index pattern with `signalType:
 logs`) over the evaluation events, `otel-v1-genai-evaluation*` with time field `time` by
-default. It is linked to a traces dataset by a correlation saved object (type
-`correlations`), in the shape of the `trace-to-logs-*` correlation of the trace flyout's logs:
+default, and the **traces dataset** the evaluations judge. Both are kept in the workspace's
+Agent Evaluations app config, a saved object of type `correlations` shaped like APM's
+`APM-Config-<workspace>` (one per workspace; `default` without workspaces):
 
 ```json
 {
   "type": "correlations",
   "attributes": {
-    "correlationType": "trace-to-evaluations-otel-v1-apm-span*",
-    "title": "trace-to-evaluations_otel-v1-apm-span*",
+    "correlationType": "AgentEvals-Config-<workspace id>",
+    "title": "AgentEvals-Config",
     "version": "1.0.0",
     "entities": [
       { "tracesDataset": { "id": "references[0].id" } },
@@ -47,17 +48,16 @@ default. It is linked to a traces dataset by a correlation saved object (type
 **Settings** (in the application header) edits it: the traces dataset (default: the first
 traces dataset, the one Agent Traces opens on), the evaluations dataset (any logs dataset; a
 "Create evaluations dataset" action makes `otel-v1-genai-evaluation*` with time field `time`
-and schema mappings timestamp `time`, `traceId`, `spanId` when none exists), and the pass
-Save creates the correlation, or
-updates it in place. The observability stack's init script creates the same dataset ("Evaluation
-Dataset - Local Cluster") and correlation.
+and schema mappings timestamp `time`, `traceId`, `spanId` when none exists). Save creates the
+config, or updates the workspace's config in place. A config whose evaluations dataset was
+deleted shows the setup prompt; Settings then updates the same object.
 
 The dataset's index pattern is the PPL `source` of:
 
 - the Agent Evaluations page (Overview, Results, Evaluation runs, run page, Compare, the
   evaluation drill-down and trace comparison grades);
 - the Evaluations column of the Agent Traces tables and the Evaluations tab and chips of the
-  trace and session flyouts. Without a correlation these keep reading
+  trace and session flyouts. Without a config these keep reading
   `otel-v1-genai-evaluation-*`, where Data Prepper writes the events.
 
 A pattern with spaces, quotes or `|` is not used. The trace details flyout's Related logs tab

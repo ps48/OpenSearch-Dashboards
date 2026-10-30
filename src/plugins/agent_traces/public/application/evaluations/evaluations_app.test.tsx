@@ -118,15 +118,15 @@ const makeServices = () => {
 let services: ReturnType<typeof makeServices> & Record<string, unknown>;
 
 const configOf = (index: string): EvalsDatasetConfig => ({
-  correlationId: 'corr-1',
+  configId: 'cfg-1',
   tracesDataset: { id: 'tr', title: 'otel-v1-apm-span*' },
   evaluationsDataset: { id: 'ev', title: index },
   index,
 });
-/** The correlation is loaded already (the services have no saved objects client to reload). */
+/** The config is loaded already (the services have no saved objects client to reload). */
 const configure = (index = 'otel-v1-genai-evaluation*') => {
   const config = configOf(index);
-  resetEvalsDatasetState({ status: 'ready', config, configs: [config] });
+  resetEvalsDatasetState({ status: 'ready', config, configId: config.configId });
 };
 
 const renderApp = (hash = '', extra: Record<string, unknown> = {}) => {
@@ -340,7 +340,7 @@ describe('EvaluationsApp', () => {
     expect(screen.getByTestId('agtEvlResultsTable')).toBeInTheDocument();
   });
 
-  it('reads every query from the correlated evaluations dataset', () => {
+  it("reads every query from the config's evaluations dataset", () => {
     configure('my-evals-*');
     renderApp('#/?_a=(tab:runs)');
     const evalCall = mockUseEvalData.mock.calls[mockUseEvalData.mock.calls.length - 1];

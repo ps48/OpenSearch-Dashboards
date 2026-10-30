@@ -104,7 +104,7 @@ const EvalsIllustration: React.FC = () => {
  */
 export const NoEvalsDatasetPrompt: React.FC<{
   onGetStarted: () => void;
-  /** The correlations lookup failed. */
+  /** The config lookup failed. */
   error?: string;
 }> = ({ onGetStarted, error }) => (
   <EuiFlexGroup

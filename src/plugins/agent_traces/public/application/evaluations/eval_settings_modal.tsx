@@ -35,7 +35,7 @@ import {
   datasetLabel,
   isPplSafeIndex,
   listDatasets,
-  saveEvalsCorrelation,
+  saveEvalsConfig,
 } from './eval_dataset';
 import { errorMessage } from './use_eval_data';
 import type { EvaluationsServices } from '.';
@@ -53,13 +53,16 @@ const MODAL_TITLE = i18n.translate('agentTraces.evalsSettings.title', {
 
 /**
  * Agent Evaluations settings, styled like the APM settings: the traces dataset and the
- * evaluations dataset (a logs dataset over the evaluation events), saved as a
- * `trace-to-evaluations-*` correlation.
+ * evaluations dataset (a logs dataset over the evaluation events), saved as the workspace's
+ * `AgentEvals-Config-*` object (one per workspace, updated in place).
  */
 export const EvalSettingsModal: React.FC<{
   config?: EvalsDatasetConfig;
+  /** The saved config object (updated in place), even when its datasets do not resolve. */
+  configId?: string;
+  workspaceId?: string;
   onClose: (saved?: boolean) => void;
-}> = ({ config, onClose }) => {
+}> = ({ config, configId = config?.configId, workspaceId, onClose }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
   const client = services.savedObjects.client;
   const [traces, setTraces] = useState<DatasetRef[]>([]);
@@ -171,7 +174,10 @@ export const EvalSettingsModal: React.FC<{
     }
     setSaving(true);
     try {
-      await saveEvalsCorrelation(client, selectedTraces, selectedEvals, config?.correlationId);
+      await saveEvalsConfig(client, selectedTraces, selectedEvals, {
+        existingId: configId,
+        workspaceId,
+      });
       services.notifications.toasts.addSuccess(
         i18n.translate('agentTraces.evalsSettings.saved', {
           defaultMessage: 'Agent evaluations settings saved',
@@ -216,7 +222,7 @@ export const EvalSettingsModal: React.FC<{
             <p>
               <FormattedMessage
                 id="agentTraces.evalsSettings.intro"
-                defaultMessage="Evaluation results are OpenTelemetry log events ({event}) that judge your agents' spans, traces and sessions. Select the logs dataset that holds them and the traces dataset they judge. The two are saved as a correlation, so the trace details flyout lists a trace's evaluation events with its logs, and Explore Logs can query them with PPL."
+                defaultMessage="Evaluation results are OpenTelemetry log events ({event}) that judge your agents' spans, traces and sessions. Select the logs dataset that holds them and the traces dataset they judge. Agent Evaluations reads both for this workspace, and Explore Logs can query the evaluations dataset with PPL."
                 values={{ event: <code>gen_ai.evaluation.result</code> }}
               />
             </p>
@@ -364,7 +370,7 @@ export const EvalSettingsModal: React.FC<{
             isDisabled={loading}
             data-test-subj="agtEvlSettingsSave"
           >
-            {config
+            {configId
               ? i18n.translate('agentTraces.evalsSettings.update', { defaultMessage: 'Update' })
               : i18n.translate('agentTraces.evalsSettings.save', { defaultMessage: 'Save' })}
           </EuiButton>

@@ -40,7 +40,7 @@ const setup = (
   render(
     <I18nProvider>
       <OpenSearchDashboardsContextProvider services={services}>
-        <EvalSettingsModal config={config} onClose={onClose} />
+        <EvalSettingsModal config={config} workspaceId="ws1" onClose={onClose} />
       </OpenSearchDashboardsContextProvider>
     </I18nProvider>
   );
@@ -48,7 +48,7 @@ const setup = (
 };
 
 describe('EvalSettingsModal', () => {
-  it('defaults to the traces dataset and the existing evaluations dataset, and saves the correlation', async () => {
+  it('defaults to the traces dataset and the existing evaluations dataset, and saves the config', async () => {
     const { client, onClose } = setup(true);
     await waitFor(() =>
       expect(screen.getByTestId('agtEvlSettingsEvals')).toHaveTextContent(
@@ -61,7 +61,10 @@ describe('EvalSettingsModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
     expect(client.create).toHaveBeenCalledWith(
       'correlations',
-      expect.objectContaining({ correlationType: 'trace-to-evaluations-otel-v1-apm-span*' }),
+      expect.objectContaining({
+        correlationType: 'AgentEvals-Config-ws1',
+        title: 'AgentEvals-Config',
+      }),
       expect.objectContaining({
         references: [expect.objectContaining({ id: 'tr' }), expect.objectContaining({ id: 'ev' })],
       })
@@ -92,9 +95,9 @@ describe('EvalSettingsModal', () => {
     );
   });
 
-  it('updates the existing correlation in place', async () => {
+  it('updates the existing config in place', async () => {
     const { client, onClose } = setup(true, {
-      correlationId: 'corr-1',
+      configId: 'corr-1',
       tracesDataset: { id: 'tr', title: 'otel-v1-apm-span*' },
       evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation*' },
       index: 'otel-v1-genai-evaluation*',
