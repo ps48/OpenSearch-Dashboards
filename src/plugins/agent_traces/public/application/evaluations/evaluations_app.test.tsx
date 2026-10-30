@@ -42,7 +42,6 @@ const mockUseEvalData = jest.fn(() => evalData);
 const mockUseRunResults = jest.fn(() => runData);
 const mockUseRunDetail = jest.fn(() => runDetail);
 const mockUseEvaluationResults = jest.fn(() => ({ loading: false, results }));
-let mockAgentCorePresent = false;
 const mockUseResultsPage = jest.fn(() => ({ loading: false, rows: results }));
 jest.mock('./use_eval_data', () => ({
   ...jest.requireActual('./use_eval_data'),
@@ -50,7 +49,6 @@ jest.mock('./use_eval_data', () => ({
   useRunResults: (...args: unknown[]) => mockUseRunResults(...(args as [])),
   useRunDetail: (...args: unknown[]) => mockUseRunDetail(...(args as [])),
   useEvaluationResults: (...args: unknown[]) => mockUseEvaluationResults(...(args as [])),
-  useAgentCorePresent: () => mockAgentCorePresent,
   useResultsPage: (...args: unknown[]) => mockUseResultsPage(...(args as [])),
   useRunsDetail: () => ({
     loading: false,
@@ -155,7 +153,6 @@ beforeEach(() => {
     facets: [{ name: 'tool_diversity', level: 'span', source: 'opensearch-sdk', count: 1 }],
     truncated: false,
   };
-  mockAgentCorePresent = false;
   runData = {
     loading: false,
     indexMissing: false,
@@ -256,21 +253,13 @@ describe('EvaluationsApp', () => {
     expect(screen.getByTestId('pagination-button-493')).toBeInTheDocument();
   });
 
-  it('notes the AgentCore lag when the range ends now and AgentCore results exist', () => {
-    mockAgentCorePresent = true;
+  it('has no AgentCore lag note, even for a range that ends now', () => {
     const now = Date.now();
     BOUNDS['now-24h'] = [now - 24 * 3600 * 1000, now];
     renderApp();
-    expect(screen.getByTestId('agtEvlLagNote')).toHaveTextContent(
-      'AgentCore results arrive about 15 minutes after a session ends.'
-    );
-    BOUNDS['now-24h'] = [Date.UTC(2026, 9, 26, 0), Date.UTC(2026, 9, 27, 0)];
-  });
-
-  it('has no lag note for a range that ended long ago', () => {
-    mockAgentCorePresent = true;
-    renderApp();
     expect(screen.queryByTestId('agtEvlLagNote')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlPage')).not.toHaveTextContent('15 minutes');
+    BOUNDS['now-24h'] = [Date.UTC(2026, 9, 26, 0), Date.UTC(2026, 9, 27, 0)];
   });
 
   it('keeps the global time range: no range is forced when the link has none', () => {

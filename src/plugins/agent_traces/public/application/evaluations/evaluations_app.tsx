@@ -8,7 +8,6 @@ import './evaluations.scss';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isEqual } from 'lodash';
 import {
-  EuiCallOut,
   EuiErrorBoundary,
   EuiFilterButton,
   EuiFilterGroup,
@@ -51,10 +50,8 @@ import {
   runsTimeOf,
 } from './eval_url_state';
 import {
-  useAgentCorePresent,
   useResultsPage,
   useEvalData,
-  AGENTCORE_LAG_MS,
   errorMessage,
   useEvaluationResults,
   useRunDetail,
@@ -278,7 +275,6 @@ const EvaluationsBody: React.FC<{
     index,
     state.tab === 'results' ? 'results' : 'overview'
   );
-  const agentCorePresent = useAgentCorePresent(services.data, index);
   // Results table: sorted and paged in the query; a new range or filter starts on page 1.
   const [resultsSort, setResultsSort] = useState<ResultsSort>(DEFAULT_RESULTS_SORT);
   const [resultsPageAt, setResultsPageAt] = useState({
@@ -298,8 +294,6 @@ const EvaluationsBody: React.FC<{
     resultsPageAt.size,
     state.tab === 'results'
   );
-  const showLagNote =
-    state.tab !== 'runs' && agentCorePresent && time.bounds.to > Date.now() - AGENTCORE_LAG_MS;
   const showTraces = useCallback(
     (condition: TraceCondition) => {
       fetchConditionTraces(
@@ -534,19 +528,6 @@ const EvaluationsBody: React.FC<{
     if (data.indexMissing) return <NoEvalIndexPrompt index={index} />;
     if (data.error) return <QueryErrorCallout message={data.error} />;
     if (data.loading && !data.current) return <EuiLoadingContent lines={8} />;
-    const lagNote = showLagNote ? (
-      <>
-        <EuiCallOut
-          size="s"
-          iconType="clock"
-          data-test-subj="agtEvlLagNote"
-          title={i18n.translate('agentTraces.evalsPage.lagNote', {
-            defaultMessage: 'AgentCore results arrive about 15 minutes after a session ends.',
-          })}
-        />
-        <EuiSpacer size="s" />
-      </>
-    ) : null;
     const partial = (
       <>
         <PartialLoadNotice warnings={data.warnings} />
@@ -562,7 +543,6 @@ const EvaluationsBody: React.FC<{
       if (data.total === 0 && !data.loading) {
         return (
           <>
-            {lagNote}
             <NoResultsInRange
               ranges={[LAST_24H, LAST_7D]}
               onSelectRange={selectRange}
@@ -573,7 +553,6 @@ const EvaluationsBody: React.FC<{
       }
       return (
         <>
-          {lagNote}
           <PartialLoadNotice warnings={data.warnings} />
           <ResultsTab
             results={resultsPage.rows}
@@ -595,7 +574,6 @@ const EvaluationsBody: React.FC<{
     if (!data.current) return null;
     return (
       <>
-        {lagNote}
         {partial}
         <OverviewTab
           current={data.current}

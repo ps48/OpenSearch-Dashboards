@@ -696,30 +696,6 @@ export const useEvaluationResults = (
   return state;
 };
 
-/** AgentCore online evaluations run about this long after a session goes idle. */
-export const AGENTCORE_LAG_MS = 15 * 60 * 1000;
-
-/** Whether the index holds any AgentCore result (any time): for the lag note. */
-export const useAgentCorePresent = (
-  data: DataPublicPluginStart,
-  index: string = AGENT_EVALS_INDEX_PATTERN
-): boolean => {
-  const [present, setPresent] = useState(false);
-  useEffect(() => {
-    const controller = new AbortController();
-    const ppl = createEvalsPplService(data, undefined, controller.signal);
-    ppl
-      .executeQuery(
-        withoutTimeRange(evalsDataset(index)),
-        `source = ${index} | where \`${EVAL_FIELDS.source}\` = 'agentcore' | head 1 | fields \`${EVAL_FIELDS.time}\``
-      )
-      .then((r) => !controller.signal.aborted && setPresent(pplResponseToRecords(r).length > 0))
-      .catch(() => !controller.signal.aborted && setPresent(false));
-    return () => controller.abort();
-  }, [data, index]);
-  return present;
-};
-
 export interface ResultsPageState {
   loading: boolean;
   error?: string;

@@ -123,8 +123,7 @@ range) is kept for the browser session like other apps (`lastUrl:` in session st
 Evaluation runs have their own range in `_a.runsTime`, the last 7 days by default, with 7 and
 30 day buttons next to the picker.
 
-When the range ends less than 15 minutes ago and the index holds AgentCore results, a note
-says AgentCore results arrive about 15 minutes after a session ends.
+There is no note about AgentCore results arriving late.
 
 ## Exact numbers
 
