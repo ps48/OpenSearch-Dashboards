@@ -43,7 +43,7 @@ export const EVALS_SCHEMA_MAPPINGS = {
     timestamp: 'time',
     traceId: 'traceId',
     spanId: 'spanId',
-    serviceName: 'serviceName',
+    serviceName: 'resource.attributes.service.name',
   },
 };
 
@@ -91,12 +91,17 @@ export const isPplSafeIndex = (title: string) => /^[^\s|'"`]+$/.test(title);
 export const datasetLabel = (d: Pick<DatasetRef, 'title' | 'displayName'>) =>
   d.displayName && d.displayName !== d.title ? `${d.displayName} (${d.title})` : d.title;
 
-/** Index patterns, optionally of one signal type (`traces`, `logs`). */
+/**
+ * Index patterns, optionally of one signal type (`traces`, `logs`), in the order the dataset
+ * picker lists them (the first traces dataset is the one Agent Traces opens on).
+ */
 export const listDatasets = async (client: Client, signalType?: string): Promise<DatasetRef[]> => {
   const res = await client.find<IndexPatternAttrs>({
     type: 'index-pattern',
     fields: ['title', 'displayName', 'signalType', 'timeFieldName'],
-    perPage: 1000,
+    search: '*',
+    searchFields: ['title', 'displayName'],
+    perPage: 10000,
   });
   return res.savedObjects
     .map((o) => ({
@@ -106,9 +111,28 @@ export const listDatasets = async (client: Client, signalType?: string): Promise
       signalType: o.attributes?.signalType,
       timeFieldName: o.attributes?.timeFieldName,
     }))
-    .filter((d) => !signalType || d.signalType === signalType)
-    .sort((a, b) => datasetLabel(a).localeCompare(datasetLabel(b)));
+    .filter((d) => !signalType || d.signalType === signalType);
 };
+
+export const sortDatasets = (datasets: DatasetRef[]) =>
+  [...datasets].sort((a, b) => datasetLabel(a).localeCompare(datasetLabel(b)));
+
+/** A logs dataset over the evaluation events (`otel-v1-genai-evaluation*`, any wildcard). */
+export const isEvalsDatasetTitle = (title: string) => title.startsWith('otel-v1-genai-evaluation');
+
+/**
+ * The defaults Settings proposes: the traces dataset Agent Traces uses (the query's dataset
+ * when it is a traces dataset, else the first traces dataset, as Agent Traces picks it) and an
+ * existing logs dataset over `otel-v1-genai-evaluation*`.
+ */
+export const defaultEvalsDatasets = (
+  traces: DatasetRef[],
+  logs: DatasetRef[],
+  agentTracesDatasetId?: string
+): { traces?: DatasetRef; evaluations?: DatasetRef } => ({
+  traces: traces.find((d) => d.id === agentTracesDatasetId) ?? traces[0],
+  evaluations: logs.find((d) => isEvalsDatasetTitle(d.title)),
+});
 
 /** The id an entity points at: `{ tracesDataset: { id: 'references[0].id' } }`. */
 const entityRefId = (

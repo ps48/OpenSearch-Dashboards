@@ -45,12 +45,16 @@ Agent Evaluations app config, a saved object of type `correlations` shaped like 
 }
 ```
 
-**Settings** (in the application header) edits it: the traces dataset (default: the first
-traces dataset, the one Agent Traces opens on), the evaluations dataset (any logs dataset; a
-"Create evaluations dataset" action makes `otel-v1-genai-evaluation*` with time field `time`
-and schema mappings timestamp `time`, `traceId`, `spanId` when none exists). Save creates the
-config, or updates the workspace's config in place. A config whose evaluations dataset was
-deleted shows the setup prompt; Settings then updates the same object.
+**Settings** (in the application header, a modal like APM's) edits it. Without a config it
+proposes, for the user to confirm with Save: the traces dataset Agent Traces has open (else
+the first traces dataset, the one Agent Traces opens on) and an existing logs dataset over
+`otel-v1-genai-evaluation*`. When there is none, a callout offers **Create evaluations
+dataset**: a logs index pattern `otel-v1-genai-evaluation*`, time field `time`, schema mappings
+timestamp `time`, `traceId`, `spanId` and serviceName `resource.attributes.service.name`, its
+fields read from the indices; it is then selected, and the modal says whether it was created
+or why not. Save creates the config, or updates the workspace's config in place. A config
+whose evaluations dataset was deleted shows the setup prompt; Settings then updates the same
+object.
 
 The dataset's index pattern is the PPL `source` of:
 

@@ -6,6 +6,7 @@
 import {
   currentEvalsIndexPattern,
   currentWorkspaceId,
+  defaultEvalsDatasets,
   evalsConfigType,
   findEvalsConfig,
   getEvalsDatasetState,
@@ -130,10 +131,30 @@ describe('evaluations app config', () => {
     expect(currentWorkspaceId({})).toBeUndefined();
   });
 
+  it('proposes the Agent Traces traces dataset and an otel-v1-genai-evaluation* logs dataset', () => {
+    const traces = [
+      { id: 't1', title: 'a*' },
+      { id: 't2', title: 'b*' },
+    ];
+    const logs = [
+      { id: 'l1', title: 'logs-otel-v1*' },
+      { id: 'l2', title: 'otel-v1-genai-evaluation-*' },
+    ];
+    expect(defaultEvalsDatasets(traces, logs, 't2')).toEqual({
+      traces: traces[1],
+      evaluations: logs[1],
+    });
+    expect(defaultEvalsDatasets(traces, logs, 'gone').traces).toBe(traces[0]);
+    expect(defaultEvalsDatasets([], [logs[0]])).toEqual({});
+  });
+
   it('lists datasets by signal type', async () => {
     const client = makeClient([]);
     const logs = await listDatasets(client as never, 'logs');
-    expect(logs.map((d) => d.id).sort()).toEqual(['bad', 'ev', 'lg']);
+    expect(logs.map((d) => d.id)).toEqual(['ev', 'lg', 'bad']);
+    expect(client.find).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'index-pattern', search: '*' })
+    );
     expect((await listDatasets(client as never, 'traces')).map((d) => d.id)).toEqual(['tr']);
   });
 

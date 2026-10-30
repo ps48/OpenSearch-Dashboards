@@ -33,9 +33,12 @@ import {
   EVALS_SCHEMA_MAPPINGS,
   EvalsDatasetConfig,
   datasetLabel,
+  defaultEvalsDatasets,
+  isEvalsDatasetTitle,
   isPplSafeIndex,
   listDatasets,
   saveEvalsConfig,
+  sortDatasets,
 } from './eval_dataset';
 import { errorMessage } from './use_eval_data';
 import type { EvaluationsServices } from '.';
@@ -45,7 +48,13 @@ type Option = EuiComboBoxOptionOption<DatasetRef>;
 const toOption = (d: DatasetRef): Option => ({ label: datasetLabel(d), value: d });
 
 /** An index pattern over the evaluation events, whatever its exact wildcard. */
-export const looksLikeEvalsDataset = (d: DatasetRef) => /genai-evaluation/.test(d.title);
+export const looksLikeEvalsDataset = (d: DatasetRef) => isEvalsDatasetTitle(d.title);
+
+/** The traces dataset Agent Traces has open (the query's dataset), if any. */
+const agentTracesDatasetId = (services: EvaluationsServices): string | undefined => {
+  const dataset = services.data?.query?.queryString?.getQuery?.()?.dataset;
+  return dataset?.signalType === 'traces' ? dataset.id : undefined;
+};
 
 const MODAL_TITLE = i18n.translate('agentTraces.evalsSettings.title', {
   defaultMessage: 'Agent evaluations settings',
@@ -76,6 +85,7 @@ export const EvalSettingsModal: React.FC<{
     config?.evaluationsDataset
   );
   const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<{ title: string; error?: string }>();
   const [saving, setSaving] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
 
@@ -83,21 +93,22 @@ export const EvalSettingsModal: React.FC<{
     setLoading(true);
     setLoadError(undefined);
     try {
-      const [t, l] = await Promise.all([
-        listDatasets(client, 'traces'),
-        listDatasets(client, 'logs'),
-      ]);
-      setTraces(t);
-      setLogs(l);
-      // Defaults: the traces dataset Agent Traces opens on (the first traces dataset), and
-      // an existing dataset over the evaluation events.
-      setSelectedTraces((current) => current ?? t[0]);
-      setSelectedEvals((current) => current ?? l.find(looksLikeEvalsDataset));
+      const all = await listDatasets(client);
+      const t = all.filter((d) => d.signalType === 'traces');
+      const l = all.filter((d) => d.signalType === 'logs');
+      setTraces(sortDatasets(t));
+      setLogs(sortDatasets(l));
+      // Proposed for the user to confirm: the traces dataset Agent Traces uses (else the first
+      // traces dataset) and an existing logs dataset over the evaluation events.
+      const defaults = defaultEvalsDatasets(t, l, agentTracesDatasetId(services));
+      setSelectedTraces((current) => current ?? defaults.traces);
+      setSelectedEvals((current) => current ?? defaults.evaluations);
     } catch (e) {
       setLoadError(errorMessage(e));
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
 
   useEffect(() => {
@@ -106,38 +117,35 @@ export const EvalSettingsModal: React.FC<{
 
   const hasEvalsDataset = logs.some(looksLikeEvalsDataset);
 
+  // Guided creation: the logs dataset over the evaluation events, its fields read from the
+  // indices (createAndSave refreshes them before saving), then selected.
   const createDataset = async () => {
     setCreating(true);
+    setCreated(undefined);
     try {
-      const pattern = await services.data.indexPatterns.createAndSave({
-        title: EVALS_DATASET_TITLE,
-        timeFieldName: EVALS_DATASET_TIME_FIELD,
-        signalType: 'logs',
-        displayName: EVALS_DATASET_DISPLAY_NAME,
-        schemaMappings: EVALS_SCHEMA_MAPPINGS,
-      });
-      const created: DatasetRef = {
+      const pattern = await services.data.indexPatterns.createAndSave(
+        {
+          title: EVALS_DATASET_TITLE,
+          timeFieldName: EVALS_DATASET_TIME_FIELD,
+          signalType: 'logs',
+          displayName: EVALS_DATASET_DISPLAY_NAME,
+          schemaMappings: EVALS_SCHEMA_MAPPINGS,
+        },
+        false,
+        false
+      );
+      const dataset: DatasetRef = {
         id: pattern.id as string,
         title: EVALS_DATASET_TITLE,
         displayName: EVALS_DATASET_DISPLAY_NAME,
         signalType: 'logs',
         timeFieldName: EVALS_DATASET_TIME_FIELD,
       };
-      setLogs((l) => [...l, created]);
-      setSelectedEvals(created);
-      services.notifications.toasts.addSuccess(
-        i18n.translate('agentTraces.evalsSettings.created', {
-          defaultMessage: 'Created the evaluations dataset {title}',
-          values: { title: EVALS_DATASET_TITLE },
-        })
-      );
+      setLogs((l) => sortDatasets([...l, dataset]));
+      setSelectedEvals(dataset);
+      setCreated({ title: EVALS_DATASET_TITLE });
     } catch (e) {
-      services.notifications.toasts.addDanger({
-        title: i18n.translate('agentTraces.evalsSettings.createError', {
-          defaultMessage: 'Could not create the evaluations dataset',
-        }),
-        text: errorMessage(e),
-      });
+      setCreated({ title: EVALS_DATASET_TITLE, error: errorMessage(e) });
     } finally {
       setCreating(false);
     }
@@ -322,6 +330,21 @@ export const EvalSettingsModal: React.FC<{
                 data-test-subj="agtEvlSettingsEvals"
               />
             </EuiFormRow>
+            {created && !created.error && (
+              <>
+                <EuiSpacer size="s" />
+                <EuiCallOut
+                  size="s"
+                  color="success"
+                  iconType="check"
+                  title={i18n.translate('agentTraces.evalsSettings.created', {
+                    defaultMessage: 'Created the evaluations dataset {title} and selected it',
+                    values: { title: created.title },
+                  })}
+                  data-test-subj="agtEvlSettingsCreated"
+                />
+              </>
+            )}
             {!loading && !hasEvalsDataset && (
               <>
                 <EuiSpacer size="s" />
@@ -336,13 +359,29 @@ export const EvalSettingsModal: React.FC<{
                   <p>
                     <FormattedMessage
                       id="agentTraces.evalsSettings.noDatasetText"
-                      defaultMessage="Create a logs dataset over {pattern} (time field {time}, trace and span ids mapped for correlation)."
+                      defaultMessage="Create a logs dataset over {pattern} (time field {time}, trace id, span id and service name mapped for correlation)."
                       values={{
                         pattern: <code>{EVALS_DATASET_TITLE}</code>,
                         time: <code>{EVALS_DATASET_TIME_FIELD}</code>,
                       }}
                     />
                   </p>
+                  {created?.error && (
+                    <>
+                      <EuiCallOut
+                        size="s"
+                        color="danger"
+                        iconType="alert"
+                        title={i18n.translate('agentTraces.evalsSettings.createError', {
+                          defaultMessage: 'Could not create the evaluations dataset',
+                        })}
+                        data-test-subj="agtEvlSettingsCreateError"
+                      >
+                        <p>{created.error}</p>
+                      </EuiCallOut>
+                      <EuiSpacer size="s" />
+                    </>
+                  )}
                   <EuiButton
                     size="s"
                     iconType="plusInCircle"
