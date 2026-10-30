@@ -28,12 +28,14 @@ import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react
 import { pplResponseToRecords } from '../pages/sessions/session_utils';
 import { EvalResult, createEvalsPplService } from './eval_data';
 import { TimeBoundsMs, aggregateEvaluator, parseEvalTime, pickInterval } from './eval_aggregations';
-import { EVAL_SPANS_DATASET } from './eval_target';
+import { spansDataset } from './eval_target';
+import { useSpansIndexPattern } from './eval_dataset';
 import {
   BreakdownDimension,
   BreakdownEntry,
   Concentration,
   JoinedFailure,
+  SPAN_LOOKUP_LIMIT,
   SpanFacts,
   breakdownFailures,
   buildFailureSpansQuery,
@@ -69,6 +71,7 @@ interface SpansState {
 /** Span facts of the failing results' traces, in batches of trace ids. */
 export const useFailureSpans = (failures: EvalResult[]): SpansState => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
+  const spansIndex = useSpansIndexPattern();
   const [state, setState] = useState<SpansState>({ loading: false, spans: [] });
   const key = failures.map((r) => r.id).join('|');
   useEffect(() => {
@@ -82,7 +85,10 @@ export const useFailureSpans = (failures: EvalResult[]): SpansState => {
     const ppl = createEvalsPplService(services.data, undefined, controller.signal);
     Promise.all(
       batches.map((b) =>
-        ppl.executeQuery(EVAL_SPANS_DATASET, buildFailureSpansQuery(b.traceIds, b.spanIds))
+        ppl.executeQuery(
+          spansDataset(spansIndex),
+          buildFailureSpansQuery(b.traceIds, b.spanIds, SPAN_LOOKUP_LIMIT, spansIndex)
+        )
       )
     )
       .then((responses) => {
@@ -100,7 +106,7 @@ export const useFailureSpans = (failures: EvalResult[]): SpansState => {
     return () => controller.abort();
     // `key` identifies the failures.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [services.data, key]);
+  }, [services.data, key, spansIndex]);
   return state;
 };
 

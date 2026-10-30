@@ -14,8 +14,10 @@ three OpenTelemetry log events, told apart by `eventName`:
 | `opensearch.test_case.result` | test case of an offline run | Evaluation runs, run page, Compare |
 | `opensearch.test_suite_run.result` | offline run | Evaluation runs, run page, Compare |
 
-Grades join to agent spans (`otel-v1-apm-span-*`) on `traceId` and `spanId`, and to sessions on
-`attributes.derived.session.id`. A run without the test case or run events still shows, from
+Grades join to agent spans on `traceId` and `spanId`, and to sessions on
+`attributes.derived.session.id`. Every span lookup of the page (the result flyout's judged
+target, the drill-down's agent, operation and tool breakdowns, the trace comparison) reads the
+traces dataset of the app config (below), `otel-v1-apm-span-*` only when no config exists. A run without the test case or run events still shows, from
 its grades.
 
 ## Evaluations dataset

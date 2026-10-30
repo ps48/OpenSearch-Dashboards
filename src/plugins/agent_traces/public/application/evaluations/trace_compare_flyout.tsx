@@ -38,7 +38,7 @@ import {
   evalsDataset,
   recordToEvalResult,
 } from './eval_data';
-import { EVAL_SPANS_DATASET, buildTraceSpansQuery } from './eval_target';
+import { TRACE_SPANS_LIMIT, buildTraceSpansQuery, spansDataset } from './eval_target';
 import {
   AlignedStep,
   StepDiff,
@@ -68,7 +68,7 @@ import {
   formatTokens,
   shortId,
 } from './eval_components';
-import { useEvalsIndexPattern } from './eval_dataset';
+import { useEvalsIndexPattern, useSpansIndexPattern } from './eval_dataset';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { errorMessage } from './use_eval_data';
 import type { EvaluationsServices } from '.';
@@ -100,12 +100,16 @@ interface CompareState {
 const fetchSide = async (
   data: DataPublicPluginStart,
   index: string,
+  spansIndex: string,
   traceId: string,
   signal: AbortSignal
 ): Promise<SideData> => {
   const ppl = createEvalsPplService(data, undefined, signal);
   const [spans, grades] = await Promise.all([
-    ppl.executeQuery(EVAL_SPANS_DATASET, buildTraceSpansQuery(traceId)),
+    ppl.executeQuery(
+      spansDataset(spansIndex),
+      buildTraceSpansQuery(traceId, TRACE_SPANS_LIMIT, spansIndex)
+    ),
     // Grades are optional: a missing evaluation index leaves the grades empty.
     ppl
       .executeQuery(
@@ -133,13 +137,15 @@ export const useTraceCompare = (baselineTraceId: string, candidateTraceId: strin
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
   // Shown on the Evaluations page, where the dataset is already loaded.
   const index = useEvalsIndexPattern() ?? AGENT_EVALS_INDEX_PATTERN;
+  // Spans from the config's traces dataset, else the default span index.
+  const spansIndex = useSpansIndexPattern();
   const [state, setState] = useState<CompareState>({ loading: true });
   useEffect(() => {
     const controller = new AbortController();
     setState({ loading: true });
     Promise.all([
-      fetchSide(services.data, index, baselineTraceId, controller.signal),
-      fetchSide(services.data, index, candidateTraceId, controller.signal),
+      fetchSide(services.data, index, spansIndex, baselineTraceId, controller.signal),
+      fetchSide(services.data, index, spansIndex, candidateTraceId, controller.signal),
     ])
       .then(([baseline, candidate]) => {
         if (!controller.signal.aborted) setState({ loading: false, baseline, candidate });
@@ -148,7 +154,7 @@ export const useTraceCompare = (baselineTraceId: string, candidateTraceId: strin
         if (!controller.signal.aborted) setState({ loading: false, error: errorMessage(e) });
       });
     return () => controller.abort();
-  }, [services.data, index, baselineTraceId, candidateTraceId]);
+  }, [services.data, index, spansIndex, baselineTraceId, candidateTraceId]);
   return state;
 };
 

@@ -32,6 +32,8 @@ import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 export const CORRELATION_TYPE = 'correlations';
 export const EVALS_CONFIG_PREFIX = 'AgentEvals-Config-';
 export const EVALS_CONFIG_TITLE = 'AgentEvals-Config';
+/** The span index the evaluation views read without a config (Data Prepper's). */
+export const DEFAULT_SPANS_INDEX_PATTERN = 'otel-v1-apm-span-*';
 /** The workspace part of the config's type without workspaces. */
 export const NO_WORKSPACE_ID = 'default';
 /** The dataset "Create evaluations dataset" makes, as the observability stack does. */
@@ -368,3 +370,16 @@ export const useEvalsIndexPattern = (): string | undefined => {
 /** The same, read now (for callbacks): the default until the config is loaded. */
 export const currentEvalsIndexPattern = (): string =>
   state$.getValue().config?.index ?? AGENT_EVALS_INDEX_PATTERN;
+
+/** The span index of a config: its traces dataset's pattern, else the default. */
+export const spansIndexOf = (config?: EvalsDatasetConfig): string => {
+  const title = config?.tracesDataset?.title;
+  return title && isPplSafeIndex(title) ? title : DEFAULT_SPANS_INDEX_PATTERN;
+};
+
+/**
+ * The span index the Evaluations page's span lookups read (judged targets, drill-down
+ * breakdowns, trace comparison): the config's traces dataset, else `otel-v1-apm-span-*`
+ * when no config exists.
+ */
+export const useSpansIndexPattern = (): string => spansIndexOf(useEvalsDataset().config);

@@ -4,9 +4,25 @@
  */
 
 import React from 'react';
-import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react';
+import { of } from 'rxjs';
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
-import { GraphComparison, decorationOf, useCompareView } from './trace_compare_flyout';
+import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dashboards_react/public';
+import {
+  GraphComparison,
+  decorationOf,
+  useCompareView,
+  useTraceCompare,
+} from './trace_compare_flyout';
+import { resetEvalsDatasetState } from './eval_dataset';
 import { TraceStep, alignSteps } from './trace_compare';
 import { TraceRow } from '../pages/traces/hooks/tree_utils';
 
@@ -112,5 +128,36 @@ describe('useCompareView', () => {
     expect(first.result.current[0]).toBe('graph');
     expect(renderHook(() => useCompareView()).result.current[0]).toBe('graph');
     window.sessionStorage.clear();
+  });
+});
+
+describe('useTraceCompare', () => {
+  it("reads both traces' spans from the config's traces dataset", async () => {
+    resetEvalsDatasetState({
+      status: 'ready',
+      config: {
+        configId: 'c',
+        tracesDataset: { id: 'tr', title: 'agent-spans*' },
+        evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation*' },
+        index: 'otel-v1-genai-evaluation*',
+      },
+    });
+    const search = jest.fn(() => of({ schema: [], datarows: [] }));
+    const wrapper: React.FC = ({ children }) => (
+      <OpenSearchDashboardsContextProvider services={{ data: { search: { search } } }}>
+        {children}
+      </OpenSearchDashboardsContextProvider>
+    );
+    const { result } = renderHook(() => useTraceCompare('a', 'b'), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const queries = (
+      search.mock.calls as unknown as Array<
+        [{ params: { body: { query: { queries: Array<{ query: string }> } } } }]
+      >
+    ).map(([r]) => r.params.body.query.queries[0].query);
+    const spanQueries = queries.filter((q) => q.includes('sort startTime'));
+    expect(spanQueries).toHaveLength(2);
+    spanQueries.forEach((q) => expect(q.startsWith('source = agent-spans* |')).toBe(true));
+    resetEvalsDatasetState();
   });
 });

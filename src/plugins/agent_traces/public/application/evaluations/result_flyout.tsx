@@ -41,7 +41,7 @@ import {
   failuresFirst,
   recordToEvalResult,
 } from './eval_data';
-import { useEvalsIndexPattern } from './eval_dataset';
+import { useEvalsIndexPattern, useSpansIndexPattern } from './eval_dataset';
 import { ShowTracesMenu } from './eval_trace_filter';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { parseEvalTime } from './eval_aggregations';
@@ -285,6 +285,7 @@ export const ResultFlyout: React.FC<{
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
   // Shown on the Evaluations page, where the dataset is already loaded.
   const index = useEvalsIndexPattern() ?? AGENT_EVALS_INDEX_PATTERN;
+  const spansIndex = useSpansIndexPattern();
   const [target, setTarget] = useState<Loadable<JudgedTarget>>({ loading: true });
   const [others, setOthers] = useState<Loadable<EvalResult[]>>({ loading: true });
 
@@ -292,13 +293,13 @@ export const ResultFlyout: React.FC<{
     const controller = new AbortController();
     const ppl = createEvalsPplService(services.data, undefined, controller.signal);
     setTarget({ loading: true });
-    fetchJudgedTarget(ppl, result)
+    fetchJudgedTarget(ppl, result, spansIndex)
       .then((value) => !controller.signal.aborted && setTarget({ loading: false, value }))
       .catch(
         (e) => !controller.signal.aborted && setTarget({ loading: false, error: errorMessage(e) })
       );
     return () => controller.abort();
-  }, [services.data, result]);
+  }, [services.data, result, spansIndex]);
 
   // A session's other evaluations include those of its traces, known once the target loaded.
   const isSession = result.level === 'session';
@@ -554,7 +555,7 @@ export const ResultFlyout: React.FC<{
               <FormattedMessage
                 id="agentTraces.evalsPage.targetMissing"
                 defaultMessage="The judged spans were not found in {index}. They may have aged out, or the agent's traces are stored elsewhere."
-                values={{ index: <EuiCode>otel-v1-apm-span-*</EuiCode> }}
+                values={{ index: <EuiCode>{spansIndex}</EuiCode> }}
               />
             </EuiText>
           )}

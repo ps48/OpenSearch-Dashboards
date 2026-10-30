@@ -203,6 +203,10 @@ describe('failure lookups', () => {
     expect(q).toContain("`attributes.gen_ai.operation.name` = 'execute_tool'");
     expect(q).toContain("spanId = 's1'");
     expect(q).toContain('| fields traceId, spanId, parentSpanId');
+    expect(q.startsWith('source = otel-v1-apm-span-* |')).toBe(true);
+    expect(
+      buildFailureSpansQuery(['t1'], [], 10, 'agent-spans*').startsWith('source = agent-spans* |')
+    ).toBe(true);
   });
 
   it('maps PPL rows with flattened attribute columns', () => {

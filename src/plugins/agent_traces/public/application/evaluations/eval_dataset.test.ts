@@ -15,6 +15,7 @@ import {
   loadEvalsDataset,
   resetEvalsDatasetState,
   saveEvalsConfig,
+  spansIndexOf,
 } from './eval_dataset';
 import {
   buildEvalFacetsQuery,
@@ -146,6 +147,22 @@ describe('evaluations app config', () => {
     });
     expect(defaultEvalsDatasets(traces, logs, 'gone').traces).toBe(traces[0]);
     expect(defaultEvalsDatasets([], [logs[0]])).toEqual({});
+  });
+
+  it("reads spans from the config's traces dataset, else otel-v1-apm-span-*", () => {
+    const base = {
+      configId: 'c',
+      evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation*' },
+      index: 'otel-v1-genai-evaluation*',
+    };
+    expect(spansIndexOf({ ...base, tracesDataset: { id: 'tr', title: 'agent-spans*' } })).toBe(
+      'agent-spans*'
+    );
+    expect(spansIndexOf(base)).toBe('otel-v1-apm-span-*');
+    expect(spansIndexOf(undefined)).toBe('otel-v1-apm-span-*');
+    expect(spansIndexOf({ ...base, tracesDataset: { id: 'tr', title: 'a | b' } })).toBe(
+      'otel-v1-apm-span-*'
+    );
   });
 
   it('lists datasets by signal type', async () => {

@@ -10,6 +10,7 @@ import { readAttribute } from '../pages/traces/hooks/genai_message_preview';
 import { isMarkedAiRoot } from '../utils/ai_root';
 import { EvalResult } from './eval_data';
 import { parseEvalTime } from './eval_aggregations';
+import { DEFAULT_SPANS_INDEX_PATTERN } from './eval_dataset';
 
 /**
  * The judged target of an evaluation result, read from the span index: the span for span and
@@ -17,17 +18,18 @@ import { parseEvalTime } from './eval_aggregations';
  * session's traces for session results.
  */
 
-export const SPANS_INDEX_PATTERN = 'otel-v1-apm-span-*';
+export const SPANS_INDEX_PATTERN = DEFAULT_SPANS_INDEX_PATTERN;
 
 /**
- * Spans are looked up by id, so without a time field: a result often lands minutes or days
- * after the span it judged, outside the page's time range.
+ * The span index (the config's traces dataset, else the default) as a dataset. Spans are
+ * looked up by id, so without a time field: a result often lands minutes or days after the
+ * span it judged, outside the page's time range.
  */
-export const EVAL_SPANS_DATASET: Dataset = {
+export const spansDataset = (index: string = SPANS_INDEX_PATTERN): Dataset => ({
   id: 'agent-evaluations-spans',
-  title: SPANS_INDEX_PATTERN,
+  title: index,
   type: 'INDEXES',
-};
+});
 
 /** Max spans read for a trace-level target (to find its agent span). */
 export const TRACE_SPANS_LIMIT = 500;
@@ -68,17 +70,29 @@ export interface JudgedTarget {
 }
 
 const quote = (v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-const source = `source = ${SPANS_INDEX_PATTERN}`;
+const source = (index: string) => `source = ${index}`;
 
-export const buildSpanQuery = (traceId: string, spanId: string): string =>
-  `${source} | where traceId = ${quote(traceId)} and spanId = ${quote(spanId)} | head 1`;
+export const buildSpanQuery = (
+  traceId: string,
+  spanId: string,
+  index: string = SPANS_INDEX_PATTERN
+): string =>
+  `${source(index)} | where traceId = ${quote(traceId)} and spanId = ${quote(spanId)} | head 1`;
 
-export const buildTraceSpansQuery = (traceId: string, limit = TRACE_SPANS_LIMIT): string =>
-  `${source} | where traceId = ${quote(traceId)} | sort startTime | head ${limit}`;
+export const buildTraceSpansQuery = (
+  traceId: string,
+  limit = TRACE_SPANS_LIMIT,
+  index: string = SPANS_INDEX_PATTERN
+): string =>
+  `${source(index)} | where traceId = ${quote(traceId)} | sort startTime | head ${limit}`;
 
 /** GenAI spans of a session; the session id is set on the agent spans of each turn. */
-export const buildSessionSpansQuery = (sessionId: string, limit = SESSION_SPANS_LIMIT): string =>
-  `${source} | where \`${AGENT_TRACES_SESSION_ID_FIELD}\` = ${quote(
+export const buildSessionSpansQuery = (
+  sessionId: string,
+  limit = SESSION_SPANS_LIMIT,
+  index: string = SPANS_INDEX_PATTERN
+): string =>
+  `${source(index)} | where \`${AGENT_TRACES_SESSION_ID_FIELD}\` = ${quote(
     sessionId
   )} | sort startTime | head ${limit}`;
 
@@ -162,17 +176,20 @@ export interface QueryRunner {
   executeQuery(dataset: Dataset, query: string): Promise<unknown>;
 }
 
-const run = async (ppl: QueryRunner, query: string) =>
-  pplResponseToRecords(await ppl.executeQuery(EVAL_SPANS_DATASET, query));
-
-/** Fetch what the result judged. Resolves to an empty target when nothing is found. */
+/**
+ * Fetch what the result judged from the span index (the config's traces dataset). Resolves
+ * to an empty target when nothing is found.
+ */
 export const fetchJudgedTarget = async (
   ppl: QueryRunner,
-  result: EvalResult
+  result: EvalResult,
+  index: string = SPANS_INDEX_PATTERN
 ): Promise<JudgedTarget> => {
+  const run = async (query: string) =>
+    pplResponseToRecords(await ppl.executeQuery(spansDataset(index), query));
   const level = result.level;
   if (level === 'session' && result.sessionId) {
-    const rows = await run(ppl, buildSessionSpansQuery(result.sessionId));
+    const rows = await run(buildSessionSpansQuery(result.sessionId, SESSION_SPANS_LIMIT, index));
     return {
       level,
       traces: pickSessionTraces(rows),
@@ -180,11 +197,11 @@ export const fetchJudgedTarget = async (
     };
   }
   if (result.traceId && result.spanId && level !== 'trace') {
-    const rows = await run(ppl, buildSpanQuery(result.traceId, result.spanId));
+    const rows = await run(buildSpanQuery(result.traceId, result.spanId, index));
     return { level, span: rows[0] ? recordToTargetSpan(rows[0]) : undefined };
   }
   if (result.traceId) {
-    const rows = await run(ppl, buildTraceSpansQuery(result.traceId));
+    const rows = await run(buildTraceSpansQuery(result.traceId, TRACE_SPANS_LIMIT, index));
     // A trace result emitted inside a span is still about the whole trace: show its agent span.
     return { level, ...pickAgentSpan(rows), partial: rows.length >= TRACE_SPANS_LIMIT };
   }

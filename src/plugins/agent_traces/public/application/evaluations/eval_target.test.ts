@@ -129,6 +129,26 @@ describe('fetchJudgedTarget', () => {
     expect(target.traces).toHaveLength(1);
   });
 
+  it("reads every lookup from the given span index (the config's traces dataset)", async () => {
+    const index = 'agent-spans*';
+    for (const result of [
+      makeResult({ level: 'span', traceId: 't1', spanId: 'agent' }),
+      makeResult({ level: 'trace', traceId: 't1', spanId: undefined }),
+      makeResult({ level: 'session', sessionId: 'sess', traceId: undefined }),
+    ]) {
+      const ppl = runner([agent]);
+      await fetchJudgedTarget(ppl, result, index);
+      expect(ppl.executeQuery.mock.calls[0][0]).toMatchObject({ title: index, type: 'INDEXES' });
+      expect(ppl.executeQuery.mock.calls[0][1].startsWith(`source = ${index} |`)).toBe(true);
+    }
+  });
+
+  it('reads otel-v1-apm-span-* by default', async () => {
+    const ppl = runner([agent]);
+    await fetchJudgedTarget(ppl, makeResult({ level: 'span', traceId: 't1', spanId: 'agent' }));
+    expect(ppl.executeQuery.mock.calls[0][0].title).toBe('otel-v1-apm-span-*');
+  });
+
   it('returns an empty target without ids', async () => {
     const ppl = runner([]);
     const target = await fetchJudgedTarget(

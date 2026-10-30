@@ -57,7 +57,8 @@ const OP = '`attributes.gen_ai.operation.name`';
 export const buildFailureSpansQuery = (
   traceIds: string[],
   spanIds: string[],
-  limit = SPAN_LOOKUP_LIMIT
+  limit = SPAN_LOOKUP_LIMIT,
+  index: string = SPANS_INDEX_PATTERN
 ): string => {
   const traces = traceIds.map((id) => `traceId = ${quote(id)}`).join(' or ');
   const kinds = [
@@ -67,7 +68,7 @@ export const buildFailureSpansQuery = (
     ...spanIds.map((id) => `spanId = ${quote(id)}`),
   ].join(' or ');
   return [
-    `source = ${SPANS_INDEX_PATTERN}`,
+    `source = ${index}`,
     `where (${traces}) and (${kinds})`,
     `fields traceId, spanId, parentSpanId, name, serviceName, ${OP}, \`attributes.gen_ai.tool.name\`, \`attributes.gen_ai.agent.name\``,
     `head ${limit}`,

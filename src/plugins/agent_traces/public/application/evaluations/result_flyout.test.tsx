@@ -11,6 +11,7 @@ import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dash
 import { ResultFlyout } from './result_flyout';
 import { makeResult } from './eval_test_fixtures';
 import { AGENT_TRACES_NAV_ID } from '../../../common';
+import { resetEvalsDatasetState } from './eval_dataset';
 
 const spanRow = {
   traceId: 't1',
@@ -152,5 +153,45 @@ describe('ResultFlyout', () => {
       </I18nProvider>
     );
     await waitFor(() => expect(screen.getByTestId('agtEvlTargetMissing')).toBeInTheDocument());
+    expect(screen.getByTestId('agtEvlTargetMissing')).toHaveTextContent('otel-v1-apm-span-*');
+  });
+
+  it("reads the judged span from the config's traces dataset", async () => {
+    resetEvalsDatasetState({
+      status: 'ready',
+      config: {
+        configId: 'c',
+        tracesDataset: { id: 'tr', title: 'agent-spans*' },
+        evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation*' },
+        index: 'otel-v1-genai-evaluation*',
+      },
+    });
+    try {
+      const search = jest.fn(() => of(toResponse([])));
+      render(
+        <I18nProvider>
+          <OpenSearchDashboardsContextProvider
+            services={{ data: { search: { search } }, application: { navigateToApp: jest.fn() } }}
+          >
+            <ResultFlyout
+              result={makeResult({ level: 'trace', traceId: 'gone', spanId: undefined })}
+              onClose={jest.fn()}
+              onOpenResult={jest.fn()}
+            />
+          </OpenSearchDashboardsContextProvider>
+        </I18nProvider>
+      );
+      await waitFor(() => expect(screen.getByTestId('agtEvlTargetMissing')).toBeInTheDocument());
+      expect(screen.getByTestId('agtEvlTargetMissing')).toHaveTextContent('agent-spans*');
+      const queries = (
+        search.mock.calls as unknown as Array<
+          [{ params: { body: { query: { queries: Array<{ query: string }> } } } }]
+        >
+      ).map(([r]) => r.params.body.query.queries[0].query);
+      expect(queries.some((q) => q.startsWith('source = agent-spans* |'))).toBe(true);
+      expect(queries.some((q) => q.includes('otel-v1-apm-span'))).toBe(false);
+    } finally {
+      resetEvalsDatasetState();
+    }
   });
 });
