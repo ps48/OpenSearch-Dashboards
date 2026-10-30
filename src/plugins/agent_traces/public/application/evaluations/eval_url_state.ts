@@ -38,8 +38,8 @@ export interface EvalAppState {
   /** The compared run the others are measured against; one of `compare`. */
   baseline?: string;
   /**
-   * `test.suite.run.id` of the run whose page is open. External links (a CI job that ran the
-   * suite) open `_a=(tab:runs,run:'<id>')`: keep this key.
+   * Read only from links from before the run page: `_a=(tab:runs,run:'<id>')` (CI jobs and the
+   * GitHub Action build them) redirects to `#/runs/<id>`. Keep this key.
    */
   run?: string;
   /** Time range of the Evaluation runs tab and the run page (their own, not the global one). */

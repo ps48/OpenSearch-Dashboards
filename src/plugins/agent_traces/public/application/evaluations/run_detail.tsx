@@ -723,7 +723,8 @@ export const RunDetailPage: React.FC<{
                           values: { previous: previous.runId },
                         })
                       : i18n.translate('agentTraces.evalsPage.noPreviousTip', {
-                          defaultMessage: 'No earlier run of this suite in the time range',
+                          defaultMessage:
+                            'No earlier run of this suite in the 30 days before this run',
                         })
                   }
                 >

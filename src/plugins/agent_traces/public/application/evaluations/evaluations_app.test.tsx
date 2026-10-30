@@ -66,12 +66,20 @@ const aggOf = (list: typeof results): EvalAggregates => ({
   trend: [],
   truncated: false,
 });
+let mockRunDetailProps: { onCompare: (ids: string[]) => void };
 jest.mock('./run_detail', () => ({
-  RunDetailPage: ({ runId, results: shown }: { runId: string; results: unknown[] }) => (
-    <div data-test-subj="runDetailStub">
-      {runId}:{shown.length}
-    </div>
-  ),
+  RunDetailPage: (props: {
+    runId: string;
+    results: unknown[];
+    onCompare: (ids: string[]) => void;
+  }) => {
+    mockRunDetailProps = props;
+    return (
+      <div data-test-subj="runDetailStub">
+        {props.runId}:{props.results.length}
+      </div>
+    );
+  },
 }));
 
 let settings: Record<string, unknown> = {};
@@ -306,24 +314,76 @@ describe('EvaluationsApp', () => {
     });
   });
 
-  it("opens a run's page from the link a CI job builds, with the run loaded on its own", () => {
+  it("redirects the link a CI job builds to the run's own page, loaded by id", () => {
     runDetail = { loading: false, results: twoRunFixture().slice(0, 2), events: EMPTY_RUN_EVENTS };
-    renderApp("#/?_a=(tab:runs,run:'run-1')");
+    const history = renderApp("#/?_g=(time:(from:now-24h,to:now))&_a=(tab:runs,run:'run-1')");
+    expect(history.location.hash.startsWith('#/runs/run-1?')).toBe(true);
+    expect(decodeURIComponent(history.location.hash)).not.toContain("run:'run-1'");
+    expect(decodeURIComponent(history.location.hash)).toContain('_g=(time:(from:now-24h');
     expect(screen.getByTestId('runDetailStub')).toHaveTextContent('run-1:2');
     const call = mockUseRunDetail.mock.calls[mockUseRunDetail.mock.calls.length - 1];
     expect((call as unknown[])[1]).toBe('run-1');
-    // No filters bar on the run page.
-    expect(screen.queryByTestId('agtEvlFailingOnly')).not.toBeInTheDocument();
   });
 
-  it('opens a run from the runs list and keeps it in the URL', async () => {
+  it('shows the run page without tabs, filter bar or time picker, under its breadcrumb', () => {
+    runDetail = { loading: false, results: twoRunFixture().slice(0, 2), events: EMPTY_RUN_EVENTS };
+    renderApp('#/runs/run-1');
+    expect(screen.getByTestId('runDetailStub')).toHaveTextContent('run-1:2');
+    expect(screen.queryByTestId('agtEvlTab-overview')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlTab-runs')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlFailingOnly')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlDatePicker')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlRunsTimePicker')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlSettingsButton')).toBeInTheDocument();
+    const crumbs = services.chrome.setBreadcrumbs.mock.calls[
+      services.chrome.setBreadcrumbs.mock.calls.length - 1
+    ][0] as Array<{ text: string }>;
+    expect(crumbs.map((c) => c.text)).toEqual([
+      'Agent Evaluations',
+      'Evaluation runs',
+      summarizeRuns(twoRunFixture()).find((r) => r.runId === 'run-1')?.suiteName,
+    ]);
+  });
+
+  it('opens a run from the runs list on its own route, and Evaluation runs goes back', async () => {
     const history = renderApp('#/?_a=(tab:runs)');
     fireEvent.click(screen.getAllByTestId('agtEvlRunLink')[0]);
-    expect(screen.getByTestId('runDetailStub')).toHaveTextContent('run-2');
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(decodeURIComponent(history.location.hash)).toContain('run:run-2');
+    expect(history.location.hash.startsWith('#/runs/run-2')).toBe(true);
+    expect(screen.getByTestId('runDetailStub')).toHaveTextContent('run-2');
+    const crumbs = services.chrome.setBreadcrumbs.mock.calls[
+      services.chrome.setBreadcrumbs.mock.calls.length - 1
+    ][0] as Array<{ text: string; onClick: (e: { preventDefault: () => void }) => void }>;
+    await act(async () => crumbs[1].onClick({ preventDefault: jest.fn() }));
+    expect(history.location.hash.startsWith('#/?')).toBe(true);
+    expect(screen.getByTestId('agtEvlTab-runs')).toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlRunsTable')).toBeInTheDocument();
+  });
+
+  it('redirects an old compare link to the compare page, without tabs', () => {
+    const history = renderApp("#/?_a=(tab:runs,compare:!('run-1','run-2'),baseline:'run-2')");
+    expect(history.location.hash.startsWith('#/compare?')).toBe(true);
+    expect(decodeURIComponent(history.location.hash)).toContain('compare:!(run-1,run-2)');
+    expect(screen.getByTestId('agtEvlCompare')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlTab-runs')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlRunsTimePicker')).not.toBeInTheDocument();
+    const crumbs = services.chrome.setBreadcrumbs.mock.calls[
+      services.chrome.setBreadcrumbs.mock.calls.length - 1
+    ][0] as Array<{ text: string }>;
+    expect(crumbs.map((c) => c.text)).toEqual([
+      'Agent Evaluations',
+      'Evaluation runs',
+      'Compare runs',
+    ]);
+  });
+
+  it('opens the compare page from the run page', async () => {
+    const history = renderApp('#/runs/run-2');
+    await act(async () => mockRunDetailProps.onCompare(['run-1', 'run-2']));
+    expect(history.location.hash.startsWith('#/compare?')).toBe(true);
+    expect(screen.getByTestId('agtEvlCompare')).toBeInTheDocument();
   });
 
   it('opens the drill-down of an evaluation from its card', () => {
@@ -344,6 +404,11 @@ describe('EvaluationsApp', () => {
     expect((evalCall as unknown[])[4]).toBe('my-evals-*');
     const runsCall = mockUseRunResults.mock.calls[mockUseRunResults.mock.calls.length - 1];
     expect((runsCall as unknown[])[5]).toBe('my-evals-*');
+  });
+
+  it("reads the run page from the config's evaluations dataset", () => {
+    configure('my-evals-*');
+    renderApp('#/runs/run-1');
     const detailCall = mockUseRunDetail.mock.calls[mockUseRunDetail.mock.calls.length - 1];
     expect((detailCall as unknown[])[3]).toBe('my-evals-*');
   });

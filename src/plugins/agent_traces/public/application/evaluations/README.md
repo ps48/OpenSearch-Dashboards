@@ -262,10 +262,16 @@ as is.
 
 ## Links
 
-- Compare: `_a=(tab:runs,compare:!('<run A>','<run B>',...),baseline:'<run>')`; without
-  `baseline` the first run is the baseline (2-run links from before the grid keep working).
-- Run page: `#/?_a=(tab:runs,run:'<test.suite.run.id>')` opens one run whatever its date (CI
-  jobs link here; keep the `run` key).
+- Run page: `#/runs/<test.suite.run.id>`, its own page: breadcrumb Agent Evaluations ›
+  Evaluation runs › the suite name, no tabs, no filter bar and no time picker. The run is read
+  by its id whatever its date; the suite's other runs (previous run, trend, Compare with) are
+  read from 30 days before it to now. Title: the suite name, the run id (copyable) and the
+  status under it. Links from before it, `#/?_a=(tab:runs,run:'<id>')` (CI jobs and the GitHub
+  Action build them), redirect to it.
+- Compare: `#/compare?_a=(compare:!('<run A>','<run B>',...),baseline:'<run>')`, also a page of
+  its own without tabs (breadcrumb Agent Evaluations › Evaluation runs › Compare runs), opened
+  from the runs list or the run page; without `baseline` the first run is the baseline. Old
+  links `_a=(tab:runs,compare:...)` redirect to it.
 - Evaluation runs time range: `_a=(runsTime:(from:now-30d,to:now))`, the last 7 days by default.
   Overview and Results use the global time range (`_g`).
 - Open session: session-level results (the result flyout's Open session, their target in
