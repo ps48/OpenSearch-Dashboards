@@ -19,6 +19,7 @@ import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dash
 import {
   GraphComparison,
   decorationOf,
+  graphFocusOf,
   useCompareView,
   useTraceCompare,
 } from './trace_compare_flyout';
@@ -116,6 +117,25 @@ describe('decorationOf', () => {
     expect(decorationOf({ diff: 'args', index: 1 }, 0)?.className).toContain(
       'agtEvlGraphNode--changed'
     );
+  });
+});
+
+describe('graphFocusOf', () => {
+  const tree = [row('root')];
+  it("opens each side on the first differing step, else that side's step before it", () => {
+    const aligned = alignSteps(
+      [step('a1', 'search_flights'), step('a2', 'book')],
+      [step('b1', 'search_flights'), step('b2', 'get_weather'), step('b3', 'book')]
+    );
+    const first = aligned.findIndex((a) => a.diff !== 'same');
+    expect(graphFocusOf(aligned, 'candidate', tree)).toBe(aligned[first].candidate?.spanId);
+    // Only the candidate has that step: the baseline opens on its step before it.
+    expect(graphFocusOf(aligned, 'baseline', tree)).toBe(aligned[first].baseline?.spanId ?? 'a1');
+  });
+  it('opens on the root when nothing differs', () => {
+    const aligned = alignSteps([step('a1', 'x')], [step('b1', 'x')]);
+    expect(graphFocusOf(aligned, 'baseline', tree)).toBe('root');
+    expect(graphFocusOf(aligned, 'candidate', tree)).toBe('root');
   });
 });
 

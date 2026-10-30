@@ -3,11 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useCallback, useContext, useMemo } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { EuiEmptyPrompt, EuiLoadingSpinner, EuiSpacer, EuiText } from '@elastic/eui';
 import { FormattedMessage } from '@osd/i18n/react';
 // @ts-expect-error TS7016 TODO(ts-error): fixme
 import { CelestialMap, AgentCardNode } from '@osd/apm-topology';
+import { useReactFlow } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 
 import { TraceRow } from '../hooks/tree_utils';
@@ -32,13 +33,23 @@ interface TraceFlowViewProps {
   decorateNode?: (span: CategorizedSpan) => NodeDecoration | undefined;
   /** The minimap (default on); off for maps shown side by side. */
   showMinimap?: boolean;
+  /**
+   * Opens centered on this span at `initialZoom` (default 1, labels legible) instead of fitting
+   * the whole trace; Fit view still fits it.
+   */
+  initialFocusSpanId?: string;
+  initialZoom?: number;
 }
+
+/** The map fits its contents 100 ms after the layout, animated over 400 ms: center after it. */
+export const INITIAL_FOCUS_DELAY_MS = 600;
 
 // Context for passing span selection handler to custom node components
 interface TraceFlowContextValue {
   onSelectSpan: (span: TraceRow | null) => void;
   spanMap: Map<string, CategorizedSpan>;
   decorateNode?: (span: CategorizedSpan) => NodeDecoration | undefined;
+  initialFocus?: { spanId: string; zoom: number; done: { current: boolean } };
 }
 
 const TraceFlowContext = createContext<TraceFlowContextValue>({
@@ -50,8 +61,44 @@ const TraceFlowContext = createContext<TraceFlowContextValue>({
  * Custom wrapper around AgentCardNode that selects the corresponding span on click. The click
  * still reaches CelestialMap, which centers the node (onNodeClickZoom="centerOnNode").
  */
+/**
+ * Centers the map on one node at a fixed zoom, once, after the map's own fit (rendered inside
+ * that node, where the map's ReactFlow instance is in reach).
+ */
+const InitialFocus: React.FC<{ nodeId: string; zoom: number; done: { current: boolean } }> = ({
+  nodeId,
+  zoom,
+  done,
+}) => {
+  const reactFlow = useReactFlow();
+  useEffect(() => {
+    if (done.current) return;
+    const timer = setTimeout(() => {
+      const node = reactFlow.getNode(nodeId);
+      if (!node || done.current) return;
+      done.current = true;
+      const width = node.measured?.width ?? node.width ?? 272;
+      const height = node.measured?.height ?? node.height ?? 156;
+      reactFlow.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
+        zoom,
+        duration: 0,
+      });
+    }, INITIAL_FOCUS_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [reactFlow, nodeId, zoom, done]);
+  return null;
+};
+
 const TraceAgentCardNode = (props: NodeProps<any>) => {
-  const { onSelectSpan, spanMap, decorateNode } = useContext(TraceFlowContext);
+  const { onSelectSpan, spanMap, decorateNode, initialFocus } = useContext(TraceFlowContext);
+  const focusHere =
+    initialFocus && (props.data.id === initialFocus.spanId || props.id === initialFocus.spanId) ? (
+      <InitialFocus
+        nodeId={props.id ?? props.data.id}
+        zoom={initialFocus.zoom}
+        done={initialFocus.done}
+      />
+    ) : null;
   const nodeSpan = spanMap.get(props.data.id);
   const decoration = nodeSpan && decorateNode ? decorateNode(nodeSpan) : undefined;
 
@@ -77,6 +124,7 @@ const TraceAgentCardNode = (props: NodeProps<any>) => {
   if (!decoration) {
     return (
       <div onClick={handleClick} onKeyDown={handleKeyDown} role="presentation">
+        {focusHere}
         <AgentCardNode {...props} />
       </div>
     );
@@ -89,6 +137,7 @@ const TraceAgentCardNode = (props: NodeProps<any>) => {
       className={`agentTracesFlow__decorated ${decoration.className ?? ''}`}
       data-test-subj="agentTracesFlowDecoratedNode"
     >
+      {focusHere}
       {decoration.badge && <div className="agentTracesFlow__nodeBadge">{decoration.badge}</div>}
       <AgentCardNode {...props} />
     </div>
@@ -106,7 +155,14 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
   loadError,
   decorateNode,
   showMinimap = true,
+  initialFocusSpanId,
+  initialZoom = 1,
 }) => {
+  // Once per focus target: re-renders and node remounts do not move the view again.
+  const focusDone = useRef(false);
+  useEffect(() => {
+    focusDone.current = false;
+  }, [initialFocusSpanId]);
   // Categorize spans and build CelestialMap data
   const categorizedTree = useMemo(() => categorizeSpanTree(spanTree), [spanTree]);
 
@@ -135,8 +191,15 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
   }, [categorizedTree]);
 
   const contextValue = useMemo<TraceFlowContextValue>(
-    () => ({ onSelectSpan, spanMap, decorateNode }),
-    [onSelectSpan, spanMap, decorateNode]
+    () => ({
+      onSelectSpan,
+      spanMap,
+      decorateNode,
+      initialFocus: initialFocusSpanId
+        ? { spanId: initialFocusSpanId, zoom: initialZoom, done: focusDone }
+        : undefined,
+    }),
+    [onSelectSpan, spanMap, decorateNode, initialFocusSpanId, initialZoom]
   );
 
   // Deselect when clicking the ReactFlow background pane

@@ -223,7 +223,9 @@ against it. Each compared run is read by its id, whatever its date.
   the range is unknown.
 - Test cases: one column per run, a value chip per evaluation colored by verdict, the delta
   against the baseline, the duration, the trace, the case flyout and the step-by-step trace
-  comparison with the baseline. Biggest regression first (summed normalized drops plus one
+  comparison with the baseline. The trace comparison's Graph view opens each map at 1x
+  (labels legible) centered on its first differing step, the root when nothing differs; Fit
+  view shows the whole trace. Biggest regression first (summed normalized drops plus one
   per pass-to-fail flip), or most improved, or by name.
 - A callout says when the runs are not comparable as is: different test cases, another
   evaluator, evaluator version or judge model for an evaluation, or no pass rule in one run

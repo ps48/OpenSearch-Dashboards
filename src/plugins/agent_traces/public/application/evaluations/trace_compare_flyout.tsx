@@ -510,6 +510,25 @@ export const decorationOf = (
 };
 
 /**
+ * The span a compare map opens centered on: that side's first differing step, else (a step
+ * only the other trace has) its last step before it, else the trace's root.
+ */
+export const graphFocusOf = (
+  aligned: AlignedStep[],
+  side: 'baseline' | 'candidate',
+  tree: TraceRow[]
+): string | undefined => {
+  const first = aligned.findIndex((a) => a.diff !== 'same');
+  const root = tree[0]?.spanId || tree[0]?.id;
+  if (first < 0) return root;
+  for (let i = first; i >= 0; i--) {
+    const step = aligned[i][side];
+    if (step) return step.spanId;
+  }
+  return root;
+};
+
+/**
  * Both traces as the node map Agent Traces draws, side by side, with steps that are only on
  * one side or differ marked. Selecting a step selects its match on the other side and shows
  * the aligned pair below.
@@ -593,6 +612,7 @@ export const GraphComparison: React.FC<{
             tree: baseline,
             decorate: decorateBaseline,
             onSelect: selectBaseline,
+            focus: graphFocusOf(aligned, 'baseline', baseline),
           },
           {
             id: 'candidate',
@@ -600,6 +620,7 @@ export const GraphComparison: React.FC<{
             tree: candidate,
             decorate: decorateCandidate,
             onSelect: selectCandidate,
+            focus: graphFocusOf(aligned, 'candidate', candidate),
           },
         ].map((side) => (
           <EuiFlexItem key={side.id} style={{ minWidth: 0 }}>
@@ -620,6 +641,9 @@ export const GraphComparison: React.FC<{
                 onSelectSpan={side.onSelect}
                 decorateNode={side.decorate}
                 showMinimap={false}
+                // Readable at 1x, on the first difference; Fit view shows the whole trace.
+                initialFocusSpanId={side.focus}
+                initialZoom={1}
               />
             </EuiPanel>
           </EuiFlexItem>

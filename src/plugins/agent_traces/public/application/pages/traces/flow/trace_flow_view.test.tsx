@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { fireEvent, render, screen } from '@testing-library/react';
-import { TraceFlowView } from './trace_flow_view';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { INITIAL_FOCUS_DELAY_MS, TraceFlowView } from './trace_flow_view';
 import { TraceRow } from '../hooks/tree_utils';
 import { categorizeSpanTree } from '../../../../services/span_categorization';
 import { spansToFlow } from '../../../../services/flow_transform';
@@ -17,6 +17,12 @@ jest.mock('@osd/i18n', () => ({
 
 jest.mock('@osd/i18n/react', () => ({
   FormattedMessage: ({ defaultMessage }: { defaultMessage: string }) => <>{defaultMessage}</>,
+}));
+
+const mockGetNode = jest.fn();
+const mockSetCenter = jest.fn();
+jest.mock('@xyflow/react', () => ({
+  useReactFlow: () => ({ getNode: mockGetNode, setCenter: mockSetCenter }),
 }));
 
 let capturedMapProps: any = {};
@@ -209,6 +215,52 @@ describe('TraceFlowView', () => {
     render(<TraceFlowView {...defaultProps} />);
 
     expect(spansToFlow).not.toHaveBeenCalled();
+  });
+
+  it('opens centered on the focus span at 1x, once, after the map fits itself', () => {
+    jest.useFakeTimers();
+    (categorizeSpanTree as jest.Mock).mockReturnValue([{ ...mockTrace, spanId: 'span-1' }]);
+    (spansToFlow as jest.Mock).mockReturnValue({ nodes: [], edges: [] });
+    mockGetNode.mockReturnValue({
+      position: { x: 100, y: 400 },
+      measured: { width: 200, height: 100 },
+    });
+    mockNodeId = 'span-1';
+    try {
+      const { rerender } = render(<TraceFlowView {...defaultProps} initialFocusSpanId="span-1" />);
+      expect(mockSetCenter).not.toHaveBeenCalled();
+      act(() => {
+        jest.advanceTimersByTime(INITIAL_FOCUS_DELAY_MS);
+      });
+      expect(mockGetNode).toHaveBeenCalledWith('span-1');
+      expect(mockSetCenter).toHaveBeenCalledWith(200, 450, { zoom: 1, duration: 0 });
+      rerender(<TraceFlowView {...defaultProps} initialFocusSpanId="span-1" />);
+      act(() => {
+        jest.advanceTimersByTime(INITIAL_FOCUS_DELAY_MS);
+      });
+      expect(mockSetCenter).toHaveBeenCalledTimes(1);
+      // Fit view stays: the map still fits on its own, and its controls are unchanged.
+      expect(capturedMapProps.fitViewOptions).toEqual({ minZoom: 0.1 });
+    } finally {
+      mockNodeId = undefined;
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps fitting the whole trace without a focus span', () => {
+    jest.useFakeTimers();
+    (categorizeSpanTree as jest.Mock).mockReturnValue([{ ...mockTrace, spanId: 'span-1' }]);
+    mockNodeId = 'span-1';
+    try {
+      render(<TraceFlowView {...defaultProps} />);
+      act(() => {
+        jest.advanceTimersByTime(INITIAL_FOCUS_DELAY_MS * 2);
+      });
+      expect(mockSetCenter).not.toHaveBeenCalled();
+    } finally {
+      mockNodeId = undefined;
+      jest.useRealTimers();
+    }
   });
 
   it('does not render CelestialMap in loading state', () => {
