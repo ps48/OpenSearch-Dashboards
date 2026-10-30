@@ -35,7 +35,6 @@ import {
   EvaluatorAggregate,
   RunCaseRow,
   RunSummary,
-  isRegression,
   linkPreviousRuns,
   runCases,
   suiteTrend,
@@ -650,15 +649,6 @@ export const RunDetailPage: React.FC<{
                             defaultMessage: 'Failure',
                           })
                         : status}
-                  </EuiBadge>
-                </EuiFlexItem>
-              )}
-              {isRegression(run) && (
-                <EuiFlexItem grow={false}>
-                  <EuiBadge color="danger" iconType="sortDown" data-test-subj="agtEvlRunRegression">
-                    {i18n.translate('agentTraces.evalsPage.regression', {
-                      defaultMessage: 'Regression',
-                    })}
                   </EuiBadge>
                 </EuiFlexItem>
               )}

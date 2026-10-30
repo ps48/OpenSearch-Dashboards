@@ -6,7 +6,6 @@
 import { makeResult, makeRunEvent, twoRunEventsFixture, twoRunFixture } from './eval_test_fixtures';
 import {
   buildCompareGrid,
-  caseMargin,
   comparabilityOf,
   durationChange,
   filterCases,
@@ -15,10 +14,8 @@ import {
   formatPointsDelta,
   formatValueDelta,
   passRateChange,
-  runVerdictOf,
   sortCases,
 } from './eval_compare';
-import { verdictEvidence } from './compare_runs';
 
 describe('buildCompareGrid', () => {
   it('letters the runs, marks the baseline and counts changes against it', () => {
@@ -165,111 +162,5 @@ describe('comparabilityOf', () => {
     const grid = buildCompareGrid(results, undefined, ['run-1', 'run-2'], 'run-1');
     const c = comparabilityOf(grid, results, meta);
     expect(c).toMatchObject({ evaluators: [], missingRules: [], changes: [], hasWarnings: false });
-  });
-});
-
-describe('runVerdictOf', () => {
-  const grade = (runId: string, name: string, caseId: string, value: number) =>
-    makeResult({
-      runId,
-      suiteName: 's',
-      caseId,
-      name,
-      value,
-      scoreMin: 0,
-      scoreMax: 1,
-      time: runId === 'r1' ? '2026-10-25 10:00:00.000' : '2026-10-26 10:00:00.000',
-    });
-  const verdict = (results: Array<ReturnType<typeof grade>>) =>
-    runVerdictOf(buildCompareGrid(results, undefined, ['r1', 'r2'], 'r1').runs[1]);
-
-  it('is a tradeoff when one mean rises and another falls', () => {
-    const v = verdict([
-      grade('r1', 'accuracy', 'a', 0.5),
-      grade('r1', 'helpfulness', 'a', 0.9),
-      grade('r2', 'accuracy', 'a', 0.9),
-      grade('r2', 'helpfulness', 'a', 0.5),
-    ]);
-    expect(v).toMatchObject({ verdict: 'tradeoff', better: ['accuracy'], worse: ['helpfulness'] });
-  });
-
-  it('is an improvement or a regression when means move one way', () => {
-    expect(
-      verdict([grade('r1', 'accuracy', 'a', 0.5), grade('r2', 'accuracy', 'a', 0.9)])?.verdict
-    ).toBe('improvement');
-    expect(
-      verdict([grade('r1', 'accuracy', 'a', 0.9), grade('r2', 'accuracy', 'a', 0.5)])?.verdict
-    ).toBe('regression');
-  });
-
-  it('falls back to case counts, and is a tie when nothing moved', () => {
-    // Means cancel out (0.5 and 0.5), but one case improved and one regressed: a tie.
-    const v = verdict([
-      grade('r1', 'accuracy', 'a', 0.2),
-      grade('r1', 'accuracy', 'b', 0.8),
-      grade('r2', 'accuracy', 'a', 0.8),
-      grade('r2', 'accuracy', 'b', 0.2),
-    ]);
-    expect(v).toMatchObject({ verdict: 'tie', improvedCases: 1, regressedCases: 1 });
-    expect(
-      verdict([grade('r1', 'accuracy', 'a', 0.5), grade('r2', 'accuracy', 'a', 0.52)])?.verdict
-    ).toBe('tie');
-  });
-
-  /**
-   * `size` shared cases at 0.9; `drops` fall to 0.8 in r2 and `rises` come up from 0.8: each
-   * case moves by 0.1 (a case change), the mean by 0.1 / size (no mean move from a few).
-   */
-  const suite = (drops: string[], rises: string[] = [], size = 12) =>
-    Array.from({ length: size }, (_, i) => `c${i}`).flatMap((caseId) => [
-      grade('r1', 'accuracy', caseId, rises.includes(caseId) ? 0.8 : 0.9),
-      grade('r2', 'accuracy', caseId, drops.includes(caseId) ? 0.8 : 0.9),
-    ]);
-  const named = (results: Array<ReturnType<typeof grade>>) =>
-    results.map((r) => (r.caseId === 'c0' ? { ...r, caseName: 'Unknown destination' } : r));
-
-  it('calls a single regressed case with no mean move a tie, naming the case', () => {
-    const v = verdict(named(suite(['c0'])));
-    expect(v).toMatchObject({
-      verdict: 'tie',
-      regressedCases: 1,
-      improvedCases: 0,
-      sharedCases: 12,
-      regressedCaseNames: ['Unknown destination'],
-    });
-    expect(verdictEvidence(v!)).toBe('1 case regressed (Unknown destination)');
-  });
-
-  it('calls it a regression once regressed cases exceed improved by 2', () => {
-    const v = verdict(suite(['c0', 'c1', 'c2'], ['c3']));
-    expect(v).toMatchObject({ regressedCases: 3, improvedCases: 1, worse: [] });
-    expect(v?.verdict).toBe('regression');
-    expect(verdictEvidence(v!)).toBe(
-      'No evaluation mean moved more than 5% of its range; 3 cases regressed (c0, c1, c2); 1 case improved (c3)'
-    );
-  });
-
-  it('never lets a single case decide, and asks 10% of the shared cases of a large suite', () => {
-    expect(verdict(suite(['c0'], [], 5))?.verdict).toBe('tie');
-    expect(verdict(suite([], ['c0'], 5))?.verdict).toBe('tie');
-    expect(verdict(suite(['c0', 'c1'], [], 5))?.verdict).toBe('regression');
-    expect(caseMargin(8)).toBe(2);
-    expect(caseMargin(40)).toBe(4);
-    // 40 cases: 3 regressed is under 10%, a tie (each moves the mean by 0.0025).
-    expect(verdict(suite(['c0', 'c1', 'c2'], [], 40))?.verdict).toBe('tie');
-    expect(verdict(suite(['c0', 'c1', 'c2', 'c3'], [], 40))?.verdict).toBe('regression');
-  });
-
-  it('says when no test case changed', () => {
-    const v = verdict(suite([]));
-    expect(v?.verdict).toBe('tie');
-    expect(verdictEvidence(v!)).toBe(
-      'No evaluation mean moved more than 5% of its range; no test case changed'
-    );
-  });
-
-  it('has no verdict for the baseline', () => {
-    const grid = buildCompareGrid(twoRunFixture(), undefined, ['run-1', 'run-2'], 'run-1');
-    expect(runVerdictOf(grid.runs[0])).toBeUndefined();
   });
 });

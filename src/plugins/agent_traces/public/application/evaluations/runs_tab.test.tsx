@@ -40,15 +40,15 @@ describe('RunsTab', () => {
     expect(screen.getByTestId('agtEvlNoRuns')).toHaveTextContent('test.suite.run.id');
   });
 
-  it('lists runs with cases, per-evaluation means and a regression marker', () => {
+  it('lists runs with cases and per-evaluation means with their change, no verdict word', () => {
     renderRuns();
     const table = screen.getByTestId('agtEvlRunsTable');
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText('run-2')).toBeInTheDocument();
-    expect(within(rows[0]).getByTestId('agtEvlRegression')).toBeInTheDocument();
     expect(within(rows[0]).getByText('0.57')).toBeInTheDocument();
-    expect(within(rows[1]).queryByTestId('agtEvlRegression')).not.toBeInTheDocument();
+    expect(within(table).queryByTestId('agtEvlRegression')).not.toBeInTheDocument();
+    expect(table).not.toHaveTextContent('Regression');
     // Against the previous run of the suite: 0.65 to 0.57, worse.
     const delta = within(rows[0]).getByTestId('agtEvlRunsDelta');
     expect(delta).toHaveTextContent('↓8 pp');
@@ -103,9 +103,13 @@ describe('RunsTab', () => {
     expect(within(a).getByTestId('agtEvlChangesReference')).toHaveTextContent('Reference');
     expect(within(b).getByTestId('agtEvlChanges')).toHaveTextContent('↓1 ↑1 of 2');
     expect(within(b).getByTestId('agtEvlRunMean')).toHaveTextContent('0.57');
-    // The mean fell 0.08 (more than 5% of 0..1), and nothing rose.
-    expect(within(b).getByTestId('agtEvlRunVerdict')).toHaveTextContent('Regression');
-    expect(within(b).getByTestId('agtEvlRunVerdictWhy')).toHaveTextContent('Worse on accuracy');
+    // Counts and deltas only: no one-word verdict, no evidence sentence, no Verdict column.
+    expect(screen.queryByTestId('agtEvlRunVerdict')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlRunVerdictWhy')).not.toBeInTheDocument();
+    expect(within(b).queryByText(/Regression|Improvement|Tradeoff|Tie/)).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('agtEvlCompare')).queryByRole('columnheader', { name: 'Verdict' })
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId('agtEvlCasesTitle')).toHaveTextContent(
       '2 test cases shared by all runs'
     );

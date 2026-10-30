@@ -232,21 +232,9 @@ against it. Each compared run is read by its id, whatever its date.
   for an evaluation others decide. Agent version and model changes (run metadata
   `agent.version`, `agent.model`) are listed neutrally.
 
-### Run verdict
-
-Each run other than the baseline gets one word, from the same changes, no LLM:
-
-1. Evaluations whose mean got better or worse by more than 5% of its range.
-2. Some better and some worse: **Tradeoff**. Only better: **Improvement**. Only worse:
-   **Regression**.
-3. No mean moved: test cases decide only by a margin. Regressed cases outnumbering improved
-   ones by at least 2 (and by at least 10% of the cases both runs have, in a suite of more
-   than 20) is a Regression; the other way round an Improvement; anything less a **Tie**. A
-   single regressed case with no mean moved is a Tie.
-
-The evidence sentence names the evaluations ("Better on answer_quality, worse on
-latency_budget") or the changed cases, up to three by name ("1 case regressed (Unknown
-destination)").
+There is no one-word run verdict: the runs table, the cases and the callouts show the counts
+(`↓1 ↑1 of 2`) and the deltas, and the Evaluation runs list and the run page carry no
+Regression badge (Needs attention still names the most regressed run).
 
 ## From a chart to its results
 

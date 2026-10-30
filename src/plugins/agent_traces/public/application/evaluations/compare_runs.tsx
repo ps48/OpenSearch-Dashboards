@@ -44,8 +44,6 @@ import {
   CaseSort,
   Comparability,
   GridCase,
-  RunVerdict,
-  RunVerdictResult,
   GridRun,
   buildCompareGrid,
   comparabilityOf,
@@ -56,7 +54,6 @@ import {
   formatDurationDelta,
   formatPointsDelta,
   passRateChange,
-  runVerdictOf,
   sortCases,
 } from './eval_compare';
 import { VerdictBadge } from './eval_chips';
@@ -252,112 +249,6 @@ export const ChangesCell: React.FC<{ run: GridRun }> = ({ run }) => {
         </div>
       </div>
     </EuiToolTip>
-  );
-};
-
-const VERDICT_TEXT: Record<RunVerdict, string> = {
-  improvement: i18n.translate('agentTraces.evalsPage.verdictImprovement', {
-    defaultMessage: 'Improvement',
-  }),
-  regression: i18n.translate('agentTraces.evalsPage.verdictRegression', {
-    defaultMessage: 'Regression',
-  }),
-  tradeoff: i18n.translate('agentTraces.evalsPage.verdictTradeoff', {
-    defaultMessage: 'Tradeoff',
-  }),
-  tie: i18n.translate('agentTraces.evalsPage.verdictTie', { defaultMessage: 'Tie' }),
-};
-
-const VERDICT_COLOR: Record<RunVerdict, string> = {
-  improvement: 'secondary',
-  regression: 'danger',
-  tradeoff: 'hollow',
-  tie: 'hollow',
-};
-
-const VERDICT_ICON: Record<RunVerdict, string | undefined> = {
-  improvement: 'sortUp',
-  regression: 'sortDown',
-  tradeoff: 'sortable',
-  tie: undefined,
-};
-
-/** Up to three case names, `(Unknown destination, Rome)`; more as `, …`. */
-const caseNames = (names: string[]) =>
-  names.length ? ` (${names.slice(0, 3).join(', ')}${names.length > 3 ? ', …' : ''})` : '';
-
-/** `1 case regressed (Unknown destination); 2 improved (A, B)`; empty when no case changed. */
-export const caseChangesText = (v: RunVerdictResult): string =>
-  [
-    v.regressedCases > 0
-      ? i18n.translate('agentTraces.evalsPage.verdictCasesRegressed', {
-          defaultMessage: '{count, plural, one {# case} other {# cases}} regressed{names}',
-          values: { count: v.regressedCases, names: caseNames(v.regressedCaseNames) },
-        })
-      : undefined,
-    v.improvedCases > 0
-      ? i18n.translate('agentTraces.evalsPage.verdictCasesImproved', {
-          defaultMessage: '{count, plural, one {# case} other {# cases}} improved{names}',
-          values: { count: v.improvedCases, names: caseNames(v.improvedCaseNames) },
-        })
-      : undefined,
-  ]
-    .filter(Boolean)
-    .join('; ');
-
-/** The evidence sentence of a verdict: which evaluations moved, else which cases changed. */
-export const verdictEvidence = (v: RunVerdictResult): string => {
-  const cases =
-    caseChangesText(v) ||
-    i18n.translate('agentTraces.evalsPage.verdictNoCaseChanged', {
-      defaultMessage: 'no test case changed',
-    });
-  if (v.better.length && v.worse.length) {
-    return i18n.translate('agentTraces.evalsPage.verdictTradeoffWhy', {
-      defaultMessage: 'Better on {better}, worse on {worse}',
-      values: { better: v.better.join(', '), worse: v.worse.join(', ') },
-    });
-  }
-  if (v.better.length) {
-    return i18n.translate('agentTraces.evalsPage.verdictBetterWhy', {
-      defaultMessage: 'Better on {better}; {cases}',
-      values: { better: v.better.join(', '), cases },
-    });
-  }
-  if (v.worse.length) {
-    return i18n.translate('agentTraces.evalsPage.verdictWorseWhy', {
-      defaultMessage: 'Worse on {worse}; {cases}',
-      values: { worse: v.worse.join(', '), cases },
-    });
-  }
-  // A tie with a few changed cases: the cases are the whole story.
-  if (v.verdict === 'tie' && (v.regressedCases > 0 || v.improvedCases > 0)) return cases;
-  return i18n.translate('agentTraces.evalsPage.verdictCasesWhy', {
-    defaultMessage: 'No evaluation mean moved more than 5% of its range; {cases}',
-    values: { cases },
-  });
-};
-
-/** One-word verdict of a run against the baseline, with its evidence sentence. */
-export const RunVerdictCell: React.FC<{ run: GridRun }> = ({ run }) => {
-  const v = runVerdictOf(run);
-  if (!v) return null;
-  return (
-    <div data-test-subj="agtEvlRunVerdict" data-verdict={v.verdict}>
-      <EuiToolTip
-        content={i18n.translate('agentTraces.evalsPage.verdictRuleTip', {
-          defaultMessage:
-            'From the evaluation means against the baseline: some better and some worse is a Tradeoff, only better an Improvement, only worse a Regression (a move under 5% of the range does not count). When no mean moved, regressed test cases outnumbering improved ones by at least 2 (and 10% of the shared cases in a large suite) is a Regression, the other way round an Improvement, anything less (one case) a Tie.',
-        })}
-      >
-        <EuiBadge color={VERDICT_COLOR[v.verdict]} iconType={VERDICT_ICON[v.verdict]}>
-          {VERDICT_TEXT[v.verdict]}
-        </EuiBadge>
-      </EuiToolTip>
-      <EuiText size="xs" color="subdued" data-test-subj="agtEvlRunVerdictWhy">
-        {verdictEvidence(v)}
-      </EuiText>
-    </div>
   );
 };
 
@@ -943,11 +834,6 @@ export const CompareRuns: React.FC<CompareRunsProps> = ({
       name: i18n.translate('agentTraces.evalsPage.colChanges', { defaultMessage: 'Changes' }),
       width: '130px',
       render: (run: GridRun) => <ChangesCell run={run} />,
-    },
-    {
-      name: i18n.translate('agentTraces.evalsPage.colVerdict', { defaultMessage: 'Verdict' }),
-      width: '200px',
-      render: (run: GridRun) => <RunVerdictCell run={run} />,
     },
     {
       name: '',

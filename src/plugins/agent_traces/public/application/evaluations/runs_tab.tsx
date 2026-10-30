@@ -20,7 +20,7 @@ import {
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import { EMPTY_RUN_EVENTS } from './eval_data';
-import { RunSummary, compareValues, isRegression } from './eval_aggregations';
+import { RunSummary, compareValues } from './eval_aggregations';
 import { formatAggregateDelta } from './eval_compare';
 import {
   CASE_STATUS_COLOR,
@@ -300,28 +300,6 @@ export const RunsTab: React.FC<{
               )}
             </EuiToolTip>
           </EuiFlexItem>
-          {isRegression(run) && (
-            <EuiFlexItem grow={false}>
-              <EuiToolTip
-                content={i18n.translate('agentTraces.evalsPage.regressionTip', {
-                  defaultMessage: 'Worse than the previous run of this suite ({previous}): {what}',
-                  values: {
-                    previous: shortId(run.previousRunId, 24),
-                    what: [
-                      ...run.regressedEvaluators,
-                      ...(run.passRateDropped ? ['fewer test cases passed'] : []),
-                    ].join(', '),
-                  },
-                })}
-              >
-                <EuiBadge color="danger" iconType="sortDown" data-test-subj="agtEvlRegression">
-                  {i18n.translate('agentTraces.evalsPage.regression', {
-                    defaultMessage: 'Regression',
-                  })}
-                </EuiBadge>
-              </EuiToolTip>
-            </EuiFlexItem>
-          )}
         </EuiFlexGroup>
       ),
     },
