@@ -12,7 +12,6 @@ import {
 } from '../../../core/server';
 import { capabilitiesProvider } from './capabilities_provider';
 import { agentTracesSavedObjectType } from './saved_objects';
-import { agentTracesUiSettings } from './ui_settings';
 
 import { AgentTracesPluginSetup, AgentTracesPluginStart } from './types';
 
@@ -72,7 +71,6 @@ export class AgentTracesPlugin implements Plugin<AgentTracesPluginSetup, AgentTr
       });
     });
     core.savedObjects.registerType(agentTracesSavedObjectType);
-    core.uiSettings.register(agentTracesUiSettings);
 
     return {};
   }

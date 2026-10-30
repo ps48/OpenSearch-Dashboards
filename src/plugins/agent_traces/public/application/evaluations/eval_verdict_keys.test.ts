@@ -5,11 +5,11 @@
 
 import {
   Clause,
+  Cond,
   EvalOutcome,
   VERDICT_PPL_FIELDS,
   VerdictInput,
   buildVerdictClauses,
-  parseEvaluationRules,
   verdictOf,
 } from './eval_verdict';
 import {
@@ -33,6 +33,20 @@ import {
   buildVerdictKeysQuery,
 } from './eval_ppl';
 import { buildRunCasesAggQuery, buildRunGradesAggQuery } from './eval_runs_agg';
+
+/**
+ * The grouping is generic over the clause list: these tests prepend name-based clauses (exact
+ * names and prefixes, thresholds both ways, label lists) to the built-in ones, to check it
+ * holds for many rules and bounds, not only for the producer and built-in clauses.
+ */
+interface TestRule {
+  direction?: string;
+  threshold?: number;
+  min?: number;
+  max?: number;
+  passLabels?: string[];
+  failLabels?: string[];
+}
 
 /** The rules the bug was reported with. */
 const SEVEN = {
@@ -67,8 +81,39 @@ const fifty = (): Record<string, unknown> => {
   return rules;
 };
 
-const clausesOf = (rules: unknown) =>
-  buildVerdictClauses(parseEvaluationRules(rules, () => undefined));
+const clausesOf = (rules: Record<string, unknown>): Clause[] => {
+  const nameCond = (p: string): Cond =>
+    p.endsWith('*') ? { k: 'prefix', v: p.slice(0, -1) } : { k: 'name', v: p };
+  const specificity = (p: string) => (p.endsWith('*') ? p.length : Number.MAX_SAFE_INTEGER);
+  const patterns = Object.keys(rules).sort((a, b) => specificity(b) - specificity(a));
+  const clauses: Clause[] = [];
+  patterns.forEach((pattern, i) => {
+    const rule = rules[pattern] as TestRule;
+    const earlier = patterns.slice(0, i).map(nameCond);
+    const target: Cond = earlier.length
+      ? { k: 'and', c: [nameCond(pattern), { k: 'not', c: { k: 'or', c: earlier } }] }
+      : nameCond(pattern);
+    const when = (c: Cond): Cond => ({ k: 'and', c: [target, c] });
+    const labelled: Cond = { k: 'notnull', f: 'label' };
+    if (rule.passLabels) {
+      clauses.push({ when: when({ k: 'in', f: 'label', v: rule.passLabels }), outcome: 'pass' });
+    }
+    if (rule.failLabels) {
+      clauses.push({ when: when({ k: 'in', f: 'label', v: rule.failLabels }), outcome: 'fail' });
+    }
+    if (rule.passLabels && !rule.failLabels)
+      clauses.push({ when: when(labelled), outcome: 'fail' });
+    if (rule.failLabels && !rule.passLabels)
+      clauses.push({ when: when(labelled), outcome: 'pass' });
+    if (rule.threshold !== undefined) {
+      const op = rule.direction === 'minimize' ? '<=' : '>=';
+      clauses.push({ when: when({ k: 'cmp', op, v: rule.threshold }), outcome: 'pass' });
+      clauses.push({ when: when({ k: 'notnull', f: 'value' }), outcome: 'fail' });
+    }
+  });
+  const [error, ...rest] = buildVerdictClauses();
+  return [error, ...clauses, ...rest];
+};
 
 /** What the engine computes for one result: its fields and the key columns. */
 const serverRow = (input: VerdictInput, plan: VerdictKeyPlan): Record<string, unknown> => {

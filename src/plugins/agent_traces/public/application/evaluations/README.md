@@ -48,7 +48,7 @@ default. It is linked to a traces dataset by a correlation saved object (type
 traces dataset, the one Agent Traces opens on), the evaluations dataset (any logs dataset; a
 "Create evaluations dataset" action makes `otel-v1-genai-evaluation*` with time field `time`
 and schema mappings timestamp `time`, `traceId`, `spanId` when none exists), and the pass
-rules setting, read only, with a link to Advanced settings. Save creates the correlation, or
+Save creates the correlation, or
 updates it in place. The observability stack's init script creates the same dataset ("Evaluation
 Dataset - Local Cluster") and correlation.
 
@@ -85,12 +85,11 @@ Every result gets one verdict: **Pass**, **Fail**, **Evaluator error** or **Scor
 without a pass rule). Only declared rules decide, in this order; the first that decides wins:
 
 1. `error.type` is set: evaluator error.
-2. The `agentTraces:evaluationRules` setting (below), by evaluation name.
-3. The producer's assessment, `opensearch.evaluation.assessment` (`pass` or `fail`).
-4. The producer's threshold, `opensearch.evaluation.score.threshold`, in the direction
+2. The producer's assessment, `opensearch.evaluation.assessment` (`pass` or `fail`).
+3. The producer's threshold, `opensearch.evaluation.score.threshold`, in the direction
    `opensearch.evaluation.score.direction` (`maximize`, the default when a threshold is set:
    values at or above pass; `minimize`: values at or below pass).
-5. Built-in rules for Bedrock AgentCore:
+4. Built-in rules for Bedrock AgentCore:
    - `Builtin.*` evaluators with a numerical scale (Correctness, Faithfulness, Coherence,
      Conciseness, ResponseRelevance, ContextRelevance, Helpfulness, InstructionFollowing,
      GoalSuccessRate, ToolSelectionAccuracy, ToolParameterAccuracy) report 0..1: 0.5 and above
@@ -99,41 +98,14 @@ without a pass rule). Only declared rules decide, in this order; the first that 
      Stereotyping` pass). `Builtin.Refusal` has no built-in rule.
    - AgentCore custom evaluators answering `Pass` or `Fail` (results with
      `derived.evaluation.source` `agentcore`).
-6. Otherwise Scored: shown gray, left out of pass rates. Its Overview card shows the mean (or
-   the top label) and a "No pass rule" hint.
+5. Otherwise Scored: shown gray, left out of pass rates. Its Overview card shows the mean (or
+   the top label) and a "No pass rule" hint, naming the producer attributes above and linking
+   to the Agent evaluations docs.
 
 There is no guess from label words or from the middle of a score range. Offline test cases
 keep the status of their `opensearch.test_case.result` event. Chip colors mean the verdict
 only: pass green, fail red, evaluator error amber, Scored gray. Level and source pills are
 outlined in hues that carry no verdict.
-
-## Setting: evaluation pass rules
-
-`agentTraces:evaluationRules` (Advanced settings, section Observability, JSON) maps evaluation
-names to pass rules. A key ending in `*` matches a prefix; an exact name wins over a prefix,
-a longer prefix over a shorter one.
-
-```json
-{
-  "answer_quality": { "threshold": 4, "min": 1, "max": 5 },
-  "latency_*": { "direction": "minimize", "threshold": 10 },
-  "tone": { "passLabels": ["friendly", "neutral"] },
-  "Builtin.*": { "threshold": 0.7 }
-}
-```
-
-| Key | Meaning |
-|---|---|
-| `threshold` | Values at or above (maximize) or at or below (minimize) pass, others fail. |
-| `direction` | `maximize` (default) or `minimize`. Also orients the score trend and cards. |
-| `min`, `max` | Score range, for charts that scale scores to 0..100%. Not a pass rule. |
-| `passLabels` | Labels that pass (case-insensitive). Alone: any other label fails. |
-| `failLabels` | Labels that fail. Alone: any other label passes. With both, other labels fall through. |
-
-A rule that does not decide a result (no matching label, no value) leaves it to the producer's
-attributes and the built-in rules. Invalid entries are skipped with a browser console warning;
-the others apply. The setting applies everywhere results are shown: chips, Overview cards and
-KPIs, Results, run page, Compare, the trace flyout and the Evaluations column.
 
 ## Time range
 
@@ -154,18 +126,18 @@ score trend and results over time come from PPL aggregations on the evaluation i
 (`stats ... by`, `span(@timestamp, ...)`), so they are exact at any volume. Distinct traces
 and sessions use `distinct_count` (exact below 3,000 per period, approximate above).
 
-The verdict rules are not compiled into the query: one `case(...)` holding every rule is
-pushed down to OpenSearch as a single inline script, which grows with each rule until
-OpenSearch rejects it (65,535 bytes). Aggregations group instead by what the verdict reads,
-and the browser applies the rules to each group (`eval_verdict_keys.ts`):
+The verdict rules are not compiled into the query (one `case(...)` holding every clause is
+pushed down to OpenSearch as a single inline script, limited to 65,535 bytes). Aggregations
+group instead by what the verdict reads, and the browser applies the rules to each group
+(`eval_verdict_keys.ts`):
 
 - evaluation name, label, `error.type`, assessment, direction and source, as they are;
 - `evl_vb0`, `evl_vb1`, ...: where the value lies among the distinct numeric bounds of the
-  rules (built-in 0.5, each `threshold`), 16 bounds a column;
+  rules (the built-in 0.5), 16 bounds a column;
 - `evl_tc`: the sign of `value - opensearch.evaluation.score.threshold`.
 
-The query grows only with the distinct thresholds, about 60 characters each, never with
-label lists or names. A verdict filter (Fail only, the Verdict filter, traces where an
+The query grows only with the distinct bounds of the rules, about 60 characters each, never
+with label lists or names. A verdict filter (Fail only, the Verdict filter, traces where an
 evaluation fails, failing test cases of a run) first reads these groups, then queries with a
 `where` naming the groups it keeps (`name in (...)`, or a name with a label, value range or
 assessment), pushed down as plain term and range queries. Sorting Results by Result pages each

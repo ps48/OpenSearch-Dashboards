@@ -4,27 +4,37 @@
  */
 
 import { EvalResult, RunEvents, SuiteRunEvent, TestCaseEvent, outcomeOf } from './eval_data';
-import { setEvaluationRulesSource } from './eval_verdict';
 
-/** Pass rules the fixtures' evaluations declare, as the rules setting would. */
-export const FIXTURE_RULES = {
-  accuracy: { threshold: 0.5, min: 0, max: 1 },
-  helpfulness: { threshold: 0.5, min: 0, max: 1 },
-  tool_diversity: { threshold: 0.5, min: 0, max: 1 },
-  Helpfulness: { passLabels: ['Very Helpful'] },
+/** Evaluations of the fixtures whose producer sends a threshold of 0.5 on a 0..1 scale. */
+export const FIXTURE_THRESHOLD_NAMES = ['accuracy', 'helpfulness', 'tool_diversity'];
+
+/**
+ * The pass rule the fixtures' producers declare: a threshold of 0.5 on 0..1 for the
+ * `FIXTURE_THRESHOLD_NAMES`, an assessment for `Helpfulness` (Very Helpful passes).
+ */
+const producerRule = (partial: Partial<EvalResult>): Partial<EvalResult> => {
+  const name = partial.name ?? 'helpfulness';
+  if (FIXTURE_THRESHOLD_NAMES.includes(name)) {
+    return { threshold: 0.5, scoreMin: 0, scoreMax: 1 };
+  }
+  if (name === 'Helpfulness' && partial.label) {
+    return { assessment: partial.label === 'Very Helpful' ? 'pass' : 'fail' };
+  }
+  return {};
 };
-setEvaluationRulesSource(() => FIXTURE_RULES);
 
 let seq = 0;
 
 /**
  * An evaluation result for tests; the outcome is derived like the real mapping does. A
- * `pass` or `fail` label stands for the producer's assessment.
+ * `pass` or `fail` label stands for the producer's assessment; `producerRule` adds the pass
+ * rule the fixture evaluations declare.
  */
 export const makeResult = (partial: Partial<EvalResult> = {}): EvalResult => {
   seq += 1;
   const word = partial.label?.toLowerCase();
   const base = {
+    ...producerRule(partial),
     ...(word === 'pass' || word === 'fail' ? { assessment: word } : {}),
     time: '2026-10-26 09:00:00.000',
     name: 'helpfulness',

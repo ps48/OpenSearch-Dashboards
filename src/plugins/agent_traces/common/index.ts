@@ -13,8 +13,6 @@ export const AGENT_EVALS_NAV_ID = 'agentTraces/evaluations';
  *  reads the evaluations dataset correlated with the traces dataset instead; Agent Traces
  *  falls back to this pattern without that correlation. */
 export const AGENT_EVALS_INDEX_PATTERN = 'otel-v1-genai-evaluation-*';
-/** Advanced setting: pass rules per evaluation name (JSON). See the evaluations README. */
-export const EVALS_RULES_SETTING = 'agentTraces:evaluationRules';
 export const DEFAULT_COLUMNS_SETTING = 'defaultColumns';
 export const SAMPLE_SIZE_SETTING = 'discover:sampleSize';
 export const SORT_DEFAULT_ORDER_SETTING = 'discover:sort:defaultOrder';

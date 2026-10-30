@@ -7,7 +7,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dashboards_react/public';
-import { EvalSettingsModal, looksLikeEvalsDataset, rulesText } from './eval_settings_modal';
+import { EvalSettingsModal, looksLikeEvalsDataset } from './eval_settings_modal';
 
 const patterns = (withEvals: boolean) => [
   { id: 'tr', attributes: { title: 'otel-v1-apm-span*', signalType: 'traces' } },
@@ -32,7 +32,6 @@ const setup = (
     savedObjects: { client },
     data: { indexPatterns: { createAndSave } },
     notifications: { toasts: { addSuccess: jest.fn(), addDanger: jest.fn() } },
-    uiSettings: { get: () => '{"accuracy":{"threshold":0.5}}' },
     application: {
       getUrlForApp: (app: string, { path }: { path: string }) => `/app/${app}/${path}`,
     },
@@ -93,7 +92,7 @@ describe('EvalSettingsModal', () => {
     );
   });
 
-  it('updates the existing correlation in place and shows the pass rules read-only', async () => {
+  it('updates the existing correlation in place', async () => {
     const { client, onClose } = setup(true, {
       correlationId: 'corr-1',
       tracesDataset: { id: 'tr', title: 'otel-v1-apm-span*' },
@@ -101,11 +100,7 @@ describe('EvalSettingsModal', () => {
       index: 'otel-v1-genai-evaluation*',
     });
     expect(screen.getByTestId('agtEvlSettingsActive')).toBeInTheDocument();
-    expect(screen.getByTestId('agtEvlSettingsRules')).toHaveTextContent('"threshold": 0.5');
-    expect(screen.getByTestId('agtEvlSettingsRulesLink')).toHaveAttribute(
-      'href',
-      '/app/management/opensearch-dashboards/settings?query=agentTraces%3AevaluationRules'
-    );
+    expect(screen.queryByTestId('agtEvlSettingsRules')).not.toBeInTheDocument();
     await waitFor(() => expect(client.find).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('agtEvlSettingsSave'));
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
@@ -118,10 +113,8 @@ describe('EvalSettingsModal', () => {
     expect(client.create).not.toHaveBeenCalled();
   });
 
-  it('recognizes evaluation datasets and formats the rules', () => {
+  it('recognizes evaluation datasets', () => {
     expect(looksLikeEvalsDataset({ id: 'a', title: 'otel-v1-genai-evaluation-*' })).toBe(true);
     expect(looksLikeEvalsDataset({ id: 'b', title: 'logs-otel-v1*' })).toBe(false);
-    expect(rulesText('')).toBe('{}');
-    expect(rulesText('not json')).toBe('not json');
   });
 });

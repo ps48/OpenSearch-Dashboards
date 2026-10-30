@@ -212,14 +212,22 @@ describe('aggregated rows', () => {
     expect(trendFromAgg(timed, [])).toEqual([{ x, name: 'answer_quality', value: 0.75, count: 4 }]);
   });
 
-  it('uses the rules setting for the score range and direction', () => {
+  it("uses the producer's score range and direction", () => {
     const timed = toAggRows([
-      row({ t: '2026-10-26 08:00:00', [F.name]: 'latency', n: 2, nv: 2, sv: 10, vmin: 5, vmax: 5 }),
+      row({
+        t: '2026-10-26 08:00:00',
+        [F.name]: 'latency',
+        [F.scoreMin]: 0,
+        [F.scoreMax]: 10,
+        [F.direction]: 'minimize',
+        n: 2,
+        nv: 2,
+        sv: 4,
+        vmin: 2,
+        vmax: 2,
+      }),
     ]);
-    const rules = [
-      { pattern: 'latency', rule: { min: 0, max: 10, direction: 'minimize' as const } },
-    ];
-    expect(trendFromAgg(timed, rules)[0].value).toBeCloseTo(0.5);
+    expect(trendFromAgg(timed)[0].value).toBeCloseTo(0.8);
   });
 });
 

@@ -13,7 +13,7 @@ import {
   TEST_SUITE_RUN_EVENT,
   recordToSuiteRunEvent,
 } from './eval_data';
-import { RuleEntry, getActiveClauses, getActiveRuleEntries } from './eval_verdict';
+import { VERDICT_CLAUSES } from './eval_verdict';
 import { verdictKeyEval, verdictKeyGroups, verdictKeyPlan } from './eval_verdict_keys';
 import {
   EvaluatorAggregate,
@@ -69,7 +69,7 @@ export const buildRunGradesAggQuery = (filters: EvalFilters, ctx: QueryContext =
       EVAL_FIELDS.scoreMax,
     ].filter(present(missing)),
   ].map(field);
-  const plan = verdictKeyPlan(ctx.clauses ?? getActiveClauses(), missing);
+  const plan = verdictKeyPlan(ctx.clauses ?? VERDICT_CLAUSES, missing);
   const keyEval = verdictKeyEval(plan);
   const by = Array.from(new Set([...groups, ...verdictKeyGroups(plan)]));
   const values = missing.has(EVAL_FIELDS.value)
@@ -148,9 +148,8 @@ const timeOf = (v: unknown) => parseEvalTime(str(v));
  */
 export const runSummariesFromAgg = (
   rows: RunAggRows,
-  options: { onlyWithGrades?: boolean; rules?: RuleEntry[] } = {}
+  options: { onlyWithGrades?: boolean } = {}
 ): RunSummary[] => {
-  const rules = options.rules ?? getActiveRuleEntries();
   const gradesByRun = new Map<string, PplRecord[]>();
   rows.grades.forEach((r) => {
     const id = str(r[EVAL_FIELDS.runId]);
@@ -191,7 +190,7 @@ export const runSummariesFromAgg = (
     const runEvent = latestRunEvent.get(runId);
     const aggRows = toAggRows(grades);
     const evaluators: Record<string, EvaluatorAggregate> = {};
-    summariesFromAgg(aggRows, rules).forEach((s) => {
+    summariesFromAgg(aggRows).forEach((s) => {
       const own = aggRows.filter((r) => r.name === s.name);
       const mins = own.map((r) => r.valueMin).filter((v): v is number => v !== undefined);
       const maxs = own.map((r) => r.valueMax).filter((v): v is number => v !== undefined);

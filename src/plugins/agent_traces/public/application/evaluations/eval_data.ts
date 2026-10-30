@@ -8,16 +8,7 @@ import { DataPublicPluginStart } from '../../../../data/public';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import { pplResponseToRecords, PplRecord } from '../pages/sessions/session_utils';
-import {
-  Clause,
-  EvalOutcome,
-  RuleEntry,
-  builtinRange,
-  getActiveClauses,
-  getActiveRuleEntries,
-  ruleFor,
-  verdictOf,
-} from './eval_verdict';
+import { Clause, EvalOutcome, VERDICT_CLAUSES, builtinRange, verdictOf } from './eval_verdict';
 
 export type { EvalOutcome } from './eval_verdict';
 
@@ -149,12 +140,12 @@ const num = (v: unknown): number | undefined => {
 
 /**
  * Verdict of a result under the declared rules (see `eval_verdict.ts`): evaluator error, the
- * rules setting, the producer's assessment or threshold, built-in rules for known evaluators;
- * neutral ("Scored") when none decides.
+ * producer's assessment or threshold, built-in rules for known evaluators; neutral ("Scored")
+ * when none decides.
  */
 export const outcomeOf = (
   r: Omit<EvalResult, 'outcome' | 'id'>,
-  clauses: Clause[] = getActiveClauses()
+  clauses: Clause[] = VERDICT_CLAUSES
 ): EvalOutcome =>
   verdictOf(
     {
@@ -171,19 +162,17 @@ export const outcomeOf = (
   );
 
 /**
- * Declared score range and direction of a result: the rules setting, else the producer's
- * attributes, else a known evaluator's scale. Values within 0..1 without a declared range
+ * Declared score range and direction of a result: the producer's attributes, else a known
+ * evaluator's scale. Values within 0..1 without a declared range
  * are read as 0..1. Undefined when the range is unknown.
  */
 export const scaleOf = (
-  r: Pick<EvalResult, 'name' | 'value' | 'scoreMin' | 'scoreMax' | 'direction'>,
-  rules: RuleEntry[] = getActiveRuleEntries()
+  r: Pick<EvalResult, 'name' | 'value' | 'scoreMin' | 'scoreMax' | 'direction'>
 ): { min: number; max: number; direction: 'maximize' | 'minimize' } | undefined => {
-  const rule = ruleFor(rules, r.name);
   const builtin = builtinRange(r.name);
-  const direction = rule?.direction ?? r.direction ?? 'maximize';
-  let min = rule?.min ?? r.scoreMin ?? builtin?.min;
-  let max = rule?.max ?? r.scoreMax ?? builtin?.max;
+  const direction = r.direction ?? 'maximize';
+  let min = r.scoreMin ?? builtin?.min;
+  let max = r.scoreMax ?? builtin?.max;
   if (min === undefined && max === undefined && r.value !== undefined) {
     if (r.value >= 0 && r.value <= 1) {
       min = 0;
@@ -204,14 +193,12 @@ export const normalizedScore = (r: EvalResult): number | undefined => {
   return scale.direction === 'minimize' ? 1 - n : n;
 };
 
-/** `maximize` or `minimize` for an evaluation: the setting, else what its results declare. */
+/** `maximize` or `minimize` for an evaluation: what its results declare. */
 export const directionOf = (
   name: string,
-  results: Array<Pick<EvalResult, 'direction'>>,
-  rules: RuleEntry[] = getActiveRuleEntries()
+  results: Array<Pick<EvalResult, 'direction'>>
 ): 'maximize' | 'minimize' =>
-  ruleFor(rules, name)?.direction ??
-  (results.some((r) => r.direction === 'minimize') ? 'minimize' : 'maximize');
+  results.some((r) => r.direction === 'minimize') ? 'minimize' : 'maximize';
 
 export const recordToEvalResult = (row: PplRecord): EvalResult => {
   const attrs = row.attributes as Record<string, unknown> | undefined;

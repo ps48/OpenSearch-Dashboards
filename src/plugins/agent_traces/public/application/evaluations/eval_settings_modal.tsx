@@ -3,18 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   EuiButton,
   EuiButtonEmpty,
   EuiButtonIcon,
   EuiCallOut,
-  EuiCodeBlock,
   EuiComboBox,
   EuiComboBoxOptionOption,
   EuiForm,
   EuiFormRow,
-  EuiLink,
   EuiModal,
   EuiModalBody,
   EuiModalFooter,
@@ -27,7 +25,6 @@ import {
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
-import { EVALS_RULES_SETTING } from '../../../common';
 import {
   DatasetRef,
   EVALS_DATASET_DISPLAY_NAME,
@@ -50,16 +47,6 @@ const toOption = (d: DatasetRef): Option => ({ label: datasetLabel(d), value: d 
 /** An index pattern over the evaluation events, whatever its exact wildcard. */
 export const looksLikeEvalsDataset = (d: DatasetRef) => /genai-evaluation/.test(d.title);
 
-/** The pass rules setting as shown in the modal: pretty JSON, `{}` when unset or invalid. */
-export const rulesText = (value: unknown): string => {
-  try {
-    const parsed = typeof value === 'string' ? JSON.parse(value || '{}') : (value ?? {});
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return String(value);
-  }
-};
-
 const MODAL_TITLE = i18n.translate('agentTraces.evalsSettings.title', {
   defaultMessage: 'Agent evaluations settings',
 });
@@ -67,7 +54,7 @@ const MODAL_TITLE = i18n.translate('agentTraces.evalsSettings.title', {
 /**
  * Agent Evaluations settings, styled like the APM settings: the traces dataset and the
  * evaluations dataset (a logs dataset over the evaluation events), saved as a
- * `trace-to-evaluations-*` correlation; the pass rules setting, read-only.
+ * `trace-to-evaluations-*` correlation.
  */
 export const EvalSettingsModal: React.FC<{
   config?: EvalsDatasetConfig;
@@ -202,17 +189,6 @@ export const EvalSettingsModal: React.FC<{
       setSaving(false);
     }
   };
-
-  const rules = useMemo(() => {
-    try {
-      return rulesText(services.uiSettings.get(EVALS_RULES_SETTING));
-    } catch {
-      return '{}';
-    }
-  }, [services.uiSettings]);
-  const advancedSettingsHref = services.application.getUrlForApp('management', {
-    path: `opensearch-dashboards/settings?query=${encodeURIComponent(EVALS_RULES_SETTING)}`,
-  });
 
   const refreshButton = (
     <EuiButtonIcon
@@ -375,40 +351,6 @@ export const EvalSettingsModal: React.FC<{
                 </EuiCallOut>
               </>
             )}
-            <EuiSpacer size="m" />
-            <EuiFormRow
-              label={i18n.translate('agentTraces.evalsSettings.rules', {
-                defaultMessage: 'Pass rules',
-              })}
-              helpText={
-                <FormattedMessage
-                  id="agentTraces.evalsSettings.rulesHelp"
-                  defaultMessage="Read only here. Edit {setting} in {link}."
-                  values={{
-                    setting: <code>{EVALS_RULES_SETTING}</code>,
-                    link: (
-                      <EuiLink href={advancedSettingsHref} data-test-subj="agtEvlSettingsRulesLink">
-                        {i18n.translate('agentTraces.evalsSettings.advancedSettings', {
-                          defaultMessage: 'Advanced settings',
-                        })}
-                      </EuiLink>
-                    ),
-                  }}
-                />
-              }
-              fullWidth
-            >
-              <EuiCodeBlock
-                language="json"
-                fontSize="s"
-                paddingSize="s"
-                overflowHeight={160}
-                isCopyable
-                data-test-subj="agtEvlSettingsRules"
-              >
-                {rules}
-              </EuiCodeBlock>
-            </EuiFormRow>
           </EuiForm>
         </EuiModalBody>
         <EuiModalFooter>

@@ -18,7 +18,6 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { EVALS_RULES_SETTING } from '../../../common';
 import {
   EvalOutcome,
   EvalResult,
@@ -39,7 +38,7 @@ import { ChangeDelta } from './compare_runs';
 import type { EvalAggregates } from './use_eval_data';
 import { ShowTracesMenu, useShowTraces } from './eval_trace_filter';
 import { OutcomeHistogram, ScoreTrendChart } from './eval_charts';
-import { LAST_24H, LAST_7D, NoResultsInRange } from './eval_empty_states';
+import { AGENT_EVALS_DOCS_URL, LAST_24H, LAST_7D, NoResultsInRange } from './eval_empty_states';
 import {
   LevelBadge,
   OUTCOME_CHART_COLOR,
@@ -171,7 +170,7 @@ export const KpiRow: React.FC<{ current: EvalKpis; previous?: EvalKpis }> = ({
       title: i18n.translate('agentTraces.evalsPage.kpiPassRate', { defaultMessage: 'Pass rate' }),
       help: i18n.translate('agentTraces.evalsPage.kpiPassRateHelp', {
         defaultMessage:
-          'Passing results among passing and failing ones. Results without a pass rule (Scored) and evaluator errors are left out. Pass rules come from the evaluator (assessment or threshold), the agentTraces:evaluationRules setting, or built-in rules for Bedrock AgentCore evaluators.',
+          'Passing results among passing and failing ones. Results without a pass rule (Scored) and evaluator errors are left out. Pass rules come from the evaluator (assessment or threshold) or built-in rules for Bedrock AgentCore evaluators.',
       }),
       value: formatPercent(current.passRate),
       sub:
@@ -310,24 +309,31 @@ export const LabelDistribution: React.FC<{ labels: LabelCount[] }> = ({ labels }
   );
 };
 
-/** An evaluation without a pass rule: how to give it one. */
+/** An evaluation without a pass rule: how to give it one (producer attributes, the docs). */
 export const NoPassRuleHint: React.FC = () => (
   <EuiToolTip
     content={
       <FormattedMessage
         id="agentTraces.evalsPage.noPassRuleHelp"
-        defaultMessage="These results are scores without a pass rule, so they are left out of pass rates. Add one in the evaluator (send opensearch.evaluation.assessment, or opensearch.evaluation.score.threshold with .direction), or in Advanced settings ({setting}), e.g. a threshold or pass labels for this name."
-        values={{ setting: EVALS_RULES_SETTING }}
+        defaultMessage="These results are scores without a pass rule, so they are left out of pass rates. Give them one in the evaluator: send {assessment} (pass or fail), or {threshold} with {direction}. Select to open the Agent evaluations docs."
+        values={{
+          assessment: 'opensearch.evaluation.assessment',
+          threshold: 'opensearch.evaluation.score.threshold',
+          direction: 'opensearch.evaluation.score.direction',
+        }}
       />
     }
   >
-    <EuiText
-      size="xs"
-      color="subdued"
-      className="agtEvlKpi__title"
-      data-test-subj="agtEvlNoPassRule"
-    >
-      <FormattedMessage id="agentTraces.evalsPage.noPassRule" defaultMessage="No pass rule" />
+    <EuiText size="xs" className="agtEvlKpi__title">
+      <EuiLink
+        href={AGENT_EVALS_DOCS_URL}
+        target="_blank"
+        external
+        color="subdued"
+        data-test-subj="agtEvlNoPassRule"
+      >
+        <FormattedMessage id="agentTraces.evalsPage.noPassRule" defaultMessage="No pass rule" />
+      </EuiLink>
     </EuiText>
   </EuiToolTip>
 );

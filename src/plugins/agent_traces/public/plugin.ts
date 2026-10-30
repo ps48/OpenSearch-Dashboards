@@ -63,7 +63,6 @@ import { createAbortDataQueryAction } from './application/utils/state_management
 import { ABORT_DATA_QUERY_TRIGGER } from '../../ui_actions/public';
 import { abortAllActiveQueries } from './application/utils/state_management/actions/query_actions';
 import { setServices } from './services/services';
-import { setEvaluationRulesSource } from './application/evaluations/eval_verdict';
 import { AgentTracesIcon } from './assets/agent_traces_icon';
 import { AgentSpansIcon } from './assets/agent_spans_icon';
 import { AgentEvalsIcon } from './assets/agent_evals_icon';
@@ -429,8 +428,6 @@ export class AgentTracesPlugin implements Plugin<
 
   public start(core: CoreStart, plugins: AgentTracesStartDependencies): AgentTracesPluginStart {
     setUiActions(plugins.uiActions);
-    // Evaluation verdicts read the pass rules setting wherever results are shown.
-    setEvaluationRulesSource(core.uiSettings);
     setDashboard(plugins.dashboard);
     const opensearchDashboardsVersion = this.initializerContext.env.packageInfo.version;
     setDashboardVersion({ version: opensearchDashboardsVersion });

@@ -8,43 +8,19 @@
  *
  * Only declared rules decide, in this order (the first that decides wins):
  * 1. the evaluator errored (`error.type`): error;
- * 2. the `agentTraces:evaluationRules` advanced setting, by evaluation name;
- * 3. the producer's assessment, `opensearch.evaluation.assessment` (pass | fail);
- * 4. the producer's threshold, `opensearch.evaluation.score.threshold`, in the direction
+ * 2. the producer's assessment, `opensearch.evaluation.assessment` (pass | fail);
+ * 3. the producer's threshold, `opensearch.evaluation.score.threshold`, in the direction
  *    `opensearch.evaluation.score.direction` (maximize when unset);
- * 5. built-in rules for known evaluators (Bedrock AgentCore `Builtin.*` and AgentCore custom
+ * 4. built-in rules for known evaluators (Bedrock AgentCore `Builtin.*` and AgentCore custom
  *    evaluators that answer Pass or Fail);
- * 6. otherwise neutral: the result is a score without a pass rule, left out of pass rates.
+ * 5. otherwise neutral: the result is a score without a pass rule, left out of pass rates.
  *
  * The rules are one ordered list of clauses, evaluated in the browser: on fetched results,
  * and on aggregated rows grouped by what the verdict reads (`eval_verdict_keys.ts`), so
  * server-side aggregations count exactly what the badges show.
  */
 
-import { EVALS_RULES_SETTING } from '../../../common';
-
 export type EvalOutcome = 'pass' | 'fail' | 'error' | 'neutral';
-
-/** Pass rule for an evaluation, from the `agentTraces:evaluationRules` setting. */
-export interface EvaluationRule {
-  /** Which way is better; `maximize` when a threshold is set without one. */
-  direction?: 'maximize' | 'minimize';
-  /** Values at or above (maximize) or at or below (minimize) pass; others fail. */
-  threshold?: number;
-  /** Score range, for charts that scale scores to 0..100%. Not a pass rule by itself. */
-  min?: number;
-  max?: number;
-  /** Labels that pass. Alone: any other label fails. */
-  passLabels?: string[];
-  /** Labels that fail. Alone: any other label passes. */
-  failLabels?: string[];
-}
-
-export interface RuleEntry {
-  /** Evaluation name, or a prefix ending in `*`. */
-  pattern: string;
-  rule: EvaluationRule;
-}
 
 /** What the verdict reads from a result. */
 export interface VerdictInput {
@@ -102,7 +78,6 @@ export interface Clause {
 }
 
 const and = (...c: Cond[]): Cond => ({ k: 'and', c });
-const or = (...c: Cond[]): Cond => ({ k: 'or', c });
 const notnull = (f: VerdictField): Cond => ({ k: 'notnull', f });
 const labelIn = (v: string[]): Cond => ({ k: 'in', f: 'label', v });
 
@@ -159,142 +134,6 @@ const builtinClauses = (): Clause[] => {
   return clauses;
 };
 
-// ---------------------------------------------------------------------------------------
-// The rules setting
-// ---------------------------------------------------------------------------------------
-
-const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const isLabels = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string' && x.trim() !== '');
-
-/** A valid rule, or the reason it is not. */
-export const validateRule = (raw: unknown): EvaluationRule | string => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'not an object';
-  const r = raw as Record<string, unknown>;
-  const known = ['direction', 'threshold', 'min', 'max', 'passLabels', 'failLabels'];
-  const unknown = Object.keys(r).filter((k) => !known.includes(k));
-  if (unknown.length) return `unknown keys ${unknown.join(', ')}`;
-  const rule: EvaluationRule = {};
-  if (r.direction !== undefined) {
-    if (r.direction !== 'maximize' && r.direction !== 'minimize') {
-      return 'direction must be maximize or minimize';
-    }
-    rule.direction = r.direction;
-  }
-  for (const key of ['threshold', 'min', 'max'] as const) {
-    if (r[key] !== undefined) {
-      if (!isNum(r[key])) return `${key} must be a number`;
-      rule[key] = r[key] as number;
-    }
-  }
-  if (rule.min !== undefined && rule.max !== undefined && rule.min >= rule.max) {
-    return 'min must be below max';
-  }
-  for (const key of ['passLabels', 'failLabels'] as const) {
-    if (r[key] !== undefined) {
-      if (!isLabels(r[key])) return `${key} must be a list of labels`;
-      rule[key] = (r[key] as string[]).map((l) => l.trim());
-    }
-  }
-  return rule;
-};
-
-/** `*` only as the last character. */
-const validPattern = (pattern: string) =>
-  pattern.trim() !== '' && pattern !== '*' && !pattern.slice(0, -1).includes('*');
-
-/** Exact names first, then longer prefixes: the most specific rule applies. */
-const specificity = (pattern: string) =>
-  pattern.endsWith('*') ? pattern.length : Number.MAX_SAFE_INTEGER;
-
-/**
- * Rules from the setting value (an object, or its JSON text). Invalid entries are skipped
- * with a warning; the others still apply.
- */
-export const parseEvaluationRules = (
-  raw: unknown,
-  // eslint-disable-next-line no-console
-  warn: (message: string) => void = (m) => console.warn(m)
-): RuleEntry[] => {
-  let value = raw;
-  if (typeof value === 'string') {
-    if (!value.trim()) return [];
-    try {
-      value = JSON.parse(value);
-    } catch {
-      warn('agentTraces:evaluationRules is not valid JSON; no evaluation rules apply.');
-      return [];
-    }
-  }
-  if (value === null || value === undefined) return [];
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    warn('agentTraces:evaluationRules must be an object keyed by evaluation name.');
-    return [];
-  }
-  const entries: RuleEntry[] = [];
-  Object.entries(value as Record<string, unknown>).forEach(([pattern, ruleRaw]) => {
-    if (!validPattern(pattern)) {
-      warn(`agentTraces:evaluationRules: ignoring "${pattern}": "*" only at the end of a name.`);
-      return;
-    }
-    const rule = validateRule(ruleRaw);
-    if (typeof rule === 'string') {
-      warn(`agentTraces:evaluationRules: ignoring "${pattern}": ${rule}.`);
-      return;
-    }
-    if (!rule.passLabels && !rule.failLabels && rule.threshold === undefined) {
-      if (rule.direction === undefined && rule.min === undefined && rule.max === undefined) {
-        warn(`agentTraces:evaluationRules: ignoring "${pattern}": the rule is empty.`);
-        return;
-      }
-    }
-    entries.push({ pattern, rule });
-  });
-  return entries.sort((a, b) => specificity(b.pattern) - specificity(a.pattern));
-};
-
-const patternCond = (pattern: string): Cond =>
-  pattern.endsWith('*') ? { k: 'prefix', v: pattern.slice(0, -1) } : { k: 'name', v: pattern };
-
-export const matchesPattern = (name: string, pattern: string) =>
-  pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : name === pattern;
-
-/** The setting's rule for an evaluation name (the most specific match). */
-export const ruleFor = (entries: RuleEntry[], name: string): EvaluationRule | undefined =>
-  entries.find((e) => matchesPattern(name, e.pattern))?.rule;
-
-const settingClauses = (entries: RuleEntry[]): Clause[] => {
-  const clauses: Clause[] = [];
-  entries.forEach((entry, i) => {
-    const earlier = entries.slice(0, i).map((e) => patternCond(e.pattern));
-    const own = patternCond(entry.pattern);
-    const target = earlier.length ? and(own, { k: 'not', c: or(...earlier) }) : own;
-    const { passLabels, failLabels, threshold } = entry.rule;
-    if (passLabels) {
-      clauses.push({ when: and(target, labelIn(passLabels)), outcome: 'pass' });
-    }
-    if (failLabels) {
-      clauses.push({ when: and(target, labelIn(failLabels)), outcome: 'fail' });
-    }
-    // One list alone: every other label is the opposite.
-    if (passLabels && !failLabels) {
-      clauses.push({ when: and(target, notnull('label')), outcome: 'fail' });
-    }
-    if (failLabels && !passLabels) {
-      clauses.push({ when: and(target, notnull('label')), outcome: 'pass' });
-    }
-    if (threshold !== undefined) {
-      const op = entry.rule.direction === 'minimize' ? '<=' : '>=';
-      clauses.push({
-        when: and(target, { k: 'cmp', op, v: threshold }),
-        outcome: 'pass',
-      });
-      clauses.push({ when: and(target, notnull('value')), outcome: 'fail' });
-    }
-  });
-  return clauses;
-};
-
 const producerClauses = (): Clause[] => {
   const minimize: Cond = { k: 'in', f: 'direction', v: ['minimize'] };
   const scored = and(notnull('threshold'), notnull('value'));
@@ -309,9 +148,8 @@ const producerClauses = (): Clause[] => {
 };
 
 /** Every clause in precedence order; a result matching none is neutral. */
-export const buildVerdictClauses = (entries: RuleEntry[] = []): Clause[] => [
+export const buildVerdictClauses = (): Clause[] => [
   { when: notnull('errorType'), outcome: 'error' },
-  ...settingClauses(entries),
   ...producerClauses(),
   ...builtinClauses(),
 ];
@@ -361,50 +199,5 @@ export const verdictOf = (input: VerdictInput, clauses: Clause[]): EvalOutcome =
 /** Name of the verdict column aggregated rows carry once their verdict is applied. */
 export const VERDICT_COLUMN = 'evl_verdict';
 
-// ---------------------------------------------------------------------------------------
-// Active rules: read from uiSettings once the plugin starts
-// ---------------------------------------------------------------------------------------
-
-export const EVAL_RULES_SETTING = EVALS_RULES_SETTING;
-
-let readRules: (() => unknown) | undefined;
-let cached: { raw: string; entries: RuleEntry[]; clauses: Clause[] } | undefined;
-
-/** Called at plugin start with uiSettings; tests pass a function returning the value. */
-export const setEvaluationRulesSource = (
-  source: { get: (key: string, fallback?: unknown) => unknown } | (() => unknown) | undefined
-) => {
-  readRules =
-    typeof source === 'function'
-      ? source
-      : source
-        ? () => {
-            try {
-              return source.get(EVAL_RULES_SETTING, '{}');
-            } catch {
-              return undefined;
-            }
-          }
-        : undefined;
-  cached = undefined;
-};
-
-const active = () => {
-  const value = readRules?.();
-  let raw: string;
-  try {
-    raw = typeof value === 'string' ? value : JSON.stringify(value ?? {});
-  } catch {
-    raw = '{}';
-  }
-  if (!cached || cached.raw !== raw) {
-    const entries = parseEvaluationRules(value);
-    cached = { raw, entries, clauses: buildVerdictClauses(entries) };
-  }
-  return cached;
-};
-
-/** The setting's rules, most specific first. */
-export const getActiveRuleEntries = (): RuleEntry[] => active().entries;
-/** The verdict clauses for the active rules. */
-export const getActiveClauses = (): Clause[] => active().clauses;
+/** The verdict clauses, in precedence order. */
+export const VERDICT_CLAUSES: Clause[] = buildVerdictClauses();

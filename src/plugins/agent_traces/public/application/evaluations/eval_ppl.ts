@@ -20,15 +20,7 @@ import {
   outcomesFilter,
   sortSummaries,
 } from './eval_data';
-import {
-  Clause,
-  RuleEntry,
-  VERDICT_COLUMN,
-  builtinRange,
-  getActiveClauses,
-  getActiveRuleEntries,
-  ruleFor,
-} from './eval_verdict';
+import { Clause, VERDICT_CLAUSES, VERDICT_COLUMN, builtinRange } from './eval_verdict';
 import {
   MATCH_NONE,
   VerdictKey,
@@ -132,7 +124,7 @@ export const executeEvalPpl = async (
 
 export interface QueryContext {
   index?: string;
-  /** Verdict clauses (the active rules by default). */
+  /** Verdict clauses (`VERDICT_CLAUSES` by default). */
   clauses?: Clause[];
   missing?: ReadonlySet<string>;
   /** A `where` keeping the wanted verdicts (`verdictWhere`), for queries that filter on it. */
@@ -149,7 +141,7 @@ export const baseCommands = (filters: EvalFilters, ctx: QueryContext = {}): stri
   });
 
 const planOf = (ctx: QueryContext): VerdictKeyPlan =>
-  verdictKeyPlan(ctx.clauses ?? getActiveClauses(), ctx.missing ?? new Set());
+  verdictKeyPlan(ctx.clauses ?? VERDICT_CLAUSES, ctx.missing ?? new Set());
 
 /** `eval` of the verdict key columns (when any) and the `by` list with the verdict keys. */
 const withVerdictKeys = (ctx: QueryContext, groups: string[]) => {
@@ -191,7 +183,7 @@ export const executeVerdictAgg = async (
   build: (missing: ReadonlySet<string>, source: string, clauses: Clause[]) => string,
   options: { emptyWithout?: string[]; clauses?: Clause[] } = {}
 ): Promise<VerdictAgg> => {
-  const clauses = options.clauses ?? getActiveClauses();
+  const clauses = options.clauses ?? VERDICT_CLAUSES;
   let used: ReadonlySet<string> = new Set();
   const rows = await executeEvalPpl(
     ppl,
@@ -415,17 +407,15 @@ export const toAggRows = (records: PplRecord[]): AggRow[] =>
   });
 
 /**
- * Score range and direction for a group of results: the rules setting, else what the
- * results declare, else a known evaluator's scale; values seen within 0..1 read as 0..1.
+ * Score range and direction for a group of results: what the results declare, else a known
+ * evaluator's scale; values seen within 0..1 read as 0..1.
  */
 export const groupScale = (
-  row: Pick<AggRow, 'name' | 'direction' | 'scoreMin' | 'scoreMax' | 'valueMin' | 'valueMax'>,
-  rules: RuleEntry[] = getActiveRuleEntries()
+  row: Pick<AggRow, 'name' | 'direction' | 'scoreMin' | 'scoreMax' | 'valueMin' | 'valueMax'>
 ): { min: number; max: number; direction: 'maximize' | 'minimize' } | undefined => {
-  const rule = ruleFor(rules, row.name);
   const builtin = builtinRange(row.name);
-  let min = rule?.min ?? row.scoreMin ?? builtin?.min;
-  let max = rule?.max ?? row.scoreMax ?? builtin?.max;
+  let min = row.scoreMin ?? builtin?.min;
+  let max = row.scoreMax ?? builtin?.max;
   if (
     min === undefined &&
     max === undefined &&
@@ -438,13 +428,13 @@ export const groupScale = (
     max = 1;
   }
   if (min === undefined || max === undefined || max <= min) return undefined;
-  return { min, max, direction: rule?.direction ?? row.direction ?? 'maximize' };
+  return { min, max, direction: row.direction ?? 'maximize' };
 };
 
 /** Normalized mean (0..1, higher is better) of a group, when its scale is known. */
-const normalizedSum = (row: AggRow, rules: RuleEntry[]): number | undefined => {
+const normalizedSum = (row: AggRow): number | undefined => {
   if (row.valueCount === 0) return undefined;
-  const scale = groupScale(row, rules);
+  const scale = groupScale(row);
   if (!scale) return undefined;
   const mean = row.valueSum / row.valueCount;
   const n = Math.min(1, Math.max(0, (mean - scale.min) / (scale.max - scale.min)));
@@ -452,10 +442,7 @@ const normalizedSum = (row: AggRow, rules: RuleEntry[]): number | undefined => {
 };
 
 /** Per-evaluation summaries from the summary aggregation. */
-export const summariesFromAgg = (
-  rows: AggRow[],
-  rules: RuleEntry[] = getActiveRuleEntries()
-): EvaluatorSummary[] => {
+export const summariesFromAgg = (rows: AggRow[]): EvaluatorSummary[] => {
   const byName = new Map<string, AggRow[]>();
   rows.forEach((r) => byName.set(r.name, [...(byName.get(r.name) ?? []), r]));
   return sortSummaries(
@@ -466,13 +453,12 @@ export const summariesFromAgg = (
       let normCount = 0;
       let normSum = 0;
       list.forEach((r) => {
-        const n = normalizedSum(r, rules);
+        const n = normalizedSum(r);
         if (n !== undefined) {
           normSum += n;
           normCount += r.valueCount;
         }
       });
-      const rule = ruleFor(rules, name);
       return {
         name,
         levels: Array.from(new Set(list.map((r) => r.level).filter((l): l is string => !!l))),
@@ -489,9 +475,7 @@ export const summariesFromAgg = (
             .filter((r) => !!r.label)
             .map((r) => ({ label: r.label as string, outcome: r.outcome, count: r.count }))
         ),
-        direction:
-          rule?.direction ??
-          (list.some((r) => r.direction === 'minimize') ? 'minimize' : 'maximize'),
+        direction: list.some((r) => r.direction === 'minimize') ? 'minimize' : 'maximize',
       };
     })
   );
@@ -545,14 +529,11 @@ export const bucketsFromAgg = (
 };
 
 /** Normalized mean per evaluation and bucket, for evaluations with a known scale. */
-export const trendFromAgg = (
-  rows: AggRow[],
-  rules: RuleEntry[] = getActiveRuleEntries()
-): TrendPoint[] => {
+export const trendFromAgg = (rows: AggRow[]): TrendPoint[] => {
   const sums = new Map<string, { x: number; name: string; sum: number; count: number }>();
   rows.forEach((r) => {
     if (r.time === undefined || !Number.isFinite(r.time)) return;
-    const n = normalizedSum(r, rules);
+    const n = normalizedSum(r);
     if (n === undefined) return;
     const key = `${r.name}|${r.time}`;
     const e = sums.get(key) ?? { x: r.time, name: r.name, sum: 0, count: 0 };

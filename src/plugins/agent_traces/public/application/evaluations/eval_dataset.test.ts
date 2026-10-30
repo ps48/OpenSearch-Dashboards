@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { agentTracesUiSettings } from '../../../server/ui_settings';
 import {
   currentEvalsIndexPattern,
   evalsConfigForTraces,
@@ -81,11 +80,6 @@ const logsCorrelation = correlation(
 
 describe('evaluations dataset correlation', () => {
   afterEach(() => resetEvalsDatasetState());
-
-  it('replaces the evaluations index advanced setting', () => {
-    expect(agentTracesUiSettings['agentTraces:evaluationsIndexPattern']).toBeUndefined();
-    expect(agentTracesUiSettings['agentTraces:evaluationRules']).toBeDefined();
-  });
 
   it('reads trace-to-evaluations correlations only, resolving their references', async () => {
     const client = makeClient([logsCorrelation, evalsCorrelation]);
