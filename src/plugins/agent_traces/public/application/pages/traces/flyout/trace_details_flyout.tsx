@@ -533,6 +533,7 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
                       content: (
                         <TraceEvaluationsTab
                           evals={traceEvals}
+                          traceId={rootTrace.traceId}
                           spanLabelOf={spanLabelOf}
                           onSelectSpan={selectNode}
                         />

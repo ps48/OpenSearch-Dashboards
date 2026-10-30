@@ -11,6 +11,9 @@ jest.mock('@osd/i18n/react', () => ({
   FormattedMessage: ({ defaultMessage }: { defaultMessage: string }) => <>{defaultMessage}</>,
 }));
 
+// The Evaluations marks link to Explore Logs; the Explore plugin itself is not needed here.
+jest.mock('../../../../../../explore/public', () => ({ buildExploreLogsUrl: () => '' }));
+
 jest.mock('@osd/ui-shared-deps/theme', () => ({
   euiThemeVars: {
     euiColorLightestShade: '#f5f7fa',

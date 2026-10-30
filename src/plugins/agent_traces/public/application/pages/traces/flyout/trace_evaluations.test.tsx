@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { EvalResult, outcomeOf } from '../../../evaluations/eval_data';
 import {
   EvalHeaderSummary,
@@ -12,7 +12,9 @@ import {
   EvalSummaryCell,
   SpanEvalMark,
   TraceEvaluationsTab,
+  evaluationsLogsUrl,
 } from './trace_evaluations';
+import { resetEvalsDatasetState } from '../../../evaluations/eval_dataset';
 import { groupTraceEvaluations } from './use_trace_evaluations';
 import { indexRowEvaluations, rowResults } from '../row_evaluations_context';
 
@@ -234,5 +236,45 @@ describe('TraceEvaluationsTab', () => {
       />
     );
     expect(screen.getByText('boom')).toBeInTheDocument();
+  });
+});
+
+describe('View in Logs', () => {
+  const config = {
+    correlationId: 'cfg',
+    tracesDataset: { id: 'tr', title: 'otel-v1-apm-span*' },
+    evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation*', timeFieldName: 'time' },
+    index: 'otel-v1-genai-evaluation*',
+  };
+  afterEach(() => resetEvalsDatasetState());
+
+  it('opens Explore Logs on the evaluations dataset, filtered to the trace', () => {
+    const url = evaluationsLogsUrl(config.evaluationsDataset, 'abc123', [
+      { time: '2026-10-26 09:00:00' },
+      { time: '2026-10-26 10:00:00' },
+    ]);
+    expect(url).toContain('/app/explore/logs/#/');
+    expect(url).toContain("id:'ev'");
+    expect(url).toContain("title:'otel-v1-genai-evaluation*'");
+    expect(url).toContain("timeFieldName:'time'");
+    expect(url).toContain("language:PPL,query:'%7C%20where%20traceId%20%3D%20!'abc123!''");
+    expect(url).toContain("time:(from:'2026-10-26T08:00:00.000Z',to:'2026-10-26T11:00:00.000Z')");
+  });
+
+  it('shows the link in the Evaluations tab only with an evaluations dataset', () => {
+    const tab = (
+      <TraceEvaluationsTab
+        evals={{ ...groupTraceEvaluations([], 't1'), isLoading: false }}
+        traceId="t1"
+        spanLabelOf={() => undefined}
+        onSelectSpan={jest.fn()}
+      />
+    );
+    const { rerender } = render(tab);
+    expect(screen.queryByTestId('agtEvlViewInLogs')).not.toBeInTheDocument();
+    act(() => resetEvalsDatasetState({ status: 'ready', config, configs: [config] }));
+    rerender(tab);
+    expect(screen.getByTestId('agtEvlViewInLogs')).toHaveTextContent('View in Logs');
+    expect(screen.getByTestId('agtEvlViewInLogs').getAttribute('href')).toContain("!'t1!'");
   });
 });

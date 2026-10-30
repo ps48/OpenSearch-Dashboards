@@ -43,6 +43,9 @@ import {
   summaryAria,
 } from '../../../evaluations/eval_chips';
 import { ShowTracesMenu } from '../../../evaluations/eval_trace_filter';
+import { DatasetRef, useEvalsDataset } from '../../../evaluations/eval_dataset';
+import { parseEvalTime } from '../../../evaluations/eval_aggregations';
+import { buildExploreLogsUrl } from '../../../../../../explore/public';
 import { TraceEvaluations } from './use_trace_evaluations';
 import './trace_evaluations.scss';
 
@@ -342,12 +345,77 @@ const Section: React.FC<{ title: string; count: number }> = ({ title, count, chi
   </>
 );
 
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Explore Logs on the evaluations dataset with a PPL query for this trace id (as Related logs'
+ * View in Discover Logs builds it), over the time the trace's results span (an hour around
+ * them), or the last 90 days without results.
+ */
+export const evaluationsLogsUrl = (
+  dataset: DatasetRef,
+  traceId: string,
+  results: Array<Pick<EvalResult, 'time'>>
+): string => {
+  const times = results.map((r) => parseEvalTime(r.time)).filter((t) => Number.isFinite(t));
+  const timeRange = times.length
+    ? {
+        from: new Date(Math.min(...times) - HOUR_MS).toISOString(),
+        to: new Date(Math.max(...times) + HOUR_MS).toISOString(),
+      }
+    : { from: 'now-90d', to: 'now' };
+  return buildExploreLogsUrl({
+    traceId,
+    logDataset: {
+      id: dataset.id,
+      title: dataset.title,
+      type: 'INDEX_PATTERN',
+      timeFieldName: dataset.timeFieldName || 'time',
+    },
+    timeRange,
+  });
+};
+
+/** View in Logs: the trace's evaluation events in Explore Logs, when an evaluations dataset is set. */
+export const ViewEvaluationsInLogs: React.FC<{
+  traceId: string;
+  results: Array<Pick<EvalResult, 'time'>>;
+  className?: string;
+}> = ({ traceId, results, className }) => {
+  const { config } = useEvalsDataset();
+  if (!config) return null;
+  return (
+    <EuiFlexGroup
+      justifyContent="flexEnd"
+      gutterSize="none"
+      responsive={false}
+      className={className}
+    >
+      <EuiFlexItem grow={false}>
+        <EuiLink
+          href={evaluationsLogsUrl(config.evaluationsDataset, traceId, results)}
+          data-test-subj="agtEvlViewInLogs"
+        >
+          <EuiIcon type="discoverApp" size="s" />{' '}
+          {i18n.translate('agentTraces.evals.viewInLogs', { defaultMessage: 'View in Logs' })}
+        </EuiLink>
+      </EuiFlexItem>
+    </EuiFlexGroup>
+  );
+};
+
 /** Trace flyout tab: the session's, the trace's and each span's evaluation results. */
 export const TraceEvaluationsTab: React.FC<{
   evals: TraceEvaluations;
+  /** The trace the tab shows, for View in Logs. */
+  traceId?: string;
   spanLabelOf: (spanId: string) => string | undefined;
   onSelectSpan: (spanId: string) => void;
-}> = ({ evals, spanLabelOf, onSelectSpan }) => {
+}> = ({ evals, traceId, spanLabelOf, onSelectSpan }) => {
+  const viewInLogs = (className?: string) =>
+    traceId ? (
+      <ViewEvaluationsInLogs traceId={traceId} results={evals.results} className={className} />
+    ) : null;
   if (evals.isLoading) {
     return (
       <EuiFlexGroup justifyContent="center" className="agtEvl__tabBody">
@@ -373,30 +441,34 @@ export const TraceEvaluationsTab: React.FC<{
   }
   if (evals.results.length === 0) {
     return (
-      <EuiEmptyPrompt
-        iconType="checkInCircleFilled"
-        titleSize="xs"
-        title={
-          <h4>
-            {i18n.translate('agentTraces.evals.emptyTitle', {
-              defaultMessage: 'No evaluations for this trace',
-            })}
-          </h4>
-        }
-        body={
-          <EuiText size="s">
-            {i18n.translate('agentTraces.evals.emptyBody', {
-              defaultMessage:
-                'Evaluation results are OpenTelemetry gen_ai.evaluation.result events linked to a span, trace or session. Send them with the OpenSearch GenAI SDK score() or any OTel evaluator.',
-            })}
-          </EuiText>
-        }
-      />
+      <>
+        {viewInLogs('agtEvl__tabBody')}
+        <EuiEmptyPrompt
+          iconType="checkInCircleFilled"
+          titleSize="xs"
+          title={
+            <h4>
+              {i18n.translate('agentTraces.evals.emptyTitle', {
+                defaultMessage: 'No evaluations for this trace',
+              })}
+            </h4>
+          }
+          body={
+            <EuiText size="s">
+              {i18n.translate('agentTraces.evals.emptyBody', {
+                defaultMessage:
+                  'Evaluation results are OpenTelemetry gen_ai.evaluation.result events linked to a span, trace or session. Send them with the OpenSearch GenAI SDK score() or any OTel evaluator.',
+              })}
+            </EuiText>
+          }
+        />
+      </>
     );
   }
   const spanIds = Object.keys(evals.bySpanId);
   return (
     <div className="agtEvl__tabBody" data-test-subj="agentTracesEvaluationsTab">
+      {viewInLogs()}
       {evals.sessionResults.length > 0 && (
         <Section
           title={i18n.translate('agentTraces.evals.sessionSection', { defaultMessage: 'Session' })}

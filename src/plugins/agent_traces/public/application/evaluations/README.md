@@ -61,9 +61,10 @@ The dataset's index pattern is the PPL `source` of:
   `otel-v1-genai-evaluation-*`, where Data Prepper writes the events.
 
 A pattern with spaces, quotes or `|` is not used. The trace details flyout's Related logs tab
-also lists the trace's evaluation events, as "Evaluations", when an evaluations dataset is
-correlated with the flyout's traces dataset; Explore Logs queries the dataset like any logs
-dataset (`source = otel-v1-genai-evaluation* | where traceId = '...'`).
+lists logs datasets only, not evaluation events. Its Evaluations tab has **View in Logs**
+(with an evaluations dataset set): Explore Logs on the evaluations dataset, filtered to the
+trace id (`| where traceId = '...'`, the URL Related logs' View in Discover Logs builds), over
+an hour around the trace's results.
 
 ## Header and empty states
 
