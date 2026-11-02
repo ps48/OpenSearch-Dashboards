@@ -62,7 +62,8 @@ export const PassRateChart: React.FC<{
     <div style={{ height }} data-test-subj={`agtEvlChart-${id}`}>
       <Chart>
         <Settings
-          theme={chartsTheme}
+          // Room above the plot for the version labels.
+          theme={[{ chartMargins: { top: 18 } }, ...(chartsTheme ? [chartsTheme] : [])]}
           baseTheme={baseTheme}
           showLegend={false}
           xDomain={Number.isFinite(min) && Number.isFinite(max) ? { min, max } : undefined}

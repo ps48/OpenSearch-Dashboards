@@ -16,7 +16,6 @@ import {
   EuiSuperDatePicker,
   EuiTab,
   EuiTabs,
-  EuiTitle,
   OnTimeChangeProps,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
@@ -355,14 +354,6 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     }
     return (
       <EvalContext.Provider value={context}>
-        {route.page !== 'agents' && route.page !== 'results' && (
-          <>
-            <EuiTitle size="m">
-              <h2 data-test-subj="agtEvlScreenTitle">{titleOf(route)}</h2>
-            </EuiTitle>
-            <EuiSpacer size="s" />
-          </>
-        )}
         <EvalScreen route={route} />
         {result && (
           <ResultFlyout

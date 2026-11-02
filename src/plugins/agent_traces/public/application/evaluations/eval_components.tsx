@@ -12,6 +12,8 @@ import {
   EuiCallOut,
   EuiFilterButton,
   EuiFilterGroup,
+  EuiFlexGroup,
+  EuiFlexItem,
   EuiIconTip,
   EuiText,
   EuiToolTip,
@@ -146,19 +148,23 @@ export const SourceFilter: React.FC<{
   value: EvalSource;
   onChange: (source: EvalSource) => void;
 }> = ({ value, onChange }) => (
-  <EuiFilterGroup data-test-subj="agtEvlSource">
-    {(['all', 'online', 'offline'] as EvalSource[]).map((s) => (
-      <EuiFilterButton
-        key={s}
-        hasActiveFilters={value === s}
-        onClick={() => onChange(s)}
-        title={SOURCE_TIP[s]}
-        data-test-subj={`agtEvlSource-${s}`}
-      >
-        {SOURCE_LABEL[s]}
-      </EuiFilterButton>
-    ))}
-  </EuiFilterGroup>
+  <EuiFlexGroup gutterSize="none" responsive={false}>
+    <EuiFlexItem grow={false}>
+      <EuiFilterGroup data-test-subj="agtEvlSource">
+        {(['all', 'online', 'offline'] as EvalSource[]).map((s) => (
+          <EuiFilterButton
+            key={s}
+            hasActiveFilters={value === s}
+            onClick={() => onChange(s)}
+            title={SOURCE_TIP[s]}
+            data-test-subj={`agtEvlSource-${s}`}
+          >
+            {SOURCE_LABEL[s]}
+          </EuiFilterButton>
+        ))}
+      </EuiFilterGroup>
+    </EuiFlexItem>
+  </EuiFlexGroup>
 );
 
 export const QueryErrorCallout: React.FC<{ message: string }> = ({ message }) => (

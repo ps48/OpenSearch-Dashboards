@@ -17,6 +17,7 @@ import {
   EuiSpacer,
   EuiText,
   EuiTitle,
+  EuiCheckbox,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { RunRow, suiteRuns } from './eval_model';
@@ -79,12 +80,42 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
   const agent = runs.map((r) => r.agent).find(Boolean);
   const canCompare = selected.length === 2;
 
+  const isSelected = (r: RunRow) => selected.some((s) => s.runId === r.runId);
+  const toggle = (r: RunRow) =>
+    setSelected((cur) =>
+      cur.some((s) => s.runId === r.runId)
+        ? cur.filter((s) => s.runId !== r.runId)
+        : [...cur, r].slice(-2)
+    );
+
   const columns: Array<EuiBasicTableColumn<RunRow>> = [
+    {
+      // At most two runs can be compared, so there is no select-all.
+      name: '',
+      width: '32px',
+      render: (r: RunRow) => (
+        <EuiCheckbox
+          id={`agtEvlSelect-${r.runId}`}
+          checked={isSelected(r)}
+          disabled={!isSelected(r) && selected.length >= 2}
+          onChange={() => toggle(r)}
+          aria-label={i18n.translate('agentTraces.evals.suite.select', {
+            defaultMessage: 'Select run {id}',
+            values: { id: shortId(r.runId) },
+          })}
+          data-test-subj={`agtEvlSelectRun-${r.runId}`}
+        />
+      ),
+    },
     {
       field: 'runId',
       name: i18n.translate('agentTraces.evals.suite.run', { defaultMessage: 'Run' }),
       render: (id: string) => (
-        <EuiLink className="agtEvlMono" title={id}>
+        <EuiLink
+          className="agtEvlMono"
+          title={id}
+          onClick={() => navigate({ page: 'run', runId: id })}
+        >
           {shortId(id)}
         </EuiLink>
       ),
@@ -255,18 +286,6 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
           itemId="runId"
           columns={columns}
           loading={loading}
-          isSelectable
-          selection={{
-            onSelectionChange: (items: RunRow[]) => setSelected(items.slice(-2)),
-            selectable: (r: RunRow) =>
-              selected.length < 2 || selected.some((s) => s.runId === r.runId),
-            selectableMessage: (ok: boolean) =>
-              ok
-                ? ''
-                : i18n.translate('agentTraces.evals.suite.maxTwo', {
-                    defaultMessage: 'Two runs are selected',
-                  }),
-          }}
           sorting={{ sort: { field: 'started', direction: 'desc' } }}
           pagination={{ initialPageSize: 20, pageSizeOptions: [20, 50] }}
           rowProps={(r: RunRow) => ({

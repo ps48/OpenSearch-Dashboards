@@ -63,6 +63,8 @@ describe('SuitePage', () => {
     const button = screen.getByTestId('agtEvlCompareButton');
     expect(button).toBeDisabled();
     const boxes = screen.getAllByRole('checkbox').filter((b) => b.closest('tbody'));
+    // At most two runs: no select-all checkbox in the header.
+    expect(screen.getAllByRole('checkbox').filter((b) => b.closest('thead'))).toHaveLength(0);
     // Newest first: c, b, a.
     fireEvent.click(boxes[0]);
     fireEvent.click(boxes[2]);

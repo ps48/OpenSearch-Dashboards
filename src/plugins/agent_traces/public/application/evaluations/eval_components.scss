@@ -186,7 +186,7 @@
     }
 
     &--only {
-      background: $euiColorWarningBackground;
+      background: tintOrShade($euiColorWarning, 90%, 70%);
     }
   }
 
