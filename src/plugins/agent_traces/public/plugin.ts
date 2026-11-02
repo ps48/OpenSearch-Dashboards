@@ -6,7 +6,6 @@
 import { i18n } from '@osd/i18n';
 import { BehaviorSubject } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
-import { setEvalTraceFilter } from './application/evaluations/eval_trace_filter_store';
 import { isAgentEvalsEnabled } from './application/evaluations/eval_feature_flag';
 import {
   App,
@@ -452,7 +451,6 @@ export class AgentTracesPlugin implements Plugin<
       : AppNavLinkStatus.hidden;
     // Agent Evaluations off: drop a "traces where an evaluation fails" filter kept from a
     // session where they were on, so it cannot narrow the Traces and Spans queries.
-    if (!isAgentEvalsEnabled(capabilities)) setEvalTraceFilter(undefined);
     Object.values(this.stateUpdaterByApp).forEach((updater) => {
       updater.next((app) => {
         if (app.id === AGENT_EVALS_NAV_ID) {

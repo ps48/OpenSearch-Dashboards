@@ -12,9 +12,6 @@ jest.mock('react-redux', () => ({
   useSelector: jest.fn(() => 'traces'),
 }));
 
-jest.mock('../../../../application/pages/traces/eval_filter_provider', () => ({
-  TracesEvalFilterProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 jest.mock('../../../tabs/tabs', () => ({
   AgentTracesTabs: () => <div data-test-subj="agentTraces-tabs">Agent Traces Tabs</div>,
 }));

@@ -6,80 +6,45 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../../types';
-import {
-  EvalResult,
-  buildTraceEvalsQuery,
-  createEvalsPplService,
-  failuresFirst,
-  fetchEvalResults,
-} from '../../../evaluations/eval_data';
+import { EvalResult, isSpanResult, recordsToResults } from '../../../evaluations/eval_model';
+import { buildTraceResultsQuery } from '../../../evaluations/eval_ppl';
 import { useEvalsIndexPattern } from '../../../evaluations/eval_dataset';
+import { errorMessage, evalsDataset, runPpl } from '../../../evaluations/use_ppl_rows';
 
 export interface TraceEvaluations {
-  /** Every result that judged the trace, one of its spans, or its session. */
+  /** Every result of the trace, failures first. */
   results: EvalResult[];
-  /** Results by evaluated span id (span and tool-call levels). */
+  /** Results per span id; trace-level results sit on the root span. */
   bySpanId: Record<string, EvalResult[]>;
-  /** Trace-level results. */
-  traceResults: EvalResult[];
-  /** Session-level results of the trace's session. */
-  sessionResults: EvalResult[];
   isLoading: boolean;
-  /** Set when the lookup failed; a missing eval index is not an error (no results). */
   error?: string;
 }
 
-const EMPTY: Omit<TraceEvaluations, 'isLoading'> = {
-  results: [],
-  bySpanId: {},
-  traceResults: [],
-  sessionResults: [],
-};
+const ORDER = { fail: 0, error: 1, pass: 2, scored: 3 };
 
-/** Results by trace and session, so reopening a trace (Back, Forward) does not refetch. */
-const CACHE_TTL_MS = 60_000;
-const CACHE_MAX = 50;
-const cache = new Map<string, { at: number; results: EvalResult[] }>();
-/** For tests. */
-export const clearTraceEvaluationsCache = () => cache.clear();
+/** Span results on their span, trace-level results on the root span. */
+export const groupBySpan = (
+  results: EvalResult[],
+  rootSpanId?: string
+): Record<string, EvalResult[]> => {
+  const out: Record<string, EvalResult[]> = {};
+  results.forEach((r) => {
+    const spanId = isSpanResult(r) ? r.spanId : rootSpanId;
+    if (spanId) (out[spanId] = out[spanId] ?? []).push(r);
+  });
+  return out;
+};
 
 const isMissingIndex = (message: string) =>
-  /no such index|index_not_found|IndexNotFound|not found/i.test(message);
-
-export const groupTraceEvaluations = (
-  results: EvalResult[],
-  traceId: string,
-  sessionId?: string
-): Omit<TraceEvaluations, 'isLoading' | 'error'> => {
-  const ordered = failuresFirst(results);
-  const bySpanId: Record<string, EvalResult[]> = {};
-  const traceResults: EvalResult[] = [];
-  const sessionResults: EvalResult[] = [];
-  ordered.forEach((r) => {
-    if (r.level === 'session') {
-      if (!sessionId || r.sessionId === sessionId) sessionResults.push(r);
-    } else if (r.traceId === traceId && r.spanId && r.level !== 'trace') {
-      (bySpanId[r.spanId] = bySpanId[r.spanId] ?? []).push(r);
-    } else if (r.traceId === traceId) {
-      traceResults.push(r);
-    }
-  });
-  // Only what the flyout shows: results of the session's other traces stay with those traces.
-  const shown = failuresFirst([
-    ...sessionResults,
-    ...traceResults,
-    ...Object.values(bySpanId).flat(),
-  ]);
-  return { results: shown, bySpanId, traceResults, sessionResults };
-};
+  /no such index|index_not_found|IndexNotFound/i.test(message);
 
 /**
- * Evaluation results (`gen_ai.evaluation.result` events) that judged this trace, its spans, or
- * its session. Not time-bounded: evaluations often run long after the trace.
+ * The results of one trace (head 200), from the start of the global range to now: results
+ * land after the trace they judge. Only runs when Agent Evaluations is on (an index is set).
  */
 export const useTraceEvaluations = (
   traceId: string | undefined,
-  sessionId?: string
+  rootSpanId?: string
 ): TraceEvaluations => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const index = useEvalsIndexPattern();
@@ -88,39 +53,31 @@ export const useTraceEvaluations = (
   );
 
   useEffect(() => {
-    if (!traceId || !services?.data) {
+    if (!traceId || !services?.data || !index) {
       setState({ results: [], isLoading: false });
       return;
     }
-    // The evaluations dataset is still loading.
-    if (!index) {
-      setState({ results: [], isLoading: true });
-      return;
-    }
-    const key = `${index}|${traceId}|${sessionId ?? ''}`;
-    const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-      setState({ results: hit.results, isLoading: false });
-      return;
-    }
     const controller = new AbortController();
+    const timefilter = services.data.query.timefilter.timefilter;
+    const from = timefilter.calculateBounds(timefilter.getTime()).min?.toISOString() ?? 'now-7d';
     setState({ results: [], isLoading: true });
-    // A wide range: the PPL service otherwise applies the global time filter.
-    const ppl = createEvalsPplService(
+    runPpl(
       services.data,
-      { from: 'now-90d', to: 'now+1d' },
+      evalsDataset(index),
+      buildTraceResultsQuery(index, [traceId]),
+      { from, to: new Date().toISOString() },
       controller.signal
-    );
-    fetchEvalResults(ppl, buildTraceEvalsQuery(traceId, sessionId, 200, index), index)
-      .then((results) => {
-        cache.delete(key);
-        cache.set(key, { at: Date.now(), results });
-        while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
-        if (!controller.signal.aborted) setState({ results, isLoading: false });
+    )
+      .then((rows) => {
+        if (controller.signal.aborted) return;
+        const results = recordsToResults(rows).sort(
+          (a, b) => ORDER[a.verdict] - ORDER[b.verdict] || a.name.localeCompare(b.name)
+        );
+        setState({ results, isLoading: false });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         setState({
           results: [],
           isLoading: false,
@@ -128,14 +85,10 @@ export const useTraceEvaluations = (
         });
       });
     return () => controller.abort();
-  }, [traceId, sessionId, services?.data, index]);
+  }, [traceId, services?.data, index]);
 
   return useMemo(
-    () => ({
-      ...(traceId ? groupTraceEvaluations(state.results, traceId, sessionId) : EMPTY),
-      isLoading: state.isLoading,
-      error: state.error,
-    }),
-    [state, traceId, sessionId]
+    () => ({ ...state, bySpanId: groupBySpan(state.results, rootSpanId) }),
+    [state, rootSpanId]
   );
 };

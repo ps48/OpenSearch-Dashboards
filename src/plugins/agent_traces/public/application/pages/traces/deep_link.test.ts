@@ -4,12 +4,7 @@
  */
 
 import { renderHook } from '@testing-library/react';
-import {
-  clearEvalTraceFilterForDeepLink,
-  takeHashParam,
-  useOpenSessionFromLink,
-} from './deep_link';
-import { getEvalTraceFilter, setEvalTraceFilter } from '../../evaluations/eval_trace_filter_store';
+import { takeHashParam, useOpenSessionFromLink } from './deep_link';
 
 const setHash = (hash: string) => window.history.replaceState(null, '', `/app/agentTraces${hash}`);
 
@@ -40,34 +35,5 @@ describe('deep links', () => {
     const openSession = jest.fn();
     renderHook(() => useOpenSessionFromLink(true, openSession));
     expect(openSession).not.toHaveBeenCalled();
-  });
-
-  describe('the persisted evaluation trace filter', () => {
-    const filter = { label: 'accuracy: Fail', traceIds: ['t1'], capped: false };
-    beforeEach(() => setEvalTraceFilter(filter));
-    afterAll(() => setEvalTraceFilter(undefined));
-
-    it('is cleared by a link opening a trace or a session', () => {
-      expect(clearEvalTraceFilterForDeepLink('#/?_g=(time:(from:now-1h))&openTraceId=abc')).toBe(
-        true
-      );
-      expect(getEvalTraceFilter()).toBeUndefined();
-      expect(window.sessionStorage.getItem('agentTraces:evalTraceFilter')).toBeNull();
-      setEvalTraceFilter(filter);
-      expect(clearEvalTraceFilterForDeepLink('#/?openSessionId=s1')).toBe(true);
-      expect(getEvalTraceFilter()).toBeUndefined();
-    });
-
-    it('stays for links that open no trace or session', () => {
-      expect(clearEvalTraceFilterForDeepLink('#/?_a=(ui:(activeTabId:traces))')).toBe(false);
-      expect(getEvalTraceFilter()).toEqual(filter);
-    });
-
-    it('is cleared whatever else the link holds (there is no parameter to keep it)', () => {
-      expect(clearEvalTraceFilterForDeepLink('#/?openTraceId=abc&keepEvalTraceFilter=1')).toBe(
-        true
-      );
-      expect(getEvalTraceFilter()).toBeUndefined();
-    });
   });
 });

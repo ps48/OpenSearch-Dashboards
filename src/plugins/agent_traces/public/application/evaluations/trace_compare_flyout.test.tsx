@@ -4,180 +4,115 @@
  */
 
 import React from 'react';
-import { of } from 'rxjs';
-import {
-  act,
-  fireEvent,
-  render,
-  renderHook,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react';
-import { I18nProvider } from '@osd/i18n/react';
-import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dashboards_react/public';
-import {
-  GraphComparison,
-  decorationOf,
-  graphFocusOf,
-  useCompareView,
-  useTraceCompare,
-} from './trace_compare_flyout';
-import { resetEvalsDatasetState } from './eval_dataset';
-import { TraceStep, alignSteps } from './trace_compare';
-import { TraceRow } from '../pages/traces/hooks/tree_utils';
+import { screen, waitFor, within } from '@testing-library/react';
+import { TraceCompareFlyout, flattenSpans, onlyIn, resultsOfSpan } from './trace_compare_flyout';
+import { TEST_INDEX, renderWithContext } from './eval_test_utils';
+import { buildTraceResultsQuery, buildTraceSpansQuery } from './eval_ppl';
+import { recordToResult } from './eval_model';
+import type { BaseRow } from '../pages/traces/hooks/tree_utils';
 
-/** The map stands in as one button per span, with the caller's decoration. */
-jest.mock('../pages/traces/flow/trace_flow_view', () => ({
-  TraceFlowView: ({
-    spanTree,
-    onSelectSpan,
-    decorateNode,
-  }: {
-    spanTree: Array<{ spanId: string }>;
-    onSelectSpan: (s: unknown) => void;
-    decorateNode?: (s: unknown) => { className?: string; badge?: React.ReactNode } | undefined;
-  }) => (
-    <div>
-      <button data-test-subj="node-none" onClick={() => onSelectSpan(null)} />
-      {spanTree.map((s) => {
-        const d = decorateNode?.(s);
-        return (
-          <button
-            key={s.spanId}
-            data-test-subj={`node-${s.spanId}`}
-            className={d?.className}
-            onClick={() => onSelectSpan(s)}
-          >
-            {d?.badge}
-          </button>
-        );
-      })}
-    </div>
-  ),
+const mockExecute = jest.fn();
+jest.mock('../pages/traces/trace_details/data_fetching/ppl_request_helpers', () => ({
+  PPLService: jest
+    .fn()
+    .mockImplementation(() => ({ executeQuery: (...a: unknown[]) => mockExecute(...a) })),
+}));
+const mockRunPpl = jest.fn();
+jest.mock('./use_ppl_rows', () => ({
+  ...jest.requireActual('./use_ppl_rows'),
+  runPpl: (...a: unknown[]) => mockRunPpl(...a),
+}));
+const mockServices = { services: { data: {} } };
+jest.mock('../../../../opensearch_dashboards_react/public', () => ({
+  useOpenSearchDashboards: () => mockServices,
 }));
 
-const step = (spanId: string, name: string): TraceStep => ({
-  spanId,
-  kind: 'tool',
-  name,
-  startMs: 0,
-});
-const row = (spanId: string) => ({ spanId, id: spanId, traceId: 't' }) as unknown as TraceRow;
+const span = (
+  traceId: string,
+  spanId: string,
+  parent: string,
+  name: string,
+  start: string,
+  ms: number
+) => [traceId, spanId, parent, name, start, ms * 1e6];
 
-describe('GraphComparison', () => {
-  const aligned = alignSteps(
-    [step('a1', 'search_flights')],
-    [step('b1', 'search_flights'), step('b2', 'get_weather')]
-  );
-  const renderGraph = () =>
-    render(
-      <I18nProvider>
-        <GraphComparison
-          baseline={[row('a1')]}
-          candidate={[row('b1'), row('b2')]}
-          aligned={aligned}
-          baselineTitle="Baseline"
-          candidateTitle="Candidate"
-        />
-      </I18nProvider>
-    );
-
-  it('marks the step only one trace has, with a legend', () => {
-    renderGraph();
-    expect(screen.getByTestId('agtEvlGraphLegend')).toHaveTextContent('Only here');
-    const extra = screen.getByTestId('node-b2');
-    expect(extra).toHaveClass('agtEvlGraphNode--only');
-    expect(within(extra).getByTestId('agtEvlGraphMark-candidate_only')).toHaveTextContent(
-      'Only here'
-    );
-    expect(screen.getByTestId('node-b1')).not.toHaveClass('agtEvlGraphNode');
-    expect(screen.getByTestId('agtEvlGraphHint')).toBeInTheDocument();
-  });
-
-  it('selects a step and its match on the other side, and shows the pair', () => {
-    renderGraph();
-    fireEvent.click(screen.getByTestId('node-a1'));
-    expect(screen.getByTestId('node-a1')).toHaveClass('agtEvlGraphNode--selected');
-    expect(screen.getByTestId('node-b1')).toHaveClass('agtEvlGraphNode--selected');
-    expect(screen.getByTestId('agtEvlStepsComparison')).toHaveTextContent('search_flights');
-    fireEvent.click(screen.getByTestId('node-b2'));
-    expect(screen.getByTestId('node-a1')).not.toHaveClass('agtEvlGraphNode--selected');
-    // A click on the background (null) keeps the selection.
-    fireEvent.click(screen.getAllByTestId('node-none')[0]);
-    expect(screen.getByTestId('node-b2')).toHaveClass('agtEvlGraphNode--selected');
-    expect(screen.getByTestId('agtEvlStepRow-candidate_only')).toHaveTextContent('2');
-  });
-});
-
-describe('decorationOf', () => {
-  it('leaves unchanged, unselected steps and non-steps alone', () => {
-    expect(decorationOf(undefined, 0)).toBeUndefined();
-    expect(decorationOf({ diff: 'same', index: 1 }, 0)).toBeUndefined();
-    expect(decorationOf({ diff: 'args', index: 1 }, 0)?.className).toContain(
-      'agtEvlGraphNode--changed'
-    );
-  });
-});
-
-describe('graphFocusOf', () => {
-  const tree = [row('root')];
-  it("opens each side on the first differing step, else that side's step before it", () => {
-    const aligned = alignSteps(
-      [step('a1', 'search_flights'), step('a2', 'book')],
-      [step('b1', 'search_flights'), step('b2', 'get_weather'), step('b3', 'book')]
-    );
-    const first = aligned.findIndex((a) => a.diff !== 'same');
-    expect(graphFocusOf(aligned, 'candidate', tree)).toBe(aligned[first].candidate?.spanId);
-    // Only the candidate has that step: the baseline opens on its step before it.
-    expect(graphFocusOf(aligned, 'baseline', tree)).toBe(aligned[first].baseline?.spanId ?? 'a1');
-  });
-  it('opens on the root when nothing differs', () => {
-    const aligned = alignSteps([step('a1', 'x')], [step('b1', 'x')]);
-    expect(graphFocusOf(aligned, 'baseline', tree)).toBe('root');
-    expect(graphFocusOf(aligned, 'candidate', tree)).toBe('root');
-  });
-});
-
-describe('useCompareView', () => {
-  it('defaults to steps and keeps the choice for the session', () => {
-    window.sessionStorage.clear();
-    const first = renderHook(() => useCompareView());
-    expect(first.result.current[0]).toBe('steps');
-    act(() => first.result.current[1]('graph'));
-    expect(first.result.current[0]).toBe('graph');
-    expect(renderHook(() => useCompareView()).result.current[0]).toBe('graph');
-    window.sessionStorage.clear();
-  });
-});
-
-describe('useTraceCompare', () => {
-  it("reads both traces' spans from the config's traces dataset", async () => {
-    resetEvalsDatasetState({
-      status: 'ready',
-      config: {
-        configId: 'c',
-        tracesDataset: { id: 'tr', title: 'agent-spans*' },
-        evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation*' },
-        index: 'otel-v1-genai-evaluation*',
-      },
+describe('TraceCompareFlyout', () => {
+  beforeEach(() => {
+    mockExecute.mockReset();
+    mockRunPpl.mockReset();
+    mockExecute.mockResolvedValue({
+      schema: ['traceId', 'spanId', 'parentSpanId', 'name', 'startTime', 'durationInNanos'].map(
+        (name) => ({ name, type: 'string' })
+      ),
+      datarows: [
+        span('ta', 'a1', '', 'invoke_agent planner', '2026-10-28 07:00:00', 2000),
+        span('ta', 'a2', 'a1', 'search_flights', '2026-10-28 07:00:00.5', 500),
+        span('tb', 'b1', '', 'invoke_agent planner', '2026-10-28 08:00:00', 3000),
+        span('tb', 'b2', 'b1', 'book_hotel', '2026-10-28 08:00:01', 1000),
+      ],
+      total: 4,
     });
-    const search = jest.fn(() => of({ schema: [], datarows: [] }));
-    const wrapper: React.FC = ({ children }) => (
-      <OpenSearchDashboardsContextProvider services={{ data: { search: { search } } }}>
-        {children}
-      </OpenSearchDashboardsContextProvider>
+    mockRunPpl.mockResolvedValue([
+      {
+        '@timestamp': '2026-10-28 08:00:05',
+        traceId: 'tb',
+        attributes: {
+          gen_ai: {
+            evaluation: { name: 'accuracy', score: { label: 'fail' }, explanation: 'Wrong' },
+          },
+        },
+      },
+    ]);
+  });
+
+  it('reads the spans and results of both traces and highlights spans only in one', async () => {
+    renderWithContext(
+      <TraceCompareFlyout
+        caseId="c1"
+        traceA="ta"
+        traceB="tb"
+        versionA="v1"
+        versionB="v2"
+        onClose={jest.fn()}
+      />
     );
-    const { result } = renderHook(() => useTraceCompare('a', 'b'), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    const queries = (
-      search.mock.calls as unknown as Array<
-        [{ params: { body: { query: { queries: Array<{ query: string }> } } } }]
-      >
-    ).map(([r]) => r.params.body.query.queries[0].query);
-    const spanQueries = queries.filter((q) => q.includes('sort startTime'));
-    expect(spanQueries).toHaveLength(2);
-    spanQueries.forEach((q) => expect(q.startsWith('source = agent-spans* |')).toBe(true));
-    resetEvalsDatasetState();
+    await waitFor(() => expect(screen.getByTestId('agtEvlSpans-tb')).toBeInTheDocument());
+    expect(mockExecute.mock.calls[0][1]).toBe(buildTraceSpansQuery('spans-*', ['ta', 'tb']));
+    expect(mockRunPpl.mock.calls[0][2]).toBe(buildTraceResultsQuery(TEST_INDEX, ['ta', 'tb']));
+    const b = screen.getByTestId('agtEvlSpans-tb');
+    expect(within(b).getAllByTestId('agtEvlSpanOnly')).toHaveLength(1);
+    expect(within(b).getByText(/book_hotel/)).toBeInTheDocument();
+    // The trace-level result marks the root span of trace B.
+    expect(within(b).getByTestId('agtEvlJudgeMark')).toHaveAttribute('data-state', 'fail');
+    expect(screen.getByText('Wrong')).toBeInTheDocument();
+  });
+
+  it('helpers: flatten, only-in-one and results per span', () => {
+    const row = (spanId: string, name: string, children: BaseRow[] = []) =>
+      ({
+        spanId,
+        name,
+        kind: 'chat',
+        durationNanos: 1e6,
+        rawDocument: { startTime: '2026-10-28 07:00:00' },
+        children,
+      }) as unknown as BaseRow;
+    const flat = flattenSpans([row('r', 'root', [row('c', 'child')])]);
+    expect(flat.map((s) => [s.spanId, s.depth])).toEqual([
+      ['r', 0],
+      ['c', 1],
+    ]);
+    expect(onlyIn(flat, [flat[0]])).toEqual(new Set(['c']));
+    const spanResult = recordToResult({
+      spanId: 'c',
+      attributes: { gen_ai: { evaluation: { name: 'x' } } },
+    });
+    const traceResult = recordToResult({ attributes: { gen_ai: { evaluation: { name: 'y' } } } });
+    expect(resultsOfSpan([spanResult, traceResult], flat[0], true).map((r) => r.name)).toEqual([
+      'y',
+    ]);
+    expect(resultsOfSpan([spanResult, traceResult], flat[1], false).map((r) => r.name)).toEqual([
+      'x',
+    ]);
   });
 });

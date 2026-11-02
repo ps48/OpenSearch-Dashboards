@@ -18,16 +18,16 @@ import {
   spansIndexOf,
 } from './eval_dataset';
 import {
-  buildEvalResultsQuery,
-  buildRunDetailQuery,
-  buildRunEventsQuery,
-  buildTraceEvalsQuery,
-  buildTracesEvalsQuery,
-  evalsDataset,
-} from './eval_data';
-import { buildSameTargetQuery } from './result_flyout';
-import { buildFacetsAggQuery } from './eval_ppl';
-import { makeResult } from './eval_test_fixtures';
+  EMPTY_RESULTS_FILTERS,
+  buildAgentsQuery,
+  buildCompareRunsQuery,
+  buildResultsPageQuery,
+  buildRunCasesQuery,
+  buildSuiteRunsQuery,
+  buildTraceResultsQuery,
+  buildTracesTallyQuery,
+} from './eval_ppl';
+import { evalsDataset } from './use_ppl_rows';
 
 const patterns: Record<string, Record<string, string>> = {
   tr: { title: 'otel-v1-apm-span*', signalType: 'traces', displayName: 'Trace Dataset' },
@@ -243,13 +243,13 @@ describe('evaluations app config', () => {
   it('is the source of every evaluation query', () => {
     const index = 'my-evals-*';
     const queries = [
-      buildEvalResultsQuery({}, 10, index),
-      buildFacetsAggQuery({ index }),
-      buildTraceEvalsQuery('t1', undefined, 10, index),
-      buildTracesEvalsQuery(['t1'], 10, index),
-      buildRunEventsQuery(10, index),
-      buildRunDetailQuery('run-1', 10, index),
-      buildSameTargetQuery(makeResult({ traceId: 't1' }), 10, index) as string,
+      buildAgentsQuery(index, 'all'),
+      buildSuiteRunsQuery(index, 's'),
+      buildRunCasesQuery(index, 'run-1'),
+      buildCompareRunsQuery(index, 'a', 'b'),
+      buildResultsPageQuery(index, EMPTY_RESULTS_FILTERS, { field: 'time', direction: 'desc' }, 0),
+      buildTraceResultsQuery(index, ['t1']),
+      buildTracesTallyQuery(index, ['t1']),
     ];
     queries.forEach((q) => expect(q.startsWith(`source = ${index} |`)).toBe(true));
     expect(evalsDataset(index).title).toBe(index);

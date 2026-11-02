@@ -3,63 +3,56 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  hashWithRoute,
-  legacyRouteOf,
-  pathOfRoute,
-  routeOfHash,
-  stateForRoute,
-} from './eval_routes';
-import { DEFAULT_APP_STATE } from './eval_url_state';
+import { hashOfRoute, normalizeAppState, pathOfRoute, routeOfHash } from './eval_routes';
 
-describe('eval routes', () => {
-  it('reads the page from the hash path', () => {
-    expect(routeOfHash('')).toEqual({ page: 'tabs' });
-    expect(routeOfHash('#/?_a=(tab:runs)')).toEqual({ page: 'tabs' });
-    expect(routeOfHash('#/runs/run_20261030_001343_34d64814?_g=()')).toEqual({
-      page: 'run',
-      runId: 'run_20261030_001343_34d64814',
+describe('evaluation routes', () => {
+  it('reads every screen from the hash', () => {
+    expect(routeOfHash('')).toEqual({ page: 'agents' });
+    expect(routeOfHash('#/agents?_g=(x)')).toEqual({ page: 'agents' });
+    expect(routeOfHash('#/results')).toEqual({ page: 'results' });
+    expect(routeOfHash('#/agents/travel%20planner')).toEqual({
+      page: 'agent',
+      agent: 'travel planner',
+      tab: 'evaluations',
     });
-    expect(routeOfHash('#/runs/a%2Fb')).toEqual({ page: 'run', runId: 'a/b' });
-    expect(routeOfHash('#/compare?_a=(compare:!(a,b))')).toEqual({ page: 'compare' });
-    expect(routeOfHash('#/elsewhere')).toEqual({ page: 'tabs' });
+    expect(routeOfHash('#/agents/tp?tab=suites&_g=(x)')).toEqual({
+      page: 'agent',
+      agent: 'tp',
+      tab: 'suites',
+    });
+    expect(routeOfHash('#/agents/tp?tab=bogus').page).toBe('agent');
+    expect(routeOfHash('#/suites/golden')).toEqual({ page: 'suite', suite: 'golden' });
+    expect(routeOfHash('#/runs/run_1')).toEqual({ page: 'run', runId: 'run_1' });
+    expect(routeOfHash('#/compare/a/b')).toEqual({ page: 'compare', runA: 'a', runB: 'b' });
+    expect(routeOfHash('#/compare/a')).toEqual({ page: 'agents' });
   });
 
-  it('builds the path of a page, keeping the hash query', () => {
-    expect(pathOfRoute({ page: 'run', runId: 'a/b' })).toBe('/runs/a%2Fb');
-    expect(hashWithRoute('#/?_g=(x)&_a=(y)', { page: 'run', runId: 'r1' })).toBe(
-      '#/runs/r1?_g=(x)&_a=(y)'
+  it('writes paths and keeps `_g` and `_a` while replacing the tab', () => {
+    expect(pathOfRoute({ page: 'suite', suite: 'a/b' })).toBe('/suites/a%2Fb');
+    expect(
+      hashOfRoute(
+        { page: 'agent', agent: 'tp', tab: 'results' },
+        '#/agents/tp?tab=suites&_g=(time:(from:now-7d,to:now))&_a=(agentSource:all)'
+      )
+    ).toBe('#/agents/tp?tab=results&_g=(time:(from:now-7d,to:now))&_a=(agentSource:all)');
+    expect(hashOfRoute({ page: 'agent', agent: 'tp', tab: 'evaluations' }, '#/x?tab=suites')).toBe(
+      '#/agents/tp'
     );
-    expect(hashWithRoute('#/runs/r1?_g=(x)', { page: 'tabs' })).toBe('#/?_g=(x)');
-    expect(hashWithRoute('', { page: 'compare' })).toBe('#/compare');
+    expect(hashOfRoute({ page: 'compare', runA: 'a', runB: 'b' })).toBe('#/compare/a/b');
   });
 
-  it('sends the old run and compare links to their pages', () => {
-    const tabs = { page: 'tabs' as const };
-    expect(legacyRouteOf(tabs, { ...DEFAULT_APP_STATE, tab: 'runs', run: 'r1' })).toEqual({
-      page: 'run',
-      runId: 'r1',
-    });
-    expect(legacyRouteOf(tabs, { ...DEFAULT_APP_STATE, tab: 'runs', compare: ['a', 'b'] })).toEqual(
-      { page: 'compare' }
-    );
-    expect(legacyRouteOf(tabs, DEFAULT_APP_STATE)).toBeUndefined();
-    expect(legacyRouteOf({ page: 'run', runId: 'r1' }, { ...DEFAULT_APP_STATE, run: 'r1' })).toBe(
-      undefined
-    );
-  });
-
-  it('keeps no run or comparison in the state of the tabs', () => {
-    const state = { ...DEFAULT_APP_STATE, run: 'r1', compare: ['a', 'b'], baseline: 'b' };
-    expect(stateForRoute({ page: 'tabs' }, state)).toEqual(DEFAULT_APP_STATE);
-    expect(stateForRoute({ page: 'run', runId: 'r1' }, state)).toEqual({
-      ...DEFAULT_APP_STATE,
-      tab: 'runs',
-    });
-    expect(stateForRoute({ page: 'compare' }, state)).toMatchObject({
-      compare: ['a', 'b'],
-      baseline: 'b',
-      run: undefined,
+  it('normalizes the app state from the URL', () => {
+    expect(normalizeAppState(undefined).results.source).toBe('all');
+    expect(
+      normalizeAppState({
+        agentsSource: 'online',
+        agentSource: 'nope',
+        results: { names: ['a', 3], verdicts: ['fail'], q: 'x', source: 'offline' },
+      })
+    ).toEqual({
+      agentsSource: 'online',
+      agentSource: 'all',
+      results: { agents: [], names: ['a'], verdicts: ['fail'], source: 'offline', q: 'x' },
     });
   });
 });

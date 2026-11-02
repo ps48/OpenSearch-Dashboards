@@ -17,7 +17,6 @@ import {
 import { DatasetProvider } from './context';
 import { TracesPage } from './pages/traces';
 import { EditorContextProvider } from './context';
-import { clearEvalTraceFilterForDeepLink } from './pages/traces/deep_link';
 
 const NOOP_PAGE_CONTEXT_HOOK = (_options?: any): string => '';
 
@@ -49,8 +48,6 @@ export const renderApp = (
   services: AgentTracesServices,
   store: Store
 ) => {
-  // A link opening one trace or session must not land on a table filtered by an old filter.
-  clearEvalTraceFilterForDeepLink();
   const root = createRoot(element);
   root.render(
     <Router history={history}>

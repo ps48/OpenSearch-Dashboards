@@ -1,0 +1,253 @@
+// Shared by the Agent Evaluations screens and the Agent Traces evaluation marks.
+
+.agtEvlDim {
+  color: $euiTextSubduedColor;
+}
+
+.agtEvlSmall {
+  font-size: $euiFontSizeXS;
+}
+
+.agtEvlMono {
+  font-variant-numeric: tabular-nums;
+}
+
+.agtEvlTrunc {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.agtEvlProse {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agtEvlBox {
+  padding: $euiSizeS;
+  border-radius: $euiBorderRadius;
+  background: $euiColorLightestShade;
+}
+
+.agtEvlClickRow {
+  cursor: pointer;
+}
+
+.agtEvlRate {
+  display: inline-flex;
+  align-items: center;
+  gap: $euiSizeS;
+
+  &__bar {
+    display: inline-block;
+    width: $euiSizeXXL;
+    height: $euiSizeXS;
+    border-radius: $euiSizeXS;
+    overflow: hidden;
+    background: $euiColorLightShade;
+  }
+
+  &__fill {
+    display: block;
+    height: 100%;
+    background: $euiColorVis1;
+  }
+}
+
+.agtEvlDelta {
+  font-weight: $euiFontWeightSemiBold;
+
+  &--bad {
+    color: $euiColorDangerText;
+  }
+
+  &--good {
+    color: $euiColorSuccessText;
+  }
+
+  &--flat {
+    color: $euiTextSubduedColor;
+  }
+}
+
+.agtEvlTally {
+  display: inline-flex;
+  gap: $euiSizeS;
+  font-size: $euiFontSizeXS;
+  vertical-align: middle;
+
+  &__item {
+    display: inline-flex;
+    align-items: center;
+    gap: $euiSizeXS / 2;
+  }
+
+  &__dot {
+    display: inline-block;
+    width: $euiSizeS;
+    height: $euiSizeS;
+    border-radius: 50%;
+
+    &--pass {
+      background: $euiColorSuccess;
+    }
+
+    &--fail {
+      background: $euiColorDanger;
+    }
+
+    &--error {
+      background: $euiColorWarning;
+    }
+
+    &--scored {
+      border: $euiBorderWidthThick solid $euiColorMediumShade;
+    }
+  }
+}
+
+.agtEvlMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $euiSizeS $euiSizeL;
+  align-items: center;
+  margin-bottom: $euiSizeM;
+  font-size: $euiFontSizeS;
+}
+
+.agtEvlFacet {
+  width: $euiSizeXL * 10;
+
+  &__error {
+    padding: $euiSizeS;
+  }
+}
+
+.agtEvlScale {
+  margin-top: $euiSizeS;
+
+  &__track {
+    position: relative;
+    height: $euiSizeXS;
+    border-radius: $euiSizeXS;
+    background: $euiColorLightShade;
+  }
+
+  &__mark {
+    position: absolute;
+    top: -$euiSizeXS;
+    width: $euiBorderWidthThick;
+    height: $euiSizeM;
+    background: $euiColorPrimary;
+  }
+}
+
+.agtEvlCaseResults {
+  padding: $euiSizeXS $euiSizeM $euiSizeS $euiSizeXL;
+
+  &__row {
+    display: grid;
+    grid-template-columns: 160px 120px 70px 1fr;
+    gap: $euiSizeS;
+    align-items: baseline;
+    padding: $euiSizeXS 0;
+    font-size: $euiFontSizeS;
+
+    &--compact {
+      grid-template-columns: 130px 120px 1fr;
+      font-size: $euiFontSizeXS;
+    }
+  }
+}
+
+.agtEvlTraceCol {
+  min-width: 0;
+}
+
+.agtEvlSpans {
+  margin: $euiSizeS 0;
+  border: $euiBorderThin;
+  border-radius: $euiBorderRadius;
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 30% 64px;
+    gap: $euiSizeS;
+    align-items: center;
+    padding: $euiSizeXS $euiSizeS;
+    font-size: $euiFontSizeXS;
+    border-bottom: $euiBorderThin;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &--only {
+      background: $euiColorWarningBackground;
+    }
+  }
+
+  &__name {
+    display: flex;
+    gap: $euiSizeXS;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  &__bar {
+    position: relative;
+    height: $euiSizeS;
+    background: $euiColorLightestShade;
+  }
+
+  &__fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: $euiColorVis1;
+  }
+
+  &__dur {
+    text-align: right;
+  }
+}
+
+.agtEvlJudge {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+
+  &--pass {
+    color: $euiColorSuccessText;
+  }
+
+  &--fail {
+    color: $euiColorDangerText;
+  }
+
+  &--mixed {
+    color: $euiColorWarningText;
+  }
+
+  &--error {
+    color: $euiColorWarningText;
+  }
+
+  &--scored {
+    color: $euiTextSubduedColor;
+  }
+}
+
+.agtEvlJudgeTip {
+  display: block;
+}
+
+.agtEvlChartMarker {
+  font-size: $euiFontSizeXS;
+  font-weight: $euiFontWeightSemiBold;
+  color: $euiTextColor;
+}

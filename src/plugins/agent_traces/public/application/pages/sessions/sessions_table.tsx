@@ -6,14 +6,11 @@
 import React, { useMemo, useState } from 'react';
 import { i18n } from '@osd/i18n';
 import { EuiBadge, EuiIcon, EuiLink, EuiProgress, EuiToolTip } from '@elastic/eui';
-import { useAgentEvalsEnabled } from '../../evaluations/eval_feature_flag';
 import { TableHeaderColumn } from '../../../components/data_table/table_header/table_header_column';
 import { TokenIcon } from '../../../components/data_table/table_cell/trace_utils/trace_utils';
 import { SortOrder } from '../../../helpers/data_table_helper';
 import { SessionRow, formatSessionDuration } from './session_utils';
 import { setTitleIfTruncated, useLazyRows } from './lazy_rows';
-import { useSessionEvaluations } from './use_session_evaluations';
-import { EvalSummaryCell } from '../traces/flyout/trace_evaluations';
 
 const DEFAULT_SORT: SortOrder[] = [['startTime', 'desc']];
 
@@ -34,8 +31,7 @@ type SessionColumnKey =
   | 'durationMs'
   | 'userId'
   | 'totalTraces'
-  | 'totalTokens'
-  | 'evaluations';
+  | 'totalTokens';
 
 interface SessionColumn {
   key: SessionColumnKey;
@@ -54,8 +50,8 @@ export const TokensBadge: React.FC<{ tokens: number | null }> = ({ tokens }) =>
   );
 
 const compareSessions = (a: SessionRow, b: SessionRow, key: SessionColumnKey): number => {
-  const va = (a as unknown as Record<string, unknown>)[key];
-  const vb = (b as unknown as Record<string, unknown>)[key];
+  const va = a[key];
+  const vb = b[key];
   if (va === vb) return 0;
   if (va === null || va === undefined) return 1; // missing values last
   if (vb === null || vb === undefined) return -1;
@@ -71,9 +67,6 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
   selectedSessionId,
 }) => {
   const [sortOrder, setSortOrder] = useState<SortOrder[]>(DEFAULT_SORT);
-  const sessionIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
-  const sessionEvals = useSessionEvaluations(sessionIds);
-  const evalsEnabled = useAgentEvalsEnabled();
 
   // User ID comes from the optional `user.id` attribute; hide the column when no session has one.
   const hasUserIds = useMemo(() => sessions.some((s) => !!s.userId), [sessions]);
@@ -137,17 +130,10 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
           defaultMessage: 'Total Tokens',
         }),
         sortable: true,
-      },
-      {
-        key: 'evaluations',
-        label: i18n.translate('agentTraces.sessions.column.evaluations', {
-          defaultMessage: 'Evaluations',
-        }),
-        sortable: false,
       }
     );
-    return evalsEnabled ? cols : cols.filter((c) => c.key !== 'evaluations');
-  }, [hasUserIds, evalsEnabled]);
+    return cols;
+  }, [hasUserIds]);
 
   const sortedSessions = useMemo(() => {
     const [field, direction] = (sortOrder[0] ?? DEFAULT_SORT[0]) as [SessionColumnKey, string];
@@ -181,14 +167,6 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
         return session.totalTraces.toLocaleString();
       case 'totalTokens':
         return <TokensBadge tokens={session.totalTokens} />;
-      case 'evaluations': {
-        const results = sessionEvals.get(session.sessionId) ?? [];
-        return results.length ? (
-          <EvalSummaryCell results={results} onOpen={() => onSessionClick(session)} />
-        ) : (
-          '—'
-        );
-      }
       case 'sessionId':
         return (
           <span className="agtSessionsTable__sessionId">
@@ -216,8 +194,7 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
           </span>
         );
       default: {
-        const text =
-          ((session as unknown as Record<string, unknown>)[column.key] as string | null) ?? '';
+        const text = (session[column.key] as string | null) ?? '';
         return text ? (
           <span onMouseEnter={wrapCellText ? undefined : setTitleIfTruncated(text)}>{text}</span>
         ) : (

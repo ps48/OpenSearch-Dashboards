@@ -4,24 +4,6 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { getEvalTraceFilter, setEvalTraceFilter } from '../../evaluations/eval_trace_filter_store';
-
-/** The deep-link parameters that open one trace or session flyout. */
-export const DEEP_LINK_PARAMS = ['openTraceId', 'openSessionId'];
-
-/**
- * Opening a trace or a session from a link starts from the unfiltered table: a persisted
- * "traces where an evaluation fails" filter (from an earlier visit) is always cleared first.
- * Run on app mount, before the first query.
- * Returns whether a filter was cleared.
- */
-export const clearEvalTraceFilterForDeepLink = (hash = window.location.hash): boolean => {
-  const params = new URLSearchParams(hash.split('?')[1] ?? '');
-  const opensOne = DEEP_LINK_PARAMS.some((name) => !!params.get(name));
-  if (!opensOne || !getEvalTraceFilter()) return false;
-  setEvalTraceFilter(undefined);
-  return true;
-};
 
 /**
  * Reads a one-shot deep-link parameter from the hash query (`#/?...&openTraceId=<id>`) and

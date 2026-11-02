@@ -4,386 +4,307 @@
  */
 
 import {
-  RESULTS_PAGE_SIZES,
+  DEFAULT_RESULTS_SORT,
+  EMPTY_RESULTS_FILTERS,
+  NO_AGENT,
+  buildAgentEvaluationsQuery,
+  buildAgentSuitesQuery,
+  buildAgentTrendQuery,
+  buildAgentsQuery,
+  buildCaseResultsQuery,
+  buildCompareRunsQuery,
+  buildFacetQuery,
+  buildResultsCountQuery,
   buildResultsPageQuery,
-  fetchResultsPage,
-  buildDistinctAggQuery,
-  buildMatchingTraceIdsQuery,
-  buildSummaryAggQuery,
-  buildTrendAggQuery,
-  bucketsFromAgg,
-  executeEvalPpl,
-  kpisFromAgg,
-  missingFieldOf,
-  spanUnit,
-  summariesFromAgg,
-  toAggRows,
-  trendFromAgg,
-  clearMissingFieldsCache,
-  fetchFacets,
+  buildRunCasesQuery,
+  buildSuiteRunsQuery,
+  buildTraceResultsQuery,
+  buildTraceSpansQuery,
+  buildTracesTallyQuery,
+  trendStep,
 } from './eval_ppl';
-import { EVAL_FIELDS } from './eval_data';
-import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 
-const F = EVAL_FIELDS;
+const I = 'evals-*';
+const NONE = EMPTY_RESULTS_FILTERS;
+const BASE = ['source = evals-*', "where `eventName` = 'gen_ai.evaluation.result'"];
+const VERD =
+  "eval verdict = case(isnotnull(`attributes.error.type`), 'error', " +
+  "`attributes.gen_ai.evaluation.score.label` = 'pass', 'pass', " +
+  "`attributes.gen_ai.evaluation.score.label` = 'fail', 'fail' else 'scored')";
 
-const row = (r: Record<string, unknown>) => ({
-  [F.name]: 'answer_quality',
-  [F.level]: 'span',
-  [F.source]: 'opensearch-sdk',
-  n: 1,
-  nv: 1,
-  sv: 4,
-  vmin: 4,
-  vmax: 4,
-  evl_verdict: 'pass',
-  ...r,
-});
-
-describe('aggregation queries', () => {
-  it('groups by what the verdict reads, not by a verdict computed in the query', () => {
-    const q = buildSummaryAggQuery({ names: ['a'] }, { index: 'evals-*' });
-    expect(q).toMatch(/^source = evals-\* \| where `eventName` = 'gen_ai.evaluation.result'/);
-    expect(q).not.toContain('evl_verdict');
-    expect(q).toContain('| eval evl_vb0 = case(');
-    expect(q).toContain('count(`attributes.gen_ai.evaluation.score.value`) as nv');
-    expect(q).toMatch(
-      /by `attributes\.gen_ai\.evaluation\.name`, .*`attributes\.error\.type`, .*evl_vb0, evl_tc \| head 10000$/
+/** The exact PPL of every screen (each was run on a cluster with the P0 data contract). */
+describe('evaluation PPL', () => {
+  it('Agents: one aggregation by agent, version and verdict', () => {
+    expect(buildAgentsQuery(I, 'all')).toBe(
+      [
+        ...BASE,
+        VERD,
+        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict',
+        'head 10000',
+      ].join(' | ')
     );
   });
 
-  it('buckets time with span() and leaves out fields the index lacks', () => {
-    const q = buildTrendAggQuery({}, 5 * 60 * 1000, {
-      missing: new Set([F.scoreMin, F.scoreMax, F.direction]),
-    });
-    expect(q).toContain(
-      'by span(`@timestamp`, 5m) as t, `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.evaluation.score.label`'
+  it('Agents: Online and search pushed down', () => {
+    expect(buildAgentsQuery(I, 'online', "o'brien")).toBe(
+      [
+        ...BASE,
+        'where isnull(`attributes.test.suite.run.id`)',
+        "where like(`attributes.gen_ai.agent.name`, '%o\\'brien%')",
+        VERD,
+        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict',
+        'head 10000',
+      ].join(' | ')
     );
-    expect(q).not.toContain(F.scoreMin);
   });
 
-  it('filters verdicts with the where it is given', () => {
-    const q = buildDistinctAggQuery({ failingOnly: true }, { verdictWhere: '`x` = 1' });
-    expect(q).toContain('| where `x` = 1 | stats count() as n, distinct_count(');
-    expect(buildDistinctAggQuery({ failingOnly: true })).not.toContain('evl_');
-  });
-
-  it('lists distinct traces of matching results, one more than the cap', () => {
-    const q = buildMatchingTraceIdsQuery({ names: ['a'], valueBelow: 3 }, 500);
-    expect(q).toContain('`attributes.gen_ai.evaluation.score.value` < 3');
-    expect(q).toContain(
-      'stats max(`@timestamp`) as last by `attributes.derived.evaluation.target_trace_id`'
+  it('Agent, Evaluations table: by evaluation, version and verdict', () => {
+    expect(buildAgentEvaluationsQuery(I, 'travel_planner', 'all')).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'travel_planner'",
+        VERD,
+        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict',
+        'head 10000',
+      ].join(' | ')
     );
-    expect(q).toMatch(/head 501$/);
   });
 
-  it('writes PPL span units', () => {
-    expect(spanUnit(60 * 1000)).toBe('1m');
-    expect(spanUnit(3 * 3600 * 1000)).toBe('3h');
-    expect(spanUnit(7 * 24 * 3600 * 1000)).toBe('7d');
-  });
-});
-
-describe('aggregated rows', () => {
-  const rows = toAggRows([
-    row({
-      [F.label]: 'correct',
-      n: 20,
-      nv: 20,
-      sv: 90,
-      vmin: 4,
-      vmax: 5,
-      [F.scoreMin]: 1,
-      [F.scoreMax]: 5,
-    }),
-    row({
-      [F.label]: 'incorrect',
-      n: 5,
-      nv: 5,
-      sv: 5,
-      vmin: 1,
-      vmax: 1,
-      evl_verdict: 'fail',
-      [F.scoreMin]: 1,
-      [F.scoreMax]: 5,
-    }),
-    row({
-      [F.name]: 'coverage',
-      [F.label]: 'Full',
-      n: 10,
-      nv: 10,
-      sv: 10,
-      vmin: 1,
-      vmax: 1,
-      evl_verdict: 'neutral',
-    }),
-    row({
-      [F.name]: 'coverage',
-      [F.label]: null,
-      n: 2,
-      nv: 0,
-      sv: 0,
-      vmin: null,
-      vmax: null,
-      evl_verdict: 'error',
-    }),
-  ]);
-
-  it('adds up counts, verdicts, means and labels per evaluation, most failing first', () => {
-    const [aq, coverage] = summariesFromAgg(rows, []);
-    expect(aq).toMatchObject({
-      name: 'answer_quality',
-      count: 25,
-      passCount: 20,
-      failCount: 5,
-      neutralCount: 0,
-      mean: 95 / 25,
-      levels: ['span'],
-    });
-    // (4.5 - 1) / 4 for 20 results, 0 for 5
-    expect(aq.normalizedMean).toBeCloseTo((0.875 * 20) / 25);
-    expect(aq.labels).toEqual([
-      { label: 'correct', count: 20, outcome: 'pass' },
-      { label: 'incorrect', count: 5, outcome: 'fail' },
-    ]);
-    expect(coverage).toMatchObject({ count: 12, neutralCount: 10, errorCount: 2, passCount: 0 });
-    // values seen within 0..1 read as a 0..1 scale
-    expect(coverage.normalizedMean).toBe(1);
-  });
-
-  it('computes KPIs: pass rate without neutral results and errors', () => {
-    const kpis = kpisFromAgg(summariesFromAgg(rows, []), { traces: 7, sessions: 2 });
-    expect(kpis).toEqual({
-      results: 37,
-      evaluators: 2,
-      passRate: 0.8,
-      failing: 5,
-      errors: 2,
-      scored: 10,
-      traces: 7,
-      sessions: 2,
-    });
-  });
-
-  it('builds outcome buckets and a normalized trend from time rows', () => {
-    const timed = toAggRows([
-      row({
-        t: '2026-10-26 08:00:00',
-        n: 3,
-        nv: 3,
-        sv: 15,
-        vmin: 5,
-        vmax: 5,
-        [F.scoreMin]: 1,
-        [F.scoreMax]: 5,
-      }),
-      row({
-        t: '2026-10-26 08:00:00',
-        n: 1,
-        nv: 1,
-        sv: 1,
-        vmin: 1,
-        vmax: 1,
-        evl_verdict: 'fail',
-        [F.scoreMin]: 1,
-        [F.scoreMax]: 5,
-      }),
-      row({
-        t: '2026-10-26 08:00:00',
-        [F.name]: 'latency',
-        n: 2,
-        nv: 2,
-        sv: 30,
-        vmin: 10,
-        vmax: 20,
-        evl_verdict: 'neutral',
-      }),
-    ]);
-    const x = Date.parse('2026-10-26T08:00:00Z');
-    const { all, byName } = bucketsFromAgg(timed);
-    expect(all).toEqual(
-      expect.arrayContaining([
-        { x, outcome: 'pass', count: 3 },
-        { x, outcome: 'fail', count: 1 },
-        { x, outcome: 'neutral', count: 2 },
-      ])
+  it('Agent, Evaluations table: results without an agent name, offline', () => {
+    expect(buildAgentEvaluationsQuery(I, NO_AGENT, 'offline')).toBe(
+      [
+        ...BASE,
+        'where isnull(`attributes.gen_ai.agent.name`)',
+        'where isnotnull(`attributes.test.suite.run.id`)',
+        VERD,
+        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict',
+        'head 10000',
+      ].join(' | ')
     );
-    expect(byName.get('latency')).toEqual([{ x, outcome: 'neutral', count: 2 }]);
-    // latency has no known range: not on the normalized trend
-    expect(trendFromAgg(timed, [])).toEqual([{ x, name: 'answer_quality', value: 0.75, count: 4 }]);
   });
 
-  it("uses the producer's score range and direction", () => {
-    const timed = toAggRows([
-      row({
-        t: '2026-10-26 08:00:00',
-        [F.name]: 'latency',
-        [F.scoreMin]: 0,
-        [F.scoreMax]: 10,
-        [F.direction]: 'minimize',
-        n: 2,
-        nv: 2,
-        sv: 4,
-        vmin: 2,
-        vmax: 2,
-      }),
-    ]);
-    expect(trendFromAgg(timed)[0].value).toBeCloseTo(0.8);
-  });
-});
-
-describe('one query on the index pattern', () => {
-  it('runs once on the pattern and drops a field PPL does not know, for a while', async () => {
-    clearMissingFieldsCache();
-    const executeQuery = jest
-      .fn()
-      .mockRejectedValueOnce({
-        body: { message: '{"error":{"reason":"Field [attributes.error.type] not found."}}' },
-      })
-      .mockResolvedValue({ schema: [{ name: 'n' }], datarows: [[2]] });
-    const ppl = { executeQuery } as unknown as PPLService;
-    const build = jest.fn(
-      (missing: ReadonlySet<string>, source: string) => `${source}:${Array.from(missing).join(',')}`
+  it('Agent, Pass rate over time: pass and fail per bucket', () => {
+    expect(buildAgentTrendQuery(I, 'travel_planner', 'online', '3h')).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'travel_planner'",
+        'where isnull(`attributes.test.suite.run.id`)',
+        VERD,
+        "where verdict = 'pass' or verdict = 'fail'",
+        'stats count() as n by span(`@timestamp`, 3h) as t, verdict',
+        'head 10000',
+      ].join(' | ')
     );
-    expect(await executeEvalPpl(ppl, 'evals-*', build)).toEqual([{ n: 2 }]);
-    expect(build).toHaveBeenLastCalledWith(new Set([F.errorType]), 'evals-*');
-    expect(executeQuery).toHaveBeenCalledTimes(2);
-    // Remembered: the next query names it no more.
-    await executeEvalPpl(ppl, 'evals-*', build);
-    expect(executeQuery).toHaveBeenCalledTimes(3);
-    expect(executeQuery.mock.calls[2][1]).toBe(`evals-*:${F.errorType}`);
   });
 
-  it('reads nothing when a field the query cannot do without is missing', async () => {
-    clearMissingFieldsCache();
-    const executeQuery = jest.fn().mockRejectedValue(new Error('Field [run.id] not found.'));
-    const ppl = { executeQuery } as unknown as PPLService;
-    expect(await executeEvalPpl(ppl, 'evals-*', () => 'q', { emptyWithout: ['run.id'] })).toEqual(
-      []
+  it('Agent, Suites tab: by suite, run, version and verdict', () => {
+    expect(buildAgentSuitesQuery(I, 'support_bot')).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'support_bot'",
+        'where isnotnull(`attributes.test.suite.run.id`)',
+        VERD,
+        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.test.suite.run.id`, `attributes.gen_ai.agent.version`, verdict',
+        'head 10000',
+      ].join(' | ')
     );
-    await expect(executeEvalPpl(ppl, 'evals-*', () => 'q')).rejects.toThrow('run.id');
   });
 
-  it('reads the missing field from a PPL error', () => {
-    expect(missingFieldOf(new Error('Field [x.y] not found.'))).toBe('x.y');
-    expect(missingFieldOf(new Error('boom'))).toBeUndefined();
-  });
-});
-
-describe('Results paging', () => {
-  it('pages in PPL with head from, sorted by the column', () => {
-    expect(buildResultsPageQuery({}, { field: 'time', direction: 'desc' }, 50, 25)).toMatch(
-      /\| sort - `@timestamp` \| head 25 from 50$/
+  it('Suite: by run, agent, version, CI URL and verdict', () => {
+    expect(buildSuiteRunsQuery(I, 'golden')).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.name` = 'golden'",
+        VERD,
+        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.cicd.pipeline.run.url.full`, verdict',
+        'head 10000',
+      ].join(' | ')
     );
-    expect(buildResultsPageQuery({}, { field: 'name', direction: 'asc' }, 0, 25)).toMatch(
-      /\| sort `attributes\.gen_ai\.evaluation\.name`, - `@timestamp` \| head 25$/
+  });
+
+  it('Run: by case, evaluation, verdict and trace', () => {
+    expect(buildRunCasesQuery(I, 'run_1')).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'run_1'",
+        VERD,
+        'stats count() as n, min(`@timestamp`) as t0, max(`@timestamp`) as t1 by `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.cicd.pipeline.run.url.full`, `attributes.test.case.id`, `attributes.test.case.name`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`',
+        'head 10000',
+      ].join(' | ')
     );
-    const byResult = buildResultsPageQuery({}, { field: 'result', direction: 'asc' }, 0, 25, {
-      verdictWhere: '`x` = 1',
-    });
-    expect(byResult).not.toContain('case(');
-    expect(byResult).toMatch(
-      /where `x` = 1 \| sort `attributes\.gen_ai\.evaluation\.score\.value`, - `@timestamp` \| head 25$/
+  });
+
+  it('Run: an expanded case reads at most 100 documents', () => {
+    expect(buildCaseResultsQuery(I, 'run_1', 'c-1')).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'run_1' and `attributes.test.case.id` = 'c-1'",
+        'head 100',
+      ].join(' | ')
     );
-    expect(RESULTS_PAGE_SIZES.every((size) => 10000 % size === 0)).toBe(true);
   });
 
-  /** A PPL service answering verdict group queries with `groups`, other queries with one row. */
-  const pplWithGroups = (groups: Array<Record<string, unknown>>) => {
-    const executeQuery = jest.fn().mockImplementation((_d: unknown, query: string) => {
-      if (query.includes('stats count() as n by')) {
-        const cols = Object.keys(groups[0] ?? { n: 0 });
-        return Promise.resolve({
-          schema: cols.map((name) => ({ name })),
-          datarows: groups.map((g) => cols.map((c) => g[c])),
-        });
-      }
-      return Promise.resolve({
-        schema: [{ name: '@timestamp' }, { name: F.name }],
-        datarows: [['2026-10-28 10:00:00', 'answer_quality']],
-      });
-    });
-    return { executeQuery, ppl: { executeQuery } as unknown as PPLService };
-  };
-  const group = (r: Record<string, unknown>) => ({
-    n: 1,
-    [F.name]: 'answer_quality',
-    [F.label]: null,
-    [F.errorType]: null,
-    [F.assessment]: null,
-    [F.direction]: null,
-    [F.source]: 'opensearch-sdk',
-    evl_vb0: -1,
-    evl_tc: -2,
-    ...r,
-  });
-
-  it('reads the filter options with their verdicts from one aggregation', async () => {
-    const { executeQuery, ppl } = pplWithGroups([
-      group({ n: 3, [F.level]: 'trace', [F.assessment]: 'fail' }),
-      group({ n: 2, [F.level]: 'trace', [F.assessment]: 'pass', [F.source]: 'agentcore' }),
-    ]);
-    const facets = await fetchFacets(ppl, 'evals-*');
-    expect(executeQuery).toHaveBeenCalledTimes(1);
-    expect(executeQuery.mock.calls[0][1]).toMatch(/^source = evals-\* \|/);
-    expect(facets).toEqual([
-      {
-        name: 'answer_quality',
-        level: 'trace',
-        source: 'opensearch-sdk',
-        outcome: 'fail',
-        count: 3,
-      },
-      { name: 'answer_quality', level: 'trace', source: 'agentcore', outcome: 'pass', count: 2 },
-    ]);
-  });
-
-  it('reads a page of one query without a verdict filter', async () => {
-    clearMissingFieldsCache();
-    const { executeQuery, ppl } = pplWithGroups([]);
-    const page = await fetchResultsPage(ppl, 'evals-*', {}, DEFAULT_SORT, 400, 25);
-    expect(executeQuery).toHaveBeenCalledTimes(1);
-    expect(executeQuery.mock.calls[0][1]).toMatch(/sort - `@timestamp` \| head 25 from 10000$/);
-    expect(page.rows).toHaveLength(1);
-  });
-
-  it('turns a verdict filter into a where on the verdict groups', async () => {
-    clearMissingFieldsCache();
-    const { executeQuery, ppl } = pplWithGroups([
-      group({ n: 3, [F.assessment]: 'fail' }),
-      group({ n: 5, [F.assessment]: 'pass' }),
-    ]);
-    const page = await fetchResultsPage(ppl, 'evals-*', { failingOnly: true }, DEFAULT_SORT, 0, 25);
-    expect(executeQuery).toHaveBeenCalledTimes(2);
-    expect(executeQuery.mock.calls[1][1]).toContain(
-      "where (`attributes.gen_ai.evaluation.name` = 'answer_quality' and `attributes.opensearch.evaluation.assessment` = 'fail') | sort - `@timestamp` | head 25"
+  it('Compare runs: one aggregation over both runs', () => {
+    expect(buildCompareRunsQuery(I, 'run_a', 'run_b')).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'run_a' or `attributes.test.suite.run.id` = 'run_b'",
+        VERD,
+        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.test.case.name`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`',
+        'head 10000',
+      ].join(' | ')
     );
-    expect(page.rows).toHaveLength(1);
   });
 
-  it('reads nothing when no group has the verdict', async () => {
-    clearMissingFieldsCache();
-    const { executeQuery, ppl } = pplWithGroups([group({ [F.assessment]: 'pass' })]);
-    const page = await fetchResultsPage(ppl, 'evals-*', { failingOnly: true }, DEFAULT_SORT, 0, 25);
-    expect(executeQuery).toHaveBeenCalledTimes(1);
-    expect(page.rows).toHaveLength(0);
+  it('Compare traces: spans of both traces', () => {
+    expect(buildTraceSpansQuery('spans-*', ['t1', 't2'])).toBe(
+      [
+        'source = spans-*',
+        "where `traceId` = 't1' or `traceId` = 't2'",
+        'sort startTime',
+        'head 2000',
+      ].join(' | ')
+    );
   });
 
-  it('by Result, pages each verdict apart: failures first, then the next verdict', async () => {
-    clearMissingFieldsCache();
-    const { executeQuery, ppl } = pplWithGroups([
-      group({ n: 30, [F.assessment]: 'fail' }),
-      group({ n: 4, [F.errorType]: 'Timeout' }),
-      group({ n: 50, [F.assessment]: 'pass' }),
-    ]);
-    await fetchResultsPage(ppl, 'evals-*', {}, { field: 'result', direction: 'asc' }, 1, 25);
-    const queries = executeQuery.mock.calls.map((c) => c[1] as string).slice(1);
-    // Rows 25..49: failures 25..29, errors 0..3, passes 0..15.
-    expect(queries).toHaveLength(3);
-    expect(queries[0]).toMatch(/assessment` = 'fail'.*head 5 from 25$/);
-    expect(queries[1]).toMatch(/error\.type` = 'Timeout'.*head 4$/);
-    expect(queries[2]).toMatch(/assessment` = 'pass'.*head 16$/);
+  it('Trace flyout: results of one trace', () => {
+    expect(buildTraceResultsQuery(I, ['t1'])).toBe(
+      [...BASE, "where `traceId` = 't1'", 'head 200'].join(' | ')
+    );
+  });
+
+  it('Agent Traces column: a tally per trace of the page', () => {
+    expect(buildTracesTallyQuery(I, ['t1', 't2'])).toBe(
+      [
+        ...BASE,
+        "where `traceId` = 't1' or `traceId` = 't2'",
+        VERD,
+        'stats count() as n by `traceId`, verdict',
+        'head 10000',
+      ].join(' | ')
+    );
+  });
+
+  it('Agent Traces spans column: a tally per span', () => {
+    expect(buildTracesTallyQuery(I, ['t1'], true)).toBe(
+      [
+        ...BASE,
+        "where `traceId` = 't1'",
+        VERD,
+        'stats count() as n by `traceId`, `spanId`, verdict',
+        'head 10000',
+      ].join(' | ')
+    );
+  });
+
+  it('Results: one page, newest first', () => {
+    expect(buildResultsPageQuery(I, NONE, DEFAULT_RESULTS_SORT, 0)).toBe(
+      [...BASE, 'sort - `@timestamp`', 'head 25 from 0'].join(' | ')
+    );
+  });
+
+  it('Results: every filter pushed down, sort by score, page 3', () => {
+    expect(
+      buildResultsPageQuery(
+        I,
+        {
+          ...NONE,
+          agents: ['a1', NO_AGENT],
+          names: ['helpfulness'],
+          verdicts: ['fail', 'scored'],
+          source: 'online',
+          q: 'vague',
+        },
+        { field: 'score', direction: 'asc' },
+        2
+      )
+    ).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'a1' or isnull(`attributes.gen_ai.agent.name`)",
+        "where `attributes.gen_ai.evaluation.name` = 'helpfulness'",
+        'where isnull(`attributes.test.suite.run.id`)',
+        "where like(`attributes.gen_ai.evaluation.explanation`, '%vague%')",
+        VERD,
+        "where verdict = 'fail' or verdict = 'scored'",
+        'sort `attributes.gen_ai.evaluation.score.value`',
+        'head 25 from 50',
+      ].join(' | ')
+    );
+  });
+
+  it('Results: locked to an agent (agent filter ignored), sort by agent', () => {
+    expect(
+      buildResultsPageQuery(
+        I,
+        { ...NONE, lockAgent: 'a1', agents: ['ignored'], source: 'offline' },
+        { field: 'agent', direction: 'desc' },
+        0
+      )
+    ).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'a1'",
+        'where isnotnull(`attributes.test.suite.run.id`)',
+        'sort - `attributes.gen_ai.agent.name`',
+        'head 25 from 0',
+      ].join(' | ')
+    );
+  });
+
+  it('Results: total', () => {
+    expect(buildResultsCountQuery(I, NONE)).toBe([...BASE, 'stats count() as total'].join(' | '));
+  });
+
+  it('Results: total with a verdict filter', () => {
+    expect(buildResultsCountQuery(I, { ...NONE, verdicts: ['fail'] })).toBe(
+      [...BASE, VERD, "where verdict = 'fail'", 'stats count() as total'].join(' | ')
+    );
+  });
+
+  it('Results: Evaluation menu values (own filter left out)', () => {
+    expect(buildFacetQuery(I, { ...NONE, names: ['x'], agents: ['a1'] }, 'names')).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'a1'",
+        'stats count() as n by `attributes.gen_ai.evaluation.name`',
+        'sort - n',
+        'head 50',
+      ].join(' | ')
+    );
+  });
+
+  it('Results: Verdict menu values', () => {
+    expect(buildFacetQuery(I, { ...NONE, verdicts: ['pass'], names: ['x'] }, 'verdicts')).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.evaluation.name` = 'x'",
+        VERD,
+        'stats count() as n by verdict',
+        'sort - n',
+        'head 50',
+      ].join(' | ')
+    );
+  });
+
+  it('Results: Agent menu values', () => {
+    expect(buildFacetQuery(I, { ...NONE, lockAgent: 'a1' }, 'agents')).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'a1'",
+        'stats count() as n by `attributes.gen_ai.agent.name`',
+        'sort - n',
+        'head 50',
+      ].join(' | ')
+    );
+  });
+
+  it('picks a bucket that keeps a range to about 60 points', () => {
+    const H = 3600e3;
+    expect(trendStep(H).step).toBe('1m');
+    expect(trendStep(24 * H).step).toBe('1h');
+    expect(trendStep(7 * 24 * H).step).toBe('3h');
+    expect(trendStep(30 * 24 * H).step).toBe('12h');
+    expect(trendStep(365 * 24 * H).step).toBe('1w');
   });
 });
-
-const DEFAULT_SORT = { field: 'time', direction: 'desc' } as const;

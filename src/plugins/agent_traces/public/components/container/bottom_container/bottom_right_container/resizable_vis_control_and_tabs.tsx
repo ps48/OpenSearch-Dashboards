@@ -26,7 +26,6 @@ import {
 import { useErrorFilterClick } from '../../../../application/pages/traces/hooks/use_error_filter_click';
 import { TraceMetricsBar } from '../../../../application/pages/traces/trace_metrics_bar';
 import { TraceFlyoutProvider } from '../../../../application/pages/traces/flyout/trace_flyout_context';
-import { TracesEvalFilterProvider } from '../../../../application/pages/traces/eval_filter_provider';
 import { getVisualizationBuilder } from '../../../visualizations/visualization_builder_singleton';
 import { selectActiveTab } from '../../../../application/utils/state_management/selectors';
 import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
@@ -51,16 +50,14 @@ export const ResizableVisControlAndTabs = () => {
 
   const tabsContent = (
     <TraceMetricsContext.Provider value={metricsResult}>
-      <TracesEvalFilterProvider>
-        <TraceFlyoutProvider>
-          <TraceMetricsBar
-            metrics={metricsResult.metrics}
-            error={metricsResult.error}
-            onErrorClick={handleErrorClick}
-          />
-          <AgentTracesTabs />
-        </TraceFlyoutProvider>
-      </TracesEvalFilterProvider>
+      <TraceFlyoutProvider>
+        <TraceMetricsBar
+          metrics={metricsResult.metrics}
+          error={metricsResult.error}
+          onErrorClick={handleErrorClick}
+        />
+        <AgentTracesTabs />
+      </TraceFlyoutProvider>
     </TraceMetricsContext.Provider>
   );
 

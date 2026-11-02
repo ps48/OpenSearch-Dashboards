@@ -36,8 +36,8 @@ import { GenAiAttributes } from './genai_attributes';
 import { SpanLogsTab } from '../../../../../../explore/public';
 import { TraceLogs, useSpanLogs } from './use_trace_logs';
 import { TraceLogsNotices } from './trace_logs_notices';
-import { EvalResultItem } from './trace_evaluations';
-import { EvalResult } from '../../../evaluations/eval_data';
+import { EvalResultItem, TraceResultFlyout } from './trace_evaluations';
+import { EvalResult } from '../../../evaluations/eval_model';
 
 export const formatJsonOrString = (value: string | undefined): string => {
   if (!value || value === '—')
@@ -79,6 +79,7 @@ export const FlyoutDetailPanel: React.FC<FlyoutDetailPanelProps> = ({
   spanEvaluations,
 }) => {
   const [ioMode, setIoMode] = useState<MessageViewMode>('formatted');
+  const [openResult, setOpenResult] = useState<EvalResult>();
   const spanDatasetLogs = useSpanLogs(
     traceLogs ?? NO_TRACE_LOGS,
     selectedTraceRow?.traceId ?? '',
@@ -140,7 +141,7 @@ export const FlyoutDetailPanel: React.FC<FlyoutDetailPanelProps> = ({
             }
             extraAction={
               <EuiBadge
-                color={spanEvaluations.some((r) => r.outcome === 'fail') ? 'danger' : 'hollow'}
+                color={spanEvaluations.some((r) => r.verdict === 'fail') ? 'danger' : 'hollow'}
                 data-test-subj="agentTracesSpanEvalsCount"
               >
                 {spanEvaluations.length}
@@ -150,9 +151,12 @@ export const FlyoutDetailPanel: React.FC<FlyoutDetailPanelProps> = ({
             data-test-subj="agentTracesSpanEvalsAccordion"
           >
             {spanEvaluations.map((r) => (
-              <EvalResultItem key={r.id} result={r} />
+              <EvalResultItem key={r.id} result={r} onOpen={() => setOpenResult(r)} />
             ))}
           </EuiAccordion>
+          {openResult && (
+            <TraceResultFlyout result={openResult} onClose={() => setOpenResult(undefined)} />
+          )}
           <EuiSpacer size="s" />
         </>
       )}

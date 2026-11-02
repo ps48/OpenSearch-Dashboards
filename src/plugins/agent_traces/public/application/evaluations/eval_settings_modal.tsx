@@ -40,7 +40,7 @@ import {
   saveEvalsConfig,
   sortDatasets,
 } from './eval_dataset';
-import { errorMessage } from './use_eval_data';
+import { errorMessage } from './use_ppl_rows';
 import type { EvaluationsServices } from '.';
 
 type Option = EuiComboBoxOptionOption<DatasetRef>;

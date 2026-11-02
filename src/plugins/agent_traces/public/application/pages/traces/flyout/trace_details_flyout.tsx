@@ -45,15 +45,8 @@ import { FlyoutNavigation } from './trace_flyout_state';
 import { TraceLogsTab } from '../../../../../../explore/public';
 import { useTraceLogs } from './use_trace_logs';
 import { useTraceEvaluations } from './use_trace_evaluations';
-import {
-  EvalHeaderSummary,
-  HeaderVerdictFilter,
-  TraceEvaluationsTab,
-  failingSpanIds,
-  flowEvalDecoration,
-} from './trace_evaluations';
+import { EvalHeaderSummary, TraceEvaluationsTab, flowEvalDecoration } from './trace_evaluations';
 import type { CategorizedSpan } from '../../../../services/span_categorization';
-import { EvalResult } from '../../../evaluations/eval_data';
 import { TraceLogsNotices } from './trace_logs_notices';
 import { readAttribute } from '../hooks/genai_message_preview';
 import { SessionRow } from '../../sessions/session_utils';
@@ -140,8 +133,11 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
     () => sessionIdOf([trace, ...flatNodes.map((node) => node.traceRow)]),
     [trace, flatNodes]
   );
-  // Evaluation results that judged this trace, its spans or its session.
-  const traceEvals = useTraceEvaluations(rootTrace.traceId, sessionId);
+  // Evaluation results of this trace: span results on their span, trace-level ones on the root.
+  const traceEvals = useTraceEvaluations(
+    rootTrace.traceId,
+    fullTree?.[0]?.spanId ?? rootTrace.spanId
+  );
   const evalsEnabled = useAgentEvalsEnabled();
   const [leftTabId, setLeftTabId] = useState(
     initialTab === 'evaluations' && !evalsEnabled ? 'trace-tree' : (initialTab ?? 'trace-tree')
@@ -150,21 +146,7 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
     (spanId: string) => flatNodes.find((node) => node.traceRow?.spanId === spanId)?.label,
     [flatNodes]
   );
-  // Results judging a span of this trace (any level but session), for marks in the tree.
-  const evalsBySpanId = useMemo(() => {
-    const map: Record<string, EvalResult[]> = {};
-    traceEvals.results.forEach((r) => {
-      if (r.level === 'session' || !r.spanId || r.traceId !== rootTrace.traceId) return;
-      (map[r.spanId] = map[r.spanId] ?? []).push(r);
-    });
-    return map;
-  }, [traceEvals.results, rootTrace.traceId]);
-  // The header's FAILED chip: only spans with a failing evaluation stay bright in the tree.
-  const [verdictFilter, setVerdictFilter] = useState<HeaderVerdictFilter | undefined>();
-  const highlightedSpanIds = useMemo(
-    () => (verdictFilter === 'fail' ? failingSpanIds(evalsBySpanId) : undefined),
-    [verdictFilter, evalsBySpanId]
-  );
+  const evalsBySpanId = traceEvals.bySpanId;
   // Trace Map: the judge mark on judged nodes, a red banner and outline on failing ones.
   const decorateFlowNode = useCallback(
     (span: CategorizedSpan) =>
@@ -415,13 +397,6 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
                 <EvalHeaderSummary
                   results={traceEvals.results}
                   onClick={() => setLeftTabId('evaluations')}
-                  activeFilter={verdictFilter}
-                  onToggleFailFilter={() => {
-                    setVerdictFilter((f) => (f === 'fail' ? undefined : 'fail'));
-                    setLeftTabId((tab) =>
-                      tab === 'trace-tree' || tab === 'agent-graph' ? tab : 'trace-tree'
-                    );
-                  }}
                 />
               </EuiText>
             </div>
@@ -466,7 +441,6 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
                           onExpandAll={expandAll}
                           onCollapseAll={collapseAll}
                           evalsBySpanId={evalsBySpanId}
-                          highlightedSpanIds={highlightedSpanIds}
                         />
                       ),
                     },
@@ -548,7 +522,7 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
                             <>
                               <EuiBadge
                                 color={
-                                  traceEvals.results.some((r) => r.outcome === 'fail')
+                                  traceEvals.results.some((r) => r.verdict === 'fail')
                                     ? 'danger'
                                     : 'hollow'
                                 }
@@ -562,14 +536,7 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
                           })}
                         </span>
                       ),
-                      content: (
-                        <TraceEvaluationsTab
-                          evals={traceEvals}
-                          traceId={rootTrace.traceId}
-                          spanLabelOf={spanLabelOf}
-                          onSelectSpan={selectNode}
-                        />
-                      ),
+                      content: <TraceEvaluationsTab evals={traceEvals} spanLabelOf={spanLabelOf} />,
                     },
                   ];
                   const shownLeftTabs = evalsEnabled

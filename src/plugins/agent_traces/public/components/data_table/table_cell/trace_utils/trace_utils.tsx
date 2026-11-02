@@ -35,14 +35,11 @@ import {
   previewSpanOutput,
 } from '../../../../application/pages/traces/hooks/genai_message_preview';
 import { useTraceExpansion } from '../../../../application/pages/traces/trace_expansion_context';
-import {
-  rowResults,
-  useRowEvaluations,
-} from '../../../../application/pages/traces/row_evaluations_context';
+import { useRowEvaluations } from '../../../../application/pages/traces/row_evaluations_context';
 import { BaseRow } from '../../../../application/pages/traces/hooks/tree_utils';
-import { EvalSummaryCell } from '../../../../application/pages/traces/flyout/trace_evaluations';
-/** A row's evaluation results as one summary chip: a trace row counts its trace, session and
- *  span results, a span row its own. The chip lists them and opens the trace's Evaluations. */
+import { EvalTallyCell } from '../../../../application/pages/traces/flyout/trace_evaluations';
+/** A row's evaluation results as a tally: a trace row counts its trace, a span row its span.
+ *  The tally opens the trace's Evaluations tab. */
 const AgentTracesEvaluationsCell: React.FC<{
   traceRow: BaseRow;
   isRoot: boolean;
@@ -50,14 +47,13 @@ const AgentTracesEvaluationsCell: React.FC<{
 }> = ({ traceRow, isRoot, hitId }) => {
   const value = useRowEvaluations();
   const ctx = useTraceExpansion();
-  const results =
+  const tally =
     isRoot && value.mode === 'trace'
-      ? rowResults(value, traceRow)
-      : (value.bySpanId.get(traceRow.spanId) ?? []);
-  if (results.length === 0) return <>—</>;
+      ? value.byTraceId.get(traceRow.traceId)
+      : value.bySpanId.get(traceRow.spanId);
   return (
-    <EvalSummaryCell
-      results={results}
+    <EvalTallyCell
+      tally={tally}
       onOpen={
         ctx?.onRowClick ? () => ctx.onRowClick?.(hitId, { initialTab: 'evaluations' }) : undefined
       }

@@ -31,7 +31,7 @@ import {
 } from './tree_helpers';
 import { TraceTreeToolbar } from './trace_tree_toolbar';
 import { SpanEvalMark } from './trace_evaluations';
-import { EvalResult } from '../../../evaluations/eval_data';
+import { EvalResult } from '../../../evaluations/eval_model';
 import './trace_tree_view.scss';
 
 const TokenIcon: React.FC = () => (
