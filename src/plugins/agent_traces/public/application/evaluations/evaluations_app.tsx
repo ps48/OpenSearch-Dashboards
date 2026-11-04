@@ -44,7 +44,13 @@ import {
 import { EvalContext, EvalScreenContext } from './eval_context';
 import { evalsDataset, evalsLookupDataset, spansDataset, usePplRows } from './use_ppl_rows';
 import { buildRunWindowQuery } from './eval_ppl';
-import { spansIndexOf, useEvalsDataset } from './eval_dataset';
+import {
+  EvalsDatasetConfig,
+  evalsDataSourceOf,
+  spansDataSourceOf,
+  spansIndexOf,
+  useEvalsDataset,
+} from './eval_dataset';
 import {
   openSessionInAgentTraces,
   openTraceInAgentTraces,
@@ -285,11 +291,14 @@ export const runsOfRoute = (route: EvalRoute): string[] =>
  * with one filtered single-row query; other pages read the global range.
  */
 const useRunWindow = (
-  config: { index: string } | undefined,
+  config: EvalsDatasetConfig | undefined,
   runIds: string[],
   refreshKey: number
 ): { window?: TimeRange; loading: boolean; missing: boolean; error?: string } => {
-  const dataset = useMemo(() => (config ? evalsLookupDataset(config.index) : undefined), [config]);
+  const dataset = useMemo(
+    () => (config ? evalsLookupDataset(config.index, evalsDataSourceOf(config)) : undefined),
+    [config]
+  );
   const query = config && runIds.length ? buildRunWindowQuery(config.index, runIds) : undefined;
   const { rows, loading, loaded, error } = usePplRows(dataset, query, undefined, refreshKey);
   const first = parseTime(rows[0]?.first);
@@ -419,8 +428,8 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     () =>
       config
         ? {
-            dataset: evalsDataset(config.index),
-            spans: spansDataset(spansIndexOf(config)),
+            dataset: evalsDataset(config.index, evalsDataSourceOf(config)),
+            spans: spansDataset(spansIndexOf(config), spansDataSourceOf(config)),
             index: config.index,
             timeRange: onRunPage && run.window ? run.window : time.timeRange,
             browseRange,

@@ -10,30 +10,36 @@ import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import { pplResponseToRecords } from '../pages/sessions/session_utils';
 import { PplRecord } from './eval_model';
+import type { DataSourceRef } from './eval_dataset';
 
 /** The evaluations index as a dataset: the PPL service bounds it by `@timestamp`. */
-export const evalsDataset = (index: string): Dataset => ({
-  id: 'agent-evaluations',
+const withDataSource = (dataSource?: DataSourceRef) => (dataSource ? { dataSource } : {});
+
+export const evalsDataset = (index: string, dataSource?: DataSourceRef): Dataset => ({
+  id: `agent-evaluations${dataSource ? `-${dataSource.id}` : ''}`,
   title: index,
   type: 'INDEXES',
   timeFieldName: '@timestamp',
+  ...withDataSource(dataSource),
 });
 
 /**
  * The evaluations index without a time bound: only for lookups filtered to a few ids (a run's
  * window), which must find the run wherever the global range is.
  */
-export const evalsLookupDataset = (index: string): Dataset => ({
-  id: 'agent-evaluations-lookup',
+export const evalsLookupDataset = (index: string, dataSource?: DataSourceRef): Dataset => ({
+  id: `agent-evaluations-lookup${dataSource ? `-${dataSource.id}` : ''}`,
   title: index,
   type: 'INDEXES',
+  ...withDataSource(dataSource),
 });
 
 /** The span index, looked up by trace id (no time field). */
-export const spansDataset = (index: string): Dataset => ({
-  id: 'agent-evaluations-spans',
+export const spansDataset = (index: string, dataSource?: DataSourceRef): Dataset => ({
+  id: `agent-evaluations-spans${dataSource ? `-${dataSource.id}` : ''}`,
   title: index,
   type: 'INDEXES',
+  ...withDataSource(dataSource),
 });
 
 /** A readable message from a failed PPL request. */

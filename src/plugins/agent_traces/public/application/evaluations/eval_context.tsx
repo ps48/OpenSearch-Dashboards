@@ -8,6 +8,7 @@ import { Dataset, TimeRange } from '../../../../data/common';
 import { EvalResult } from './eval_model';
 import { EvalAppState, EvalRoute } from './eval_routes';
 import { evalsDataset, spansDataset } from './use_ppl_rows';
+import type { DataSourceRef } from './eval_dataset';
 
 /** What every screen reads: the datasets, the time range, Refresh, and navigation. */
 export interface EvalScreenContext {
@@ -39,9 +40,13 @@ export interface EvalScreenContext {
 
 const noop = () => undefined;
 
-export const defaultEvalContext = (index: string, spansIndex: string): EvalScreenContext => ({
-  dataset: evalsDataset(index),
-  spans: spansDataset(spansIndex),
+export const defaultEvalContext = (
+  index: string,
+  spansIndex: string,
+  dataSource?: DataSourceRef
+): EvalScreenContext => ({
+  dataset: evalsDataset(index, dataSource),
+  spans: spansDataset(spansIndex, dataSource),
   index,
   timeRange: { from: 'now-7d', to: 'now' },
   browseRange: { from: 'now-7d', to: 'now' },

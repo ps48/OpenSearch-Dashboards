@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { BehaviorSubject } from 'rxjs';
 import { useObservable } from 'react-use';
 import { useAgentEvalsEnabled } from './eval_feature_flag';
@@ -56,7 +56,24 @@ export interface DatasetRef {
   displayName?: string;
   signalType?: string;
   timeFieldName?: string;
+  /** The data source the index pattern reads (multiple data sources); undefined: local. */
+  dataSource?: DataSourceRef;
 }
+
+/** A data source as a PPL dataset references it. */
+export interface DataSourceRef {
+  id: string;
+  title: string;
+  type: string;
+}
+
+/** The data source an index pattern references (`references[]` of type `data-source`). */
+export const dataSourceOf = (
+  references?: Array<{ id: string; type: string }>
+): DataSourceRef | undefined => {
+  const ref = references?.find((r) => r.type === 'data-source');
+  return ref ? { id: ref.id, title: ref.id, type: 'OpenSearch' } : undefined;
+};
 
 export interface EvalsDatasetConfig {
   /** The `AgentEvals-Config-*` saved object. */
@@ -113,6 +130,7 @@ export const listDatasets = async (client: Client, signalType?: string): Promise
       displayName: o.attributes?.displayName,
       signalType: o.attributes?.signalType,
       timeFieldName: o.attributes?.timeFieldName,
+      dataSource: dataSourceOf(o.references),
     }))
     .filter((d) => !signalType || d.signalType === signalType);
 };
@@ -196,6 +214,7 @@ const getDataset = async (client: Client, id: string): Promise<DatasetRef | unde
       displayName: o.attributes.displayName,
       signalType: o.attributes.signalType,
       timeFieldName: o.attributes.timeFieldName,
+      dataSource: dataSourceOf(o.references),
     };
   } catch {
     return undefined;
@@ -372,9 +391,43 @@ export const useEvalsIndexPattern = (): string | undefined => {
   return undefined;
 };
 
+/**
+ * The data source the Agent Traces surfaces query evaluation results on: the config's, else
+ * the data source of the dataset Agent Traces has open (results sit next to the spans).
+ */
+export const useEvalsDataSource = (): DataSourceRef | undefined => {
+  const { config } = useEvalsDataset();
+  const { services } = useOpenSearchDashboards<{
+    data?: {
+      query?: {
+        queryString?: { getQuery?: () => { dataset?: { dataSource?: Partial<DataSourceRef> } } };
+      };
+    };
+  }>();
+  const ds =
+    evalsDataSourceOf(config) ??
+    services?.data?.query?.queryString?.getQuery?.()?.dataset?.dataSource;
+  const id = ds?.id;
+  const title = ds?.title ?? id;
+  const type = ds?.type ?? 'OpenSearch';
+  // Stable while the data source is the same: callers use it as an effect dependency.
+  return useMemo(() => (id ? { id, title: title ?? id, type } : undefined), [id, title, type]);
+};
+
 /** The same, read now (for callbacks): the default until the config is loaded. */
 export const currentEvalsIndexPattern = (): string =>
   state$.getValue().config?.index ?? AGENT_EVALS_INDEX_PATTERN;
+
+/**
+ * The data source the evaluation queries go to: the evaluations dataset's, else the traces
+ * dataset's (the results usually sit on the cluster of the spans they judge).
+ */
+export const evalsDataSourceOf = (config?: EvalsDatasetConfig): DataSourceRef | undefined =>
+  config?.evaluationsDataset.dataSource ?? config?.tracesDataset?.dataSource;
+
+/** The same for span lookups: the traces dataset's, else the evaluations dataset's. */
+export const spansDataSourceOf = (config?: EvalsDatasetConfig): DataSourceRef | undefined =>
+  config?.tracesDataset?.dataSource ?? config?.evaluationsDataset.dataSource;
 
 /** The span index of a config: its traces dataset's pattern, else the default. */
 export const spansIndexOf = (config?: EvalsDatasetConfig): string => {

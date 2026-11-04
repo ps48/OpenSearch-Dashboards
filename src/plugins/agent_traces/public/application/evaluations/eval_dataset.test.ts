@@ -255,3 +255,45 @@ describe('evaluations app config', () => {
     expect(evalsDataset(index).title).toBe(index);
   });
 });
+
+describe('data sources', () => {
+  it('reads the data source an index pattern references', () => {
+    const { dataSourceOf } = jest.requireActual('./eval_dataset');
+    expect(dataSourceOf([{ id: 'ds-1', type: 'data-source', name: 'dataSource' }])).toEqual({
+      id: 'ds-1',
+      title: 'ds-1',
+      type: 'OpenSearch',
+    });
+    expect(dataSourceOf([{ id: 'x', type: 'index-pattern' }])).toBeUndefined();
+    expect(dataSourceOf(undefined)).toBeUndefined();
+  });
+
+  it('sends the evaluation and span queries to the config data sources', () => {
+    const { evalsDataSourceOf, spansDataSourceOf } = jest.requireActual('./eval_dataset');
+    const evalsDs = { id: 'e', title: 'e', type: 'OpenSearch' };
+    const spansDs = { id: 's', title: 's', type: 'OpenSearch' };
+    const config = {
+      configId: 'c',
+      index: 'otel-v1-genai-evaluation*',
+      evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation*', dataSource: evalsDs },
+      tracesDataset: { id: 'tr', title: 'otel-v1-apm-span*', dataSource: spansDs },
+    };
+    expect(evalsDataSourceOf(config)).toBe(evalsDs);
+    expect(spansDataSourceOf(config)).toBe(spansDs);
+    const local = { ...config, evaluationsDataset: { id: 'ev', title: 'x' } };
+    expect(evalsDataSourceOf(local)).toBe(spansDs);
+    expect(evalsDataSourceOf(undefined)).toBeUndefined();
+  });
+
+  it('puts the data source on the PPL datasets', () => {
+    const ppl = jest.requireActual('./use_ppl_rows');
+    const ds = { id: 'd1', title: 'd1', type: 'OpenSearch' };
+    expect(ppl.evalsDataset('idx', ds)).toMatchObject({
+      id: 'agent-evaluations-d1',
+      dataSource: ds,
+    });
+    expect(ppl.spansDataset('spans', ds).dataSource).toBe(ds);
+    expect(ppl.evalsLookupDataset('idx', ds).dataSource).toBe(ds);
+    expect(ppl.evalsDataset('idx').dataSource).toBeUndefined();
+  });
+});

@@ -25,6 +25,7 @@ jest.mock('../../../../../../opensearch_dashboards_react/public', () => ({
 }));
 let mockIndex: string | undefined = 'evals-*';
 jest.mock('../../../evaluations/eval_dataset', () => ({
+  useEvalsDataSource: () => undefined,
   useEvalsIndexPattern: () => mockIndex,
 }));
 const mockRunPpl = jest.fn();

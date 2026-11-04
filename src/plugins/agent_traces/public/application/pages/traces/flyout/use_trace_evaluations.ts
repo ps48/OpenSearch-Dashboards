@@ -8,7 +8,7 @@ import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards
 import { AgentTracesServices } from '../../../../types';
 import { EvalResult, isSpanResult, recordsToResults } from '../../../evaluations/eval_model';
 import { buildSessionResultsQuery, buildTraceResultsQuery } from '../../../evaluations/eval_ppl';
-import { useEvalsIndexPattern } from '../../../evaluations/eval_dataset';
+import { useEvalsDataSource, useEvalsIndexPattern } from '../../../evaluations/eval_dataset';
 import { errorMessage, evalsDataset, runPpl } from '../../../evaluations/use_ppl_rows';
 
 export interface TraceEvaluations {
@@ -54,6 +54,7 @@ const useEvalResults = (
 ): ResultsState => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const index = useEvalsIndexPattern();
+  const dataSource = useEvalsDataSource();
   const [state, setState] = useState<ResultsState>({ results: [], isLoading: false });
 
   useEffect(() => {
@@ -67,7 +68,7 @@ const useEvalResults = (
     setState({ results: [], isLoading: true });
     runPpl(
       services.data,
-      evalsDataset(index),
+      evalsDataset(index, dataSource),
       buildQuery(index, key),
       { from, to: new Date().toISOString() },
       controller.signal
@@ -91,7 +92,7 @@ const useEvalResults = (
     return () => controller.abort();
     // `buildQuery` is a module-level function.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, services?.data, index]);
+  }, [key, services?.data, index, dataSource]);
 
   return state;
 };

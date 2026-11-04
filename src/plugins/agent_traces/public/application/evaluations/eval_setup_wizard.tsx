@@ -27,6 +27,7 @@ import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import {
+  DataSourceRef,
   DatasetRef,
   EVALS_DATASET_TITLE,
   datasetLabel,
@@ -63,12 +64,13 @@ export interface EvalsDetection {
 /** One count over the evaluation indices; a missing index means none. */
 export const countEvaluationResults = async (
   services: EvaluationsServices,
-  index = EVALS_DATASET_TITLE
+  index = EVALS_DATASET_TITLE,
+  dataSource?: DataSourceRef
 ): Promise<number | undefined> => {
   try {
     const rows = await runPpl(
       services.data,
-      evalsLookupDataset(index),
+      evalsLookupDataset(index, dataSource),
       `source = ${index} | where ${fld(F.eventName)} = '${EVAL_EVENT}' | stats count() as n`
     );
     return num(rows[0]?.n) ?? 0;
@@ -93,7 +95,12 @@ export const detectEvals = async (services: EvaluationsServices): Promise<EvalsD
     logs,
     evaluationsDataset: defaults.evaluations,
     tracesDataset: defaults.traces,
-    results: await countEvaluationResults(services, index),
+    // The results sit on the evaluations dataset's data source, else next to the spans.
+    results: await countEvaluationResults(
+      services,
+      index,
+      defaults.evaluations?.dataSource ?? defaults.traces?.dataSource
+    ),
   };
 };
 
@@ -155,7 +162,8 @@ export const EvalSetupWizard: React.FC<{
     setCreating(true);
     setCreateError(undefined);
     try {
-      const evaluations = detection?.evaluationsDataset ?? (await createEvalsDataset(services));
+      const evaluations =
+        detection?.evaluationsDataset ?? (await createEvalsDataset(services, traces.dataSource));
       await saveEvalsConfig(services.savedObjects.client, traces, evaluations, {
         existingId: configId,
         workspaceId,

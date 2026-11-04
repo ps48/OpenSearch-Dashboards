@@ -16,7 +16,7 @@ import {
   str,
 } from '../../evaluations/eval_model';
 import { F, buildTracesTallyQuery } from '../../evaluations/eval_ppl';
-import { useEvalsIndexPattern } from '../../evaluations/eval_dataset';
+import { useEvalsDataSource, useEvalsIndexPattern } from '../../evaluations/eval_dataset';
 import { evalsDataset, runPpl } from '../../evaluations/use_ppl_rows';
 
 export interface RowEvaluations {
@@ -67,6 +67,7 @@ export const RowEvaluationsProvider: React.FC<{
 }> = ({ traceIds, mode = 'trace', children }) => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const index = useEvalsIndexPattern();
+  const dataSource = useEvalsDataSource();
   const [value, setValue] = useState<RowEvaluations>(EMPTY);
   const key = useMemo(
     () => Array.from(new Set(traceIds)).slice(0, MAX_TRACE_IDS).sort().join(','),
@@ -83,7 +84,7 @@ export const RowEvaluationsProvider: React.FC<{
     const from = timefilter.calculateBounds(timefilter.getTime()).min?.toISOString() ?? 'now-7d';
     runPpl(
       services.data,
-      evalsDataset(index),
+      evalsDataset(index, dataSource),
       buildTracesTallyQuery(index, key.split(','), mode === 'span'),
       { from, to: new Date().toISOString() },
       controller.signal
@@ -91,7 +92,7 @@ export const RowEvaluationsProvider: React.FC<{
       .then((rows) => !controller.signal.aborted && setValue(indexRowTallies(rows, mode)))
       .catch(() => !controller.signal.aborted && setValue({ ...EMPTY, mode }));
     return () => controller.abort();
-  }, [key, mode, services?.data, index]);
+  }, [key, mode, services?.data, index, dataSource]);
 
   return <RowEvaluationsContext.Provider value={value}>{children}</RowEvaluationsContext.Provider>;
 };

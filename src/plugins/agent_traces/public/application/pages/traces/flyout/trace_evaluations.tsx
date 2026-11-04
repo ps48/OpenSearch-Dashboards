@@ -28,7 +28,11 @@ import {
 import { JudgeMark } from '../../../evaluations/judge_mark';
 import { ResultFlyout } from '../../../evaluations/result_flyout';
 import { EvalContext, defaultEvalContext } from '../../../evaluations/eval_context';
-import { useEvalsIndexPattern, useSpansIndexPattern } from '../../../evaluations/eval_dataset';
+import {
+  useEvalsDataSource,
+  useEvalsIndexPattern,
+  useSpansIndexPattern,
+} from '../../../evaluations/eval_dataset';
 import {
   openInEvaluations,
   openSessionInAgentTraces,
@@ -121,6 +125,7 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
   const application = services.application;
   const index = useEvalsIndexPattern();
   const spansIndex = useSpansIndexPattern();
+  const dataSource = useEvalsDataSource();
   useEvalTimezone(services.uiSettings);
   const traceFlyout = useContext(TraceFlyoutContext);
   const [shown, setShown] = useState(result);
@@ -128,7 +133,7 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
   // The flyout's lazy reads (judged span, case, judge trace) use the evaluations and span
   // indices of Agent Traces, from the start of the range to now (results land after traces).
   const context = useMemo(() => {
-    const ctx = defaultEvalContext(index ?? 'otel-v1-genai-evaluation-*', spansIndex);
+    const ctx = defaultEvalContext(index ?? 'otel-v1-genai-evaluation-*', spansIndex, dataSource);
     const timefilter = services.data?.query.timefilter.timefilter;
     const from = timefilter?.calculateBounds(timefilter.getTime()).min?.toISOString();
     const hrefOf = (r: EvalResult) => {
@@ -140,7 +145,7 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
     if (!from) return { ...ctx, hrefOf };
     const range = { from, to: new Date().toISOString() };
     return { ...ctx, timeRange: range, browseRange: range, hrefOf };
-  }, [index, spansIndex, services.data, application]);
+  }, [index, spansIndex, services.data, application, dataSource]);
   return (
     <EvalContext.Provider value={context}>
       <ResultFlyout

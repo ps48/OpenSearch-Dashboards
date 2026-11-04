@@ -26,6 +26,7 @@ import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import {
+  DataSourceRef,
   DatasetRef,
   EVALS_DATASET_DISPLAY_NAME,
   EVALS_DATASET_TIME_FIELD,
@@ -69,7 +70,11 @@ const MODAL_TITLE = i18n.translate('agentTraces.evalsSettings.title', {
  * Creates the logs dataset over the evaluation events (its fields read from the indices, as
  * createAndSave refreshes them before saving).
  */
-export const createEvalsDataset = async (services: EvaluationsServices): Promise<DatasetRef> => {
+export const createEvalsDataset = async (
+  services: EvaluationsServices,
+  /** The data source the evaluation indices are on (the traces dataset's). */
+  dataSource?: DataSourceRef
+): Promise<DatasetRef> => {
   const pattern = await services.data.indexPatterns.createAndSave(
     {
       title: EVALS_DATASET_TITLE,
@@ -77,6 +82,9 @@ export const createEvalsDataset = async (services: EvaluationsServices): Promise
       signalType: 'logs',
       displayName: EVALS_DATASET_DISPLAY_NAME,
       schemaMappings: EVALS_SCHEMA_MAPPINGS,
+      ...(dataSource
+        ? { dataSourceRef: { id: dataSource.id, type: 'data-source', name: 'dataSource' } }
+        : {}),
     },
     false,
     false
@@ -87,6 +95,7 @@ export const createEvalsDataset = async (services: EvaluationsServices): Promise
     displayName: EVALS_DATASET_DISPLAY_NAME,
     signalType: 'logs',
     timeFieldName: EVALS_DATASET_TIME_FIELD,
+    dataSource,
   };
 };
 
@@ -148,7 +157,7 @@ export const EvalSettingsModal: React.FC<{
     setCreating(true);
     setCreated(undefined);
     try {
-      const dataset = await createEvalsDataset(services);
+      const dataset = await createEvalsDataset(services, selectedTraces?.dataSource);
       setLogs((l) => sortDatasets([...l, dataset]));
       setSelectedEvals(dataset);
       setCreated({ title: EVALS_DATASET_TITLE });
