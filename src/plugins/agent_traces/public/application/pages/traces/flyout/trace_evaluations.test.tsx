@@ -53,7 +53,13 @@ describe('Agent Traces evaluation marks', () => {
   it('a span shows the judge mark and a tally', () => {
     wrap(<SpanEvalMark results={[result('a', 'fail', 's1'), result('b', 'pass', 's1')]} />);
     expect(screen.getByTestId('agtEvlJudgeMark')).toHaveAttribute('data-state', 'mixed');
-    expect(screen.getByTestId('agtEvlTally')).toHaveTextContent('11');
+    // Each count carries its verdict for screen readers.
+    expect(screen.getByTestId('agtEvlTally')).toHaveTextContent('Fail: 1Pass: 1');
+    expect(screen.getByTestId('agtEvlJudgeMark')).toHaveAttribute(
+      'aria-label',
+      'Evaluation results: a: Fail, b: Pass'
+    );
+    expect(screen.getByTestId('agtEvlJudgeMark')).toHaveAttribute('tabindex', '0');
   });
 
   it('puts span results on their span and trace-level results on the root', () => {
