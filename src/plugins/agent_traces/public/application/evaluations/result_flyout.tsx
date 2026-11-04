@@ -321,7 +321,7 @@ const CaseSection: React.FC<{
 }> = ({ r, openRun, openResult, onCompareTraces }) => {
   const { dataset, index, browseRange, refreshKey } = useEvalContext();
   const { runId, caseId } = r;
-  const lookup = useRunBefore(runId);
+  const lookup = useRunBefore(runId, r.suiteName ?? null);
   const beforeId = lookup.before?.runId;
   const query =
     runId && caseId && lookup.loaded
@@ -554,6 +554,8 @@ export const ResultFlyout: React.FC<{
 }> = ({ result: r, onClose, links = {}, onOpenResult }) => {
   const [judge, setJudge] = useState(false);
   const [compare, setCompare] = useState<{ a: string; b: string; versionA?: string }>();
+  const [rawOpen, setRawOpen] = useState(false);
+  const rawJson = useMemo(() => (rawOpen ? JSON.stringify(r.raw, null, 2) : ''), [rawOpen, r.raw]);
   const at = scalePosition(r);
   const online = !r.runId;
   const items = [
@@ -751,11 +753,16 @@ export const ResultFlyout: React.FC<{
                 buttonContent={i18n.translate('agentTraces.evals.flyout.rawEvent', {
                   defaultMessage: 'Raw event',
                 })}
+                onToggle={setRawOpen}
                 data-test-subj="agtEvlRawEvent"
               >
-                <EuiCodeBlock language="json" fontSize="s" paddingSize="s" isCopyable>
-                  {JSON.stringify(r.raw, null, 2)}
-                </EuiCodeBlock>
+                {/* Built and highlighted only while open (the accordion renders its children
+                    even when closed). */}
+                {rawOpen && (
+                  <EuiCodeBlock language="json" fontSize="s" paddingSize="s" isCopyable>
+                    {rawJson}
+                  </EuiCodeBlock>
+                )}
               </EuiAccordion>
             </>
           )}

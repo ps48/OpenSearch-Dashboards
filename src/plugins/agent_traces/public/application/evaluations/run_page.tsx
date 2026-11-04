@@ -10,6 +10,7 @@ import {
   EuiButton,
   EuiButtonEmpty,
   EuiButtonIcon,
+  EuiCallOut,
   EuiFieldSearch,
   EuiFilterButton,
   EuiFilterGroup,
@@ -44,6 +45,7 @@ import {
   buildRunCasesQuery,
   buildRunsLookupQuery,
   buildSuiteRunsQuery,
+  isTruncated,
 } from './eval_ppl';
 import { SpanIOView } from './span_io_view';
 import { useRootSpans } from './eval_spans';
@@ -57,6 +59,7 @@ import {
   QueryErrorCallout,
   RunSelectList,
   TallyCell,
+  TruncatedCallout,
   VerdictBadge,
   VersionBadge,
   agentLabel,
@@ -71,7 +74,7 @@ import { CiLink, compareOrder } from './suite_page';
 
 type StatusFilter = 'all' | CaseStatus;
 
-const STATUS_ORDER: Record<CaseStatus, number> = { fail: 0, error: 1, pass: 2 };
+const STATUS_ORDER: Record<CaseStatus, number> = { fail: 0, error: 1, pass: 2, scored: 3 };
 
 /** Cases shown for a status and a search (case name or id), in the browser. */
 export const filterCases = (cases: CaseRow[], status: StatusFilter, q: string): CaseRow[] => {
@@ -134,15 +137,15 @@ const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, case
   );
 };
 
-/** The run before a run (same suite, started last before it), from the runs in the range. */
-export const useRunBefore = (runId?: string) => {
+/**
+ * The run before a run (same suite, started last before it), from the suite's runs in the
+ * range, latest first. Runs once the run's suite is known (`suite`: undefined while unknown,
+ * `null` for a run without a suite, which has no run before).
+ */
+export const useRunBefore = (runId?: string, suite?: string | null) => {
   const { dataset, index, browseRange, refreshKey } = useEvalContext();
-  const lookup = usePplRows(
-    dataset,
-    runId ? buildRunsLookupQuery(index) : undefined,
-    browseRange,
-    refreshKey
-  );
+  const query = runId && typeof suite === 'string' ? buildRunsLookupQuery(index, suite) : undefined;
+  const lookup = usePplRows(dataset, query, browseRange, refreshKey);
   const before = useMemo(
     () => (runId ? runBefore(lookup.rows, runId) : undefined),
     [lookup.rows, runId]
@@ -151,7 +154,13 @@ export const useRunBefore = (runId?: string) => {
     () => (runId ? otherRunsOfSuite(lookup.rows, runId) : 0),
     [lookup.rows, runId]
   );
-  return { before, others, loaded: lookup.loaded, error: lookup.error };
+  return {
+    before,
+    others,
+    loaded: lookup.loaded || (!!runId && suite === null),
+    error: lookup.error,
+    truncated: isTruncated(lookup.rows),
+  };
 };
 
 /** "Compare with…": the suite's other runs, read when the menu opens. */
@@ -161,7 +170,11 @@ const CompareWithMenu: React.FC<{
   started: number;
   /** Other runs of the suite in the range (from the runs lookup). */
   others: number;
-}> = ({ runId, suite, started, others: otherCount }) => {
+  /** The runs lookup failed: nothing to compare with is known. */
+  unavailable?: boolean;
+  /** The runs lookup has not answered yet. */
+  pending?: boolean;
+}> = ({ runId, suite, started, others: otherCount, unavailable, pending }) => {
   const { dataset, index, browseRange, refreshKey, rangeLabel, navigate } = useEvalContext();
   const [open, setOpen] = useState(false);
   const { rows, loading } = usePplRows(
@@ -183,20 +196,24 @@ const CompareWithMenu: React.FC<{
       button={
         <EuiToolTip
           content={
-            otherCount === 0
-              ? i18n.translate('agentTraces.evals.run.noOtherRuns', {
-                  defaultMessage:
-                    'No other run of this suite in {range} or the 30 days before this run.',
-                  values: { range: rangeLabel },
+            unavailable
+              ? i18n.translate('agentTraces.evals.run.runsUnavailable', {
+                  defaultMessage: 'The runs of this suite could not be read.',
                 })
-              : undefined
+              : otherCount === 0 && !pending
+                ? i18n.translate('agentTraces.evals.run.noOtherRuns', {
+                    defaultMessage:
+                      'No other run of this suite in {range} or the 30 days before this run.',
+                    values: { range: rangeLabel },
+                  })
+                : undefined
           }
         >
           <EuiButtonEmpty
             size="s"
             iconType="arrowDown"
             iconSide="right"
-            isDisabled={!suite || otherCount === 0}
+            isDisabled={!suite || unavailable || pending || otherCount === 0}
             onClick={() => setOpen(!open)}
             data-test-subj="agtEvlCompareWith"
           >
@@ -263,21 +280,32 @@ const RunStat: React.FC<{
 /** A run: its header, figures (against the run before) and cases (expand a case). */
 export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
   const { dataset, index, browseRange, refreshKey, navigate, openTrace } = useEvalContext();
-  const lookup = useRunBefore(runId);
-  const beforeId = lookup.before?.runId;
+  // The run's cases first (they name its suite), then the suite's run before and its cases:
+  // the page shows as soon as its own cases answer, the run before's figures fill in after.
   const { rows, loading, loaded, error } = usePplRows(
     dataset,
-    lookup.loaded ? buildRunCasesQuery(index, runId, beforeId) : undefined,
+    buildRunCasesQuery(index, runId),
     browseRange,
     refreshKey
   );
   const run = useMemo(() => runDetail(runId, rows), [runId, rows]);
-  const prev = useMemo(() => (beforeId ? runDetail(beforeId, rows) : undefined), [beforeId, rows]);
+  const lookup = useRunBefore(runId, run ? (run.suite ?? null) : undefined);
+  const beforeId = lookup.before?.runId;
+  const beforeCases = usePplRows(
+    dataset,
+    beforeId ? buildRunCasesQuery(index, beforeId) : undefined,
+    browseRange,
+    refreshKey
+  );
+  const prev = useMemo(
+    () => (beforeId ? runDetail(beforeId, beforeCases.rows) : undefined),
+    [beforeId, beforeCases.rows]
+  );
   const [status, setStatus] = useState<StatusFilter>('all');
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  if (error || lookup.error) return <QueryErrorCallout message={error ?? lookup.error ?? ''} />;
+  if (error) return <QueryErrorCallout message={error} />;
   if (!run) {
     return loading || !loaded ? (
       <EuiLoadingContent lines={6} />
@@ -395,10 +423,46 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
       count('error'),
     ],
     ['pass', i18n.translate('agentTraces.evals.run.passed', { defaultMessage: 'Passed' }), passed],
+    // Cases with scores only (no pass rule): shown when there are some.
+    ...(count('scored')
+      ? ([
+          [
+            'scored',
+            i18n.translate('agentTraces.evals.run.scoredOnly', { defaultMessage: 'Scored' }),
+            count('scored'),
+          ],
+        ] as Array<[StatusFilter, string, number]>)
+      : []),
   ];
 
+  // The run before is optional: a failed lookup leaves the run's figures, with a warning.
+  const beforeError = lookup.error ?? beforeCases.error;
   return (
     <>
+      {isTruncated(rows) && (
+        <>
+          <TruncatedCallout />
+          <EuiSpacer size="s" />
+        </>
+      )}
+      {beforeError && (
+        <>
+          <EuiCallOut
+            color="warning"
+            iconType="alert"
+            size="s"
+            title={i18n.translate('agentTraces.evals.run.beforeError', {
+              defaultMessage: 'Could not read the run before',
+            })}
+            data-test-subj="agtEvlRunBeforeError"
+          >
+            <EuiText size="xs">
+              <p>{beforeError}</p>
+            </EuiText>
+          </EuiCallOut>
+          <EuiSpacer size="s" />
+        </>
+      )}
       <EuiFlexGroup alignItems="center" gutterSize="s" responsive={false}>
         <EuiFlexItem>
           <div className="agtEvlMeta" data-test-subj="agtEvlRunMeta">
@@ -469,6 +533,8 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
             suite={run.suite}
             started={run.started}
             others={lookup.others}
+            unavailable={!!lookup.error}
+            pending={!lookup.loaded}
           />
         </EuiFlexItem>
       </EuiFlexGroup>

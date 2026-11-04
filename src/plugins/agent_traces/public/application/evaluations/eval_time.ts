@@ -4,7 +4,7 @@
  */
 
 import moment from 'moment-timezone';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { IUiSettingsClient } from '../../../../../core/public';
 
 /**
@@ -25,19 +25,31 @@ export const setEvalTimezone = (tz?: string) => {
   timezone = resolveTimezone(tz);
 };
 
+/** A time (epoch ms) in UTC: the day and week buckets of the PPL `span()`. */
+export const formatInUtc = (ms: number, format: string) => moment.utc(ms).format(format);
+
 /** A time (epoch ms) in the user's zone. */
 export const formatInZone = (ms: number, format: string) => moment.tz(ms, timezone).format(format);
 
-/** Follows `dateFormat:tz` while mounted (the first value applies before the first render). */
-export const useEvalTimezone = (uiSettings?: IUiSettingsClient) => {
-  if (uiSettings) setEvalTimezone(uiSettings.get('dateFormat:tz'));
+/**
+ * Follows `dateFormat:tz` while mounted (the first value applies before the first render).
+ * Returns the zone: a change re-renders the caller, which passes it on (the Evaluations app
+ * puts it in its screen context), so the screens format times in the new zone.
+ */
+export const useEvalTimezone = (uiSettings?: IUiSettingsClient): string => {
+  const [zone, setZone] = useState(() => {
+    if (uiSettings) setEvalTimezone(uiSettings.get('dateFormat:tz'));
+    return getEvalTimezone();
+  });
   useEffect(() => {
     if (!uiSettings) return;
-    const subscription = uiSettings
-      .get$<string>('dateFormat:tz')
-      .subscribe((tz) => setEvalTimezone(tz));
+    const subscription = uiSettings.get$<string>('dateFormat:tz').subscribe((tz) => {
+      setEvalTimezone(tz);
+      setZone(getEvalTimezone());
+    });
     return () => subscription.unsubscribe();
   }, [uiSettings]);
+  return zone;
 };
 
 /** Chart axis labels for a time span (ms), in the user's zone. */

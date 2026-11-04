@@ -14,12 +14,13 @@ import {
   EuiSelectableOption,
   EuiCallOut,
   EuiIconTip,
+  EuiScreenReaderOnly,
   EuiText,
   EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { CaseStatus, EvalResult, MIN_N, RunRow, Tally, Verdict } from './eval_model';
-import { EvalSource, NO_AGENT } from './eval_ppl';
+import { AGG_LIMIT, EvalSource, NO_AGENT } from './eval_ppl';
 import { formatInZone } from './eval_time';
 import { ResultTarget, targetOf } from './eval_links';
 
@@ -70,10 +71,25 @@ export const sliceLabel = (from: number, to: number) =>
 
 export const formatDuration = (ms: number) => {
   if (!Number.isFinite(ms) || ms < 0) return DASH;
-  if (ms < 1000) return `${Math.round(ms)} ms`;
-  if (ms < 60e3) return `${(ms / 1000).toFixed(1)} s`;
-  if (ms < 3600e3) return `${Math.floor(ms / 60e3)} min ${Math.round((ms % 60e3) / 1000)} s`;
-  return `${Math.floor(ms / 3600e3)} h ${Math.round((ms % 3600e3) / 60e3)} min`;
+  if (ms < 1000)
+    return i18n.translate('agentTraces.evals.duration.ms', {
+      defaultMessage: '{ms} ms',
+      values: { ms: Math.round(ms) },
+    });
+  if (ms < 60e3)
+    return i18n.translate('agentTraces.evals.duration.s', {
+      defaultMessage: '{s} s',
+      values: { s: (ms / 1000).toFixed(1) },
+    });
+  if (ms < 3600e3)
+    return i18n.translate('agentTraces.evals.duration.minS', {
+      defaultMessage: '{min} min {s} s',
+      values: { min: Math.floor(ms / 60e3), s: Math.round((ms % 60e3) / 1000) },
+    });
+  return i18n.translate('agentTraces.evals.duration.hMin', {
+    defaultMessage: '{h} h {min} min',
+    values: { h: Math.floor(ms / 3600e3), min: Math.round((ms % 3600e3) / 60e3) },
+  });
 };
 
 /** The short form of an id: a run id's last part (`run_<date>_<hex>`), 8 characters. */
@@ -87,11 +103,15 @@ export const formatScore = (value?: number) =>
 export const scoreOrLabel = (r: { value?: number; label?: string; verdict: Verdict }) =>
   r.value !== undefined ? formatScore(r.value) : r.label && r.verdict === 'scored' ? r.label : DASH;
 
-/** The scale of a score: declared min / max, else 0 to 1 when the value fits it. */
+/**
+ * The scale of a score: declared min / max, else 0 to 1 for a value in [0, 1). A bare 1 is not
+ * taken for the top of a 0 to 1 scale: it is as likely the worst score of a 1 to 5 judge, so
+ * it shows as a number.
+ */
 export const scoreScale = (r: { value?: number; scoreMin?: number; scoreMax?: number }) => {
   if (r.value === undefined) return undefined;
   const min =
-    r.scoreMin ?? (r.scoreMax === undefined && r.value >= 0 && r.value <= 1 ? 0 : undefined);
+    r.scoreMin ?? (r.scoreMax === undefined && r.value >= 0 && r.value < 1 ? 0 : undefined);
   const max = r.scoreMax ?? (min === 0 && r.value <= 1 ? 1 : undefined);
   return min !== undefined && max !== undefined && max > min ? { min, max } : undefined;
 };
@@ -260,6 +280,11 @@ export const TallyCell: React.FC<{ tally: Tally }> = ({ tally }) => {
         <EuiToolTip key={v} content={`${VERDICT_LABEL[v]}: ${n}`}>
           <span className="agtEvlTally__item">
             <span className={`agtEvlTally__dot agtEvlTally__dot--${v}`} />
+            {/* The dot's color, for screen readers (the tally can sit inside a link, so the
+                items take no focus of their own). */}
+            <EuiScreenReaderOnly>
+              <span>{`${VERDICT_LABEL[v]}: `}</span>
+            </EuiScreenReaderOnly>
             {n}
           </span>
         </EuiToolTip>
@@ -319,6 +344,32 @@ export const QueryErrorCallout: React.FC<{ message: string }> = ({ message }) =>
   >
     <EuiText size="xs">
       <p>{message}</p>
+    </EuiText>
+  </EuiCallOut>
+);
+
+/**
+ * An aggregation hit its row cap (`AGG_LIMIT`): the figures below may miss cases. Shown above
+ * them instead of silently counting a cut-off list.
+ */
+export const TruncatedCallout: React.FC<{ testId?: string }> = ({ testId = 'agtEvlTruncated' }) => (
+  <EuiCallOut
+    color="warning"
+    iconType="alert"
+    size="s"
+    title={i18n.translate('agentTraces.evals.truncated', {
+      defaultMessage: 'Results truncated',
+    })}
+    data-test-subj={testId}
+  >
+    <EuiText size="xs">
+      <p>
+        {i18n.translate('agentTraces.evals.truncatedText', {
+          defaultMessage:
+            'The query reached its limit of {limit} groups, so some cases or results are not counted. Narrow the range or the filters.',
+          values: { limit: AGG_LIMIT.toLocaleString() },
+        })}
+      </p>
     </EuiText>
   </EuiCallOut>
 );
@@ -442,6 +493,19 @@ const TARGET_LABEL: Record<ResultTarget['kind'], string> = {
   span: i18n.translate('agentTraces.evals.target.span', { defaultMessage: 'Span' }),
 };
 
+/** One message per kind (a label inserted into a sentence does not translate). */
+const TARGET_OPEN_TIP: Record<ResultTarget['kind'], string> = {
+  session: i18n.translate('agentTraces.evals.target.openSessionTip', {
+    defaultMessage: 'Open the session in Agent Traces in a new tab',
+  }),
+  trace: i18n.translate('agentTraces.evals.target.openTraceTip', {
+    defaultMessage: 'Open the trace in Agent Traces in a new tab',
+  }),
+  span: i18n.translate('agentTraces.evals.target.openSpanTip', {
+    defaultMessage: 'Open the span in Agent Traces in a new tab',
+  }),
+};
+
 /**
  * What a result judged (session, trace or span, with its short id) and a link that opens it in
  * Agent Traces in a new tab. Clicks do not reach the row (which opens the result).
@@ -459,12 +523,7 @@ export const TargetLink: React.FC<{ r: EvalResult; href?: string }> = ({ r, href
   );
   if (!href) return <span data-test-subj={`agtEvlTarget-${target.kind}`}>{label}</span>;
   return (
-    <EuiToolTip
-      content={i18n.translate('agentTraces.evals.target.openTip', {
-        defaultMessage: 'Open the {kind} in Agent Traces in a new tab',
-        values: { kind: TARGET_LABEL[target.kind].toLowerCase() },
-      })}
-    >
+    <EuiToolTip content={TARGET_OPEN_TIP[target.kind]}>
       <EuiLink
         href={href}
         target="_blank"

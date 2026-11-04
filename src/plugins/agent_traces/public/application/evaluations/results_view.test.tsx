@@ -5,7 +5,9 @@
 
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
+import { I18nProvider } from '@osd/i18n/react';
 import { ResultsView } from './results_view';
+import { EvalContext } from './eval_context';
 import { shortId } from './eval_components';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
@@ -171,6 +173,44 @@ describe('ResultsView', () => {
     expect(ctx.openResult).toHaveBeenCalledWith(
       expect.objectContaining({ traceId: 't2', verdict: 'pass' })
     );
+  });
+
+  it('opens a result from the keyboard: the evaluation name is a link', () => {
+    const { ctx } = renderWithContext(<ResultsView />);
+    const links = screen.getAllByTestId('agtEvlResultOpen');
+    expect(links[1].tagName).toBe('BUTTON');
+    fireEvent.click(links[1]);
+    expect(ctx.openResult).toHaveBeenCalledTimes(1);
+    expect(ctx.openResult).toHaveBeenCalledWith(expect.objectContaining({ traceId: 't2' }));
+  });
+
+  it('keeps the page on Refresh, goes back to page 1 on a new range', () => {
+    const ctx = testContext();
+    const page = (p: number) =>
+      buildResultsPageQuery(TEST_INDEX, EMPTY_RESULTS_FILTERS, DEFAULT_RESULTS_SORT, p);
+    const { rerender } = renderWithContext(<ResultsView />, ctx);
+    fireEvent.click(screen.getByTestId('pagination-button-next'));
+    expect(mockPpl.queries).toContain(page(1));
+    const rerenderWith = (patch: Partial<typeof ctx>) =>
+      rerender(
+        <I18nProvider>
+          <EvalContext.Provider value={{ ...ctx, ...patch }}>
+            <ResultsView />
+          </EvalContext.Provider>
+        </I18nProvider>
+      );
+    // Refresh: a relative range resolves to new bounds, and refreshKey changes.
+    const refreshed = { from: '2026-10-28T00:00:01.000Z', to: '2026-10-29T00:00:01.000Z' };
+    mockPpl.queries.length = 0;
+    rerenderWith({ timeRange: refreshed, refreshKey: 1 });
+    expect(mockPpl.queries).toContain(page(1));
+    expect(mockPpl.queries).not.toContain(page(0));
+    // A new range: page 1 again.
+    rerenderWith({
+      timeRange: { from: '2026-10-01T00:00:00.000Z', to: refreshed.to },
+      refreshKey: 1,
+    });
+    expect(mockPpl.queries).toContain(page(0));
   });
 
   it('searches a filter menu', () => {

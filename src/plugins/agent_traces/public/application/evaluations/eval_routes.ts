@@ -141,10 +141,15 @@ const versionPicks = (v: unknown): Record<string, VersionPick> | undefined => {
   return Object.keys(out).length ? out : undefined;
 };
 
+/** A time a Date can hold (rison reads `1e400` as Infinity, which toISOString rejects). */
+const MAX_DATE_MS = 8.64e15;
+const isDateMs = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= MAX_DATE_MS;
+
 const timeSlice = (v: unknown): TimeSlice | undefined => {
   if (!v || typeof v !== 'object') return undefined;
   const { from, to } = v as Record<string, unknown>;
-  return typeof from === 'number' && typeof to === 'number' && to > from ? { from, to } : undefined;
+  return isDateMs(from) && isDateMs(to) && to > from ? { from, to } : undefined;
 };
 
 export const normalizeAppState = (raw: unknown): EvalAppState => {

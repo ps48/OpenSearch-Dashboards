@@ -52,10 +52,13 @@ export const rateDelta = (a?: number, b?: number): number | undefined =>
 export const verdictOf = (r: { errorType?: string; label?: string }): Verdict =>
   r.errorType ? 'error' : r.label === 'pass' ? 'pass' : r.label === 'fail' ? 'fail' : 'scored';
 
-/** Case status from its results: an evaluator error, else a failed result, else passed. */
-export type CaseStatus = 'error' | 'fail' | 'pass';
+/**
+ * Case status from its results: an evaluator error, else a failed result, else passed when a
+ * result passed, else scored (only scores without a pass rule: neither pass nor fail).
+ */
+export type CaseStatus = 'error' | 'fail' | 'pass' | 'scored';
 export const caseStatusOf = (t: Tally): CaseStatus =>
-  t.error ? 'error' : t.fail ? 'fail' : 'pass';
+  t.error ? 'error' : t.fail ? 'fail' : t.pass ? 'pass' : 'scored';
 
 // ---------------------------------------------------------------------- record access
 
@@ -668,8 +671,10 @@ export const changeOf = (a?: CaseStatus, b?: CaseStatus): CaseChange => {
   if (a === b) return 'same';
   if (a === undefined) return 'onlyB';
   if (b === undefined) return 'onlyA';
-  if (a === 'pass') return 'regressed';
-  if (b === 'pass') return 'fixed';
+  const bad = (s: CaseStatus) => s === 'fail' || s === 'error';
+  if (a === 'pass' && bad(b)) return 'regressed';
+  if (b === 'pass' && bad(a)) return 'fixed';
+  // Between fail and error, or to or from scored (no pass rule): changed, not a regression.
   return 'changed';
 };
 

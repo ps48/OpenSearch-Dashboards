@@ -122,6 +122,19 @@ describe('CompareRuns', () => {
     expect(screen.getAllByText('Run A · v1').length).toBeGreaterThan(0);
   });
 
+  it('names a run without results instead of comparing against nothing', () => {
+    renderWithContext(<CompareRuns runA={A} runB="run_unknown" />);
+    expect(screen.getByTestId('agtEvlCompareRunNotFound')).toHaveTextContent(
+      'No results for run run_unknown in the range'
+    );
+  });
+
+  it('has no run-not-found callout when both runs have results', () => {
+    renderWithContext(<CompareRuns runA={A} runB={B} />);
+    expect(screen.queryByTestId('agtEvlCompareRunNotFound')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlTruncated')).not.toBeInTheDocument();
+  });
+
   it('filters Changed, Regressed, Fixed, Only in one run and All, with counts', () => {
     renderWithContext(<CompareRuns runA={A} runB={B} />);
     expect(screen.getByTestId('agtEvlCaseFilter-changed')).toHaveTextContent('3');

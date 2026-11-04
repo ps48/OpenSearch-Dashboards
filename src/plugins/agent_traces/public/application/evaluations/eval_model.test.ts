@@ -63,10 +63,20 @@ describe('verdict and pass rate', () => {
     expect(passRate(emptyTally())).toBeUndefined();
   });
 
-  it('derives a case status: error > fail > pass', () => {
+  it('derives a case status: error > fail > pass > scored', () => {
     expect(caseStatusOf({ ...emptyTally(), error: 1, fail: 1 })).toBe('error');
     expect(caseStatusOf({ ...emptyTally(), fail: 1, pass: 3 })).toBe('fail');
-    expect(caseStatusOf({ ...emptyTally(), scored: 2 })).toBe('pass');
+    expect(caseStatusOf({ ...emptyTally(), pass: 1, scored: 2 })).toBe('pass');
+    // Scores without a pass rule only: neither passed nor failed.
+    expect(caseStatusOf({ ...emptyTally(), scored: 2 })).toBe('scored');
+  });
+
+  it('a change to or from scored is a change, not a regression or a fix', () => {
+    expect(changeOf('pass', 'fail')).toBe('regressed');
+    expect(changeOf('error', 'pass')).toBe('fixed');
+    expect(changeOf('pass', 'scored')).toBe('changed');
+    expect(changeOf('scored', 'pass')).toBe('changed');
+    expect(changeOf('fail', 'error')).toBe('changed');
   });
 
   it('reads PPL times as UTC', () => {

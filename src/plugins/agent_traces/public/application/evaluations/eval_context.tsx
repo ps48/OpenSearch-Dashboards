@@ -29,6 +29,8 @@ export interface EvalScreenContext {
   /** The global range in words ("Last 7 days"). */
   rangeLabel: string;
   refreshKey: number;
+  /** The zone times show in (`dateFormat:tz`): a change re-renders the screens. */
+  timezone?: string;
   state: EvalAppState;
   setState: (patch: Partial<EvalAppState>) => void;
   navigate: (route: EvalRoute, patch?: Partial<EvalAppState>) => void;

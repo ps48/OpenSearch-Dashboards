@@ -65,7 +65,7 @@ export const SpanIOView: React.FC<{
                 text={copyTextFor(section.value, mode)}
                 label={i18n.translate('agentTraces.evals.io.copy', {
                   defaultMessage: 'Copy {section}',
-                  values: { section: section.label.toLowerCase() },
+                  values: { section: section.label },
                 })}
               />
             </EuiFlexItem>

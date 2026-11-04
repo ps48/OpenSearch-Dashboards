@@ -73,5 +73,9 @@ describe('evaluation routes', () => {
     expect(s.versionPick).toEqual({ tp: { b: 'v3', a: 'v2' } });
     expect(s.slice).toEqual({ from: 10, to: 20 });
     expect(normalizeAppState({ slice: { from: 20, to: 10 } }).slice).toBeUndefined();
+    // Rison reads 1e400 as Infinity: not a time a Date can hold.
+    expect(normalizeAppState({ slice: { from: 0, to: Infinity } }).slice).toBeUndefined();
+    expect(normalizeAppState({ slice: { from: 0, to: 9e15 } }).slice).toBeUndefined();
+    expect(normalizeAppState({ slice: { from: NaN, to: 1 } }).slice).toBeUndefined();
   });
 });

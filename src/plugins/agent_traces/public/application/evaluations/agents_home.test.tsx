@@ -128,7 +128,7 @@ describe('AgentsHome', () => {
     mockPpl.answer(() => []);
     renderWithContext(<AgentsHome />);
     const empty = screen.getByTestId('agtEvlAgentsEmpty');
-    expect(empty).toHaveTextContent('No evaluation results in last 7 days');
+    expect(empty).toHaveTextContent('No evaluation results in the range: Last 7 days');
     expect(empty).toHaveTextContent('pip install opensearch-genai-observability-sdk-py');
     expect(screen.getByTestId('agtEvlQuickstart')).toHaveTextContent('Quickstart');
     expect(screen.getByTestId('agtEvlSuiteInCi')).toHaveTextContent('Run a suite in CI');

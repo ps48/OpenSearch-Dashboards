@@ -436,6 +436,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
               points: s.points,
             }))}
             onPointClick={onPoint}
+            utc={stepMs >= 24 * 3600e3}
           />
         ) : (
           <EuiText size="s" color="subdued">

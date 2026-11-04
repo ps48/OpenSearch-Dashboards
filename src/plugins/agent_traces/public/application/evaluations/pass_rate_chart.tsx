@@ -20,7 +20,7 @@ import { euiThemeVars } from '@osd/ui-shared-deps/theme';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import type { EvaluationsServices } from '.';
 import { formatTime } from './eval_components';
-import { axisTimeFormat, getEvalTimezone } from './eval_time';
+import { axisTimeFormat, formatInUtc, getEvalTimezone } from './eval_time';
 
 export interface ChartPoint {
   t: number;
@@ -65,6 +65,11 @@ export const PassRateChart: React.FC<{
   height?: number;
   domain?: { min: number; max: number };
   onPointClick?: (t: number) => void;
+  /**
+   * Points are UTC day or week buckets (`span(@timestamp, 1d)` starts at UTC midnight): the
+   * axis is labelled in UTC, so a bucket is not shown under the previous day's date.
+   */
+  utc?: boolean;
 }> = ({
   id,
   points = [],
@@ -74,6 +79,7 @@ export const PassRateChart: React.FC<{
   height = 200,
   domain,
   onPointClick,
+  utc = false,
 }) => {
   const { chartsTheme, baseTheme } = useChartThemes();
   const lines: ChartSeries[] = series ?? [
@@ -112,7 +118,16 @@ export const PassRateChart: React.FC<{
         <Axis
           id={`${id}-x`}
           position={Position.Bottom}
-          tickFormat={(v: number) => formatTime(v, axisTimeFormat(max - min))}
+          title={
+            utc
+              ? i18n.translate('agentTraces.evals.chart.utcAxis', { defaultMessage: 'UTC' })
+              : undefined
+          }
+          tickFormat={(v: number) =>
+            utc
+              ? formatInUtc(v, axisTimeFormat(max - min))
+              : formatTime(v, axisTimeFormat(max - min))
+          }
         />
         <Axis
           id={`${id}-y`}
@@ -129,7 +144,7 @@ export const PassRateChart: React.FC<{
             name={line.name}
             xScaleType={ScaleType.Time}
             yScaleType={ScaleType.Linear}
-            timeZone={getEvalTimezone()}
+            timeZone={utc ? 'UTC' : getEvalTimezone()}
             xAccessor="x"
             yAccessors={['y']}
             data={toData(line.points)}

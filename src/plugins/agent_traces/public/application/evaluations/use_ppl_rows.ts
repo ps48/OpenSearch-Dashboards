@@ -11,6 +11,7 @@ import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_requ
 import { pplResponseToRecords } from '../pages/sessions/session_utils';
 import { PplRecord } from './eval_model';
 import type { DataSourceRef } from './eval_dataset';
+import { EVALS_TIME_FIELD } from './eval_ppl';
 
 /** The evaluations index as a dataset: the PPL service bounds it by `@timestamp`. */
 const withDataSource = (dataSource?: DataSourceRef) => (dataSource ? { dataSource } : {});
@@ -19,7 +20,7 @@ export const evalsDataset = (index: string, dataSource?: DataSourceRef): Dataset
   id: `agent-evaluations${dataSource ? `-${dataSource.id}` : ''}`,
   title: index,
   type: 'INDEXES',
-  timeFieldName: '@timestamp',
+  timeFieldName: EVALS_TIME_FIELD,
   ...withDataSource(dataSource),
 });
 
@@ -82,10 +83,15 @@ export interface PplRows {
 }
 
 const IDLE: PplRows = { rows: [], loading: false, loaded: false };
+const PENDING: PplRows = { rows: [], loading: true, loaded: false };
 
 /**
  * Runs `query` (undefined: nothing runs) in the time range, again when the query, the range or
  * `refreshKey` changes. A screen passes undefined until it is shown, so nothing loads early.
+ *
+ * Rows belong to the query and dataset that produced them: when either changes, the previous
+ * rows are dropped at once (nothing `loaded` until the new query answers), so a screen never
+ * reads another run's rows. A new time range or a refresh keeps them while the query runs.
  */
 export const usePplRows = (
   dataset: Dataset | undefined,
@@ -95,30 +101,38 @@ export const usePplRows = (
 ): PplRows => {
   const { services } = useOpenSearchDashboards<{ data: DataPublicPluginStart }>();
   const data = services?.data;
-  const [state, setState] = useState<PplRows>(IDLE);
+  const [state, setState] = useState<PplRows & { key?: string }>(IDLE);
   const from = timeRange?.from;
   const to = timeRange?.to;
   const title = dataset?.title;
+  const datasetId = dataset?.id;
+  const key = query && dataset && data ? `${datasetId}|${title}|${query}` : undefined;
 
   useEffect(() => {
-    if (!query || !dataset || !data) {
+    if (!key || !query || !dataset || !data) {
       setState(IDLE);
       return;
     }
     const controller = new AbortController();
-    setState((s) => ({ ...s, loading: true, error: undefined }));
+    setState((s) =>
+      s.key === key ? { ...s, loading: true, error: undefined } : { ...PENDING, key }
+    );
     runPpl(data, dataset, query, from && to ? { from, to } : undefined, controller.signal)
       .then((rows) => {
-        if (!controller.signal.aborted) setState({ rows, loading: false, loaded: true });
+        if (!controller.signal.aborted) setState({ rows, loading: false, loaded: true, key });
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted)
-          setState({ rows: [], loading: false, loaded: true, error: errorMessage(error) });
+          setState({ rows: [], loading: false, loaded: true, error: errorMessage(error), key });
       });
     return () => controller.abort();
-    // The dataset is identified by its title.
+    // The dataset is identified by its id and title (in `key`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, title, query, from, to, refreshKey]);
+  }, [data, key, from, to, refreshKey]);
 
-  return state;
+  if (!key) return IDLE;
+  // Before the effect for a new query has run: not the previous query's rows.
+  if (state.key !== key) return PENDING;
+  const { key: _key, ...rows } = state;
+  return rows;
 };

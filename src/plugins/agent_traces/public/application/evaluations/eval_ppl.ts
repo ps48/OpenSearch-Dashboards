@@ -18,9 +18,15 @@
 
 export const EVAL_EVENT = 'gen_ai.evaluation.result';
 
+/**
+ * The time field of the evaluation events, for the queries and the dataset "Create" makes:
+ * `@timestamp`, which the onboarding Data Prepper pipeline copies from the OTel `time`.
+ */
+export const EVALS_TIME_FIELD = '@timestamp';
+
 /** Field paths, as PPL names them. */
 export const F = {
-  time: '@timestamp',
+  time: EVALS_TIME_FIELD,
   eventName: 'eventName',
   traceId: 'traceId',
   spanId: 'spanId',
@@ -109,7 +115,10 @@ const agentWhere = (agent: string) => `where ${agentCond(agent)}`;
 const anyOf = (f: string, values: string[]) =>
   values.map((v) => `${fld(f)} = ${quote(v)}`).join(' or ');
 
-const like = (f: string, q: string) => `where like(${fld(f)}, ${quote(`%${q}%`)})`;
+/** A LIKE pattern matching `q` literally: its `\\`, `%` and `_` are escaped. */
+export const likeLiteral = (q: string) => q.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+const like = (f: string, q: string) => `where like(${fld(f)}, ${quote(`%${likeLiteral(q)}%`)})`;
 
 const head = `head ${AGG_LIMIT}`;
 const join = (commands: string[]) => commands.join(' | ');
@@ -203,30 +212,42 @@ export const buildSuiteRunsQuery = (index: string, suite: string): string =>
   ]);
 
 /**
- * Cases passed per run of a suite: a case passes when none of its results failed or errored.
- * Two aggregations (per case, then per run): one row per run.
+ * Cases passed per run of a suite: a case passes when one of its results passed and none
+ * failed or errored (as `caseStatusOf`). Two aggregations (per case, then per run): one row
+ * per run.
  */
 export const buildSuiteRunCasesQuery = (index: string, suite: string): string =>
   join([
     ...base(index),
     `where ${fld(F.suiteName)} = ${quote(suite)}`,
-    `eval bad = if(isnotnull(${fld(F.errorType)}) or ${fld(F.label)} = 'fail', 1, 0)`,
-    `stats sum(bad) as bad by ${fld(F.runId)}, ${fld(F.caseId)}`,
-    'eval ok = if(bad = 0, 1, 0)',
+    `eval bad = if(isnotnull(${fld(F.errorType)}) or ${fld(F.label)} = 'fail', 1, 0), good = if(${fld(
+      F.label
+    )} = 'pass', 1, 0)`,
+    `stats sum(bad) as bad, sum(good) as good by ${fld(F.runId)}, ${fld(F.caseId)}`,
+    'eval ok = if(bad = 0 and good > 0, 1, 0)',
     `stats count() as cases, sum(ok) as passed by ${fld(F.runId)}`,
     head,
   ]);
 
 // ---------------------------------------------------------------------- Run page
 
-/** Every run in the range with its suite and start: finds the run before a run. */
-export const buildRunsLookupQuery = (index: string): string =>
+/**
+ * The runs of a suite in the range with their start, latest first: finds the run before a run
+ * (the cap drops the oldest runs, not the recent ones). Without a suite: every run.
+ */
+export const buildRunsLookupQuery = (index: string, suite?: string): string =>
   join([
     ...base(index),
-    `where isnotnull(${fld(F.runId)})`,
+    suite !== undefined
+      ? `where ${fld(F.suiteName)} = ${quote(suite)}`
+      : `where isnotnull(${fld(F.runId)})`,
     `stats min(${fld(F.time)}) as started by ${fld(F.suiteName)}, ${fld(F.runId)}`,
+    ...(suite !== undefined ? ['sort - started'] : []),
     head,
   ]);
+
+/** An aggregation that returned `AGG_LIMIT` rows may have been cut off. */
+export const isTruncated = (rows: unknown[]): boolean => rows.length >= AGG_LIMIT;
 
 const runsWhere = (runIds: string[]) =>
   runIds.map((id) => `${fld(F.runId)} = ${quote(id)}`).join(' or ');
@@ -303,6 +324,9 @@ export const buildRootSpansQuery = (spansIndex: string, traceIds: string[]): str
     `source = ${spansIndex}`,
     `where ${traceIds.length > 1 ? `(${ids})` : ids} and ${fld(SF.parentSpanId)} = ''`,
     `fields ${[SF.traceId, SF.input, SF.output].map(fld).join(', ')}`,
+    // A trace can have several spans without a parent (broken context propagation): one
+    // each, so a trace cannot take another's place under the head.
+    `dedup ${fld(SF.traceId)}`,
     `head ${traceIds.length}`,
   ]);
 };

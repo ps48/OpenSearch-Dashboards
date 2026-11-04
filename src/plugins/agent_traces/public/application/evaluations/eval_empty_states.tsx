@@ -44,8 +44,8 @@ export const AgentsEmptyState: React.FC<{ range: string }> = ({ range }) => (
     <EuiText size="s" textAlign="left">
       <h3>
         {i18n.translate('agentTraces.evalsEmpty.agentsTitle', {
-          defaultMessage: 'No evaluation results in {range}',
-          values: { range: range.charAt(0).toLowerCase() + range.slice(1) },
+          defaultMessage: 'No evaluation results in the range: {range}',
+          values: { range },
         })}
       </h3>
       <p className="agtEvlDim">

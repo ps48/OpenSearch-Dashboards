@@ -179,7 +179,8 @@ describe('ResultFlyout', () => {
   it('shows the case: its other results, and the run before with Compare traces', () => {
     const open = jest.fn();
     renderFlyout(offline, {}, open);
-    expect(mockPpl.queries).toContain(buildRunsLookupQuery(TEST_INDEX));
+    // The runs of the result's suite, to find the run before.
+    expect(mockPpl.queries).toContain(buildRunsLookupQuery(TEST_INDEX, 'golden'));
     expect(mockPpl.queries).toContain(buildCaseResultsQuery(TEST_INDEX, [RUN, BEFORE], 'c1'));
     const c = screen.getByTestId('agtEvlFlyoutCase');
     expect(c).toHaveTextContent('Polite');
@@ -193,6 +194,14 @@ describe('ResultFlyout', () => {
     expect(mockCompare).toHaveBeenCalledWith(
       expect.objectContaining({ caseId: 'c1', traceA: 'trace0', traceB: 'trace1' })
     );
+  });
+
+  it('builds the raw event only while it is open', () => {
+    renderFlyout();
+    const raw = screen.getByTestId('agtEvlRawEvent');
+    expect(raw.querySelector('code')).toBeNull();
+    fireEvent.click(within(raw).getByText('Raw event'));
+    expect(raw).toHaveTextContent('"traceId"');
   });
 
   it('opens the judge trace only on click: spans, prompt and response, and back', () => {

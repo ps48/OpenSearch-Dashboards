@@ -235,6 +235,8 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
         </MetaItem>
       </div>
       {error && <QueryErrorCallout message={error} />}
+      {/* "Cases passed" comes from its own query: a failure is shown, not dashes. */}
+      {!error && casesQuery.error && <QueryErrorCallout message={casesQuery.error} />}
       <EuiPanel paddingSize="m" hasShadow={false} hasBorder>
         <EuiTitle size="xs">
           <h3>

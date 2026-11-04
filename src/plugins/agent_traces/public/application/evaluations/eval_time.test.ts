@@ -4,7 +4,7 @@
  */
 
 import moment from 'moment-timezone';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { Subject } from 'rxjs';
 import type { IUiSettingsClient } from '../../../../../core/public';
 import {
@@ -50,14 +50,17 @@ describe('evaluation times', () => {
       get: jest.fn(() => 'America/New_York'),
       get$: jest.fn(() => changes),
     };
-    const { unmount } = renderHook(() =>
+    const { result, unmount } = renderHook(() =>
       useEvalTimezone(uiSettings as unknown as IUiSettingsClient)
     );
     expect(uiSettings.get).toHaveBeenCalledWith('dateFormat:tz');
     expect(getEvalTimezone()).toBe('America/New_York');
-    changes.next('Asia/Kolkata');
+    expect(result.current).toBe('America/New_York');
+    act(() => changes.next('Asia/Kolkata'));
     expect(getEvalTimezone()).toBe('Asia/Kolkata');
-    changes.next('Browser');
+    // The zone is returned, so a change re-renders the caller.
+    expect(result.current).toBe('Asia/Kolkata');
+    act(() => changes.next('Browser'));
     expect(getEvalTimezone()).toBe(resolveTimezone('Browser'));
     unmount();
     // Unsubscribed on unmount.

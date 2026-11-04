@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Criteria,
   EuiBadge,
@@ -65,6 +65,22 @@ const FACET_LABEL: Record<Facet, string> = {
   names: i18n.translate('agentTraces.evals.results.evaluation', { defaultMessage: 'Evaluation' }),
   versions: i18n.translate('agentTraces.evals.results.version', { defaultMessage: 'Version' }),
   verdicts: i18n.translate('agentTraces.evals.results.verdict', { defaultMessage: 'Verdict' }),
+};
+
+/** One message per facet (a label inserted into a sentence does not translate). */
+const FACET_SEARCH: Record<Facet, string> = {
+  agents: i18n.translate('agentTraces.evals.results.searchAgents', {
+    defaultMessage: 'Search agents',
+  }),
+  names: i18n.translate('agentTraces.evals.results.searchEvaluations', {
+    defaultMessage: 'Search evaluations',
+  }),
+  versions: i18n.translate('agentTraces.evals.results.searchVersions', {
+    defaultMessage: 'Search versions',
+  }),
+  verdicts: i18n.translate('agentTraces.evals.results.searchVerdicts', {
+    defaultMessage: 'Search verdicts',
+  }),
 };
 
 const FACET_KEY: Record<Facet, string> = {
@@ -137,10 +153,7 @@ const FacetFilter: React.FC<{
             searchable
             searchProps={{
               compressed: true,
-              placeholder: i18n.translate('agentTraces.evals.results.facetSearch', {
-                defaultMessage: 'Search {facet}',
-                values: { facet: FACET_LABEL[facet].toLowerCase() },
-              }),
+              placeholder: FACET_SEARCH[facet],
               'data-test-subj': `agtEvlFacetSearch-${facet}`,
             }}
             options={options}
@@ -218,6 +231,12 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
   const stored = state.results;
   const [search, setSearch] = useState(stored.q);
   const q = useDebounced(search);
+  // Back and Forward change the stored search: show it (not on our own updates, which store q).
+  useEffect(() => {
+    if (stored.q !== q) setSearch(stored.q);
+    // Only a change of the stored search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stored.q]);
   const filters: ResultsFilters = useMemo(
     () => ({ ...stored, q, lockAgent, agents: lockAgent ? [] : stored.agents }),
     [stored, q, lockAgent]
@@ -228,7 +247,18 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
   const [sort, setSort] = useState<ResultsSort>(DEFAULT_RESULTS_SORT);
   const [pageIndex, setPageIndex] = useState(0);
   const filtersKey = JSON.stringify([filters, timeRange]);
-  useEffect(() => setPageIndex(0), [filtersKey]);
+  // New filters or a new range go back to page 1; Refresh (which resolves a relative range
+  // again, so `timeRange` changes too) keeps the page.
+  const lastRefresh = useRef(refreshKey);
+  useEffect(() => {
+    if (lastRefresh.current !== refreshKey) {
+      lastRefresh.current = refreshKey;
+      return;
+    }
+    setPageIndex(0);
+    // Keyed on the filters; refreshKey is read to tell a refresh apart.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
 
   const page = usePplRows(
     dataset,
@@ -271,7 +301,18 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
       field: 'name',
       name: FACET_LABEL.names,
       sortable: true,
-      render: (n: string) => <strong>{n}</strong>,
+      // A link, so the result opens from the keyboard too (the row click is mouse only).
+      render: (n: string, r: EvalResult) => (
+        <EuiLink
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            openResult(r);
+          }}
+          data-test-subj="agtEvlResultOpen"
+        >
+          <strong>{n}</strong>
+        </EuiLink>
+      ),
     },
     {
       field: 'verdict',
@@ -443,6 +484,13 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
         </>
       )}
       <EuiSpacer size="m" />
+      {/* The total comes from its own query: without it the pager cannot count. */}
+      {!page.error && count.error && (
+        <>
+          <QueryErrorCallout message={count.error} />
+          <EuiSpacer size="s" />
+        </>
+      )}
       {page.error ? (
         <QueryErrorCallout message={page.error} />
       ) : (

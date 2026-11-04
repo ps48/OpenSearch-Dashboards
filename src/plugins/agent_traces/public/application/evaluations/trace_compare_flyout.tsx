@@ -205,7 +205,9 @@ export const TraceCompareFlyout: React.FC<{
   onClose: () => void;
 }> = ({ caseId, traceA, traceB, versionA, versionB, onClose }) => {
   const { services } = useOpenSearchDashboards<{ data: DataPublicPluginStart }>();
-  const { dataset, spans, index, timeRange, openResult } = useEvalContext();
+  // Both traces' results: the browse range, which holds the run before (where its trace was
+  // found), not only the current run's window.
+  const { dataset, spans, index, browseRange, openResult } = useEvalContext();
   const [state, setState] = useState<{ loading: boolean; error?: string; sides?: Side[] }>({
     loading: true,
   });
@@ -225,7 +227,7 @@ export const TraceCompareFlyout: React.FC<{
         services.data,
         dataset,
         buildTraceResultsQuery(index, ids),
-        timeRange,
+        browseRange,
         controller.signal
       ),
     ])
@@ -253,7 +255,7 @@ export const TraceCompareFlyout: React.FC<{
         if (!controller.signal.aborted) setState({ loading: false, error: errorMessage(error) });
       });
     return () => controller.abort();
-  }, [services.data, spans, dataset, index, timeRange, traceA, traceB]);
+  }, [services.data, spans, dataset, index, browseRange, traceA, traceB]);
 
   const column = (side: Side, other: Side, label: string, version?: string) => (
     <EuiFlexItem key={label} className="agtEvlTraceCol">

@@ -315,7 +315,7 @@ const useRunWindow = (
 
 export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ params }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
-  useEvalTimezone(services.uiSettings);
+  const timezone = useEvalTimezone(services.uiSettings);
   const { state, setState, navigate } = useAppState(params, services);
   const route = useEvalRoute(params.history);
   const time = useTimeRange(services);
@@ -436,6 +436,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             rangeMs: time.rangeMs,
             rangeLabel,
             refreshKey: time.refreshKey,
+            timezone,
             state,
             setState,
             navigate,
@@ -453,6 +454,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
       time.rangeMs,
       rangeLabel,
       time.refreshKey,
+      timezone,
       state,
       setState,
       navigate,

@@ -10,6 +10,7 @@ import {
   EuiButton,
   EuiButtonEmpty,
   EuiButtonIcon,
+  EuiCallOut,
   EuiFilterButton,
   EuiFilterGroup,
   EuiFlexGroup,
@@ -33,14 +34,18 @@ import {
   CompareSide,
   EvalResult,
   comparison,
+  get,
   recordsToResults,
+  str,
   suiteRuns,
 } from './eval_model';
 import {
+  F,
   NO_AGENT,
   buildCaseResultsQuery,
   buildCompareRunsQuery,
   buildSuiteRunsQuery,
+  isTruncated,
 } from './eval_ppl';
 import { SpanIOView } from './span_io_view';
 import { useRootSpans } from './eval_spans';
@@ -56,6 +61,7 @@ import {
   RunSelectList,
   RUN_A,
   RUN_B,
+  TruncatedCallout,
   VerdictBadge,
   VersionBadge,
   agentLabel,
@@ -354,13 +360,20 @@ const RunCard: React.FC<{
 /** Two runs of a suite, Run A the baseline: per-case changes and per-evaluation pass rates. */
 export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, runB }) => {
   const { dataset, index, timeRange, refreshKey, navigate } = useEvalContext();
-  const { rows, loading, error } = usePplRows(
+  const { rows, loading, loaded, error } = usePplRows(
     dataset,
     buildCompareRunsQuery(index, runA, runB),
     timeRange,
     refreshKey
   );
   const cmp = useMemo(() => comparison(runA, runB, rows), [runA, runB, rows]);
+  // A run id with no results (a wrong link, a run outside the data): say which, rather than
+  // a comparison where every case is only in the other run.
+  const missingRuns = useMemo(() => {
+    if (!loaded || error) return [];
+    const found = new Set(rows.map((row) => str(get(row, F.runId))));
+    return [runA, runB].filter((id, i, all) => !found.has(id) && all.indexOf(id) === i);
+  }, [loaded, error, rows, runA, runB]);
   const [filter, setFilter] = useState<CaseFilter>('changed');
   const [traces, setTraces] = useState<CompareCaseRow>();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -489,6 +502,28 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
 
   return (
     <>
+      {missingRuns.length > 0 && (
+        <>
+          <EuiCallOut
+            color="warning"
+            iconType="alert"
+            size="s"
+            title={i18n.translate('agentTraces.evals.compare.runNotFound', {
+              defaultMessage:
+                'No results for {n, plural, one {run} other {runs}} {runs} in the range',
+              values: { n: missingRuns.length, runs: missingRuns.join(', ') },
+            })}
+            data-test-subj="agtEvlCompareRunNotFound"
+          />
+          <EuiSpacer size="s" />
+        </>
+      )}
+      {isTruncated(rows) && (
+        <>
+          <TruncatedCallout />
+          <EuiSpacer size="s" />
+        </>
+      )}
       <EuiFlexGroup alignItems="center" gutterSize="s" responsive={false}>
         <EuiFlexItem>
           <div className="agtEvlMeta" data-test-subj="agtEvlCompareMeta">

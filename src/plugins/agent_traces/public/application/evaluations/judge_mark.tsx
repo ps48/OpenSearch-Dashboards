@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { EuiToolTip } from '@elastic/eui';
+import { i18n } from '@osd/i18n';
 import { EvalResult, Tally, tallyOf } from './eval_model';
 import { VERDICT_LABEL } from './eval_components';
 
@@ -49,6 +50,10 @@ export const judgeState = (t: Tally): JudgeState =>
 export const JudgeMark: React.FC<{ results: EvalResult[] }> = ({ results }) => {
   if (!results.length) return null;
   const state = judgeState(tallyOf(results));
+  const label = i18n.translate('agentTraces.evals.judgeMark.label', {
+    defaultMessage: 'Evaluation results: {results}',
+    values: { results: results.map((r) => `${r.name}: ${VERDICT_LABEL[r.verdict]}`).join(', ') },
+  });
   return (
     <EuiToolTip
       content={
@@ -61,10 +66,14 @@ export const JudgeMark: React.FC<{ results: EvalResult[] }> = ({ results }) => {
         </span>
       }
     >
+      {/* Focusable, so the tooltip opens from the keyboard; the label reads the verdicts. */}
       <span
         className={`agtEvlJudge agtEvlJudge--${state}`}
         data-test-subj="agtEvlJudgeMark"
         data-state={state}
+        tabIndex={0}
+        role="img"
+        aria-label={label}
       >
         <JudgeIcon />
       </span>

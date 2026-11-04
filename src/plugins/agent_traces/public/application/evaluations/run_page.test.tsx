@@ -32,6 +32,12 @@ jest.mock('./use_ppl_rows', () => ({
 }));
 
 const RUN = 'run_20261028_cccc3333';
+/** The run's cases (they name its suite), the suite's runs, then the run before's cases. */
+const RUN_QUERIES = () => [
+  buildRunCasesQuery(TEST_INDEX, RUN),
+  buildRunsLookupQuery(TEST_INDEX, 'golden'),
+  buildRunCasesQuery(TEST_INDEX, 'run_20261027_bbbb2222'),
+];
 const BEFORE = 'run_20261027_bbbb2222';
 const base = {
   'attributes.test.suite.name': 'golden',
@@ -128,11 +134,9 @@ describe('RunPage', () => {
     });
   });
 
-  it('finds the run before, then reads both runs with one aggregation', () => {
+  it("reads the run's cases, then the suite's run before and its cases", () => {
     renderWithContext(<RunPage runId={RUN} />);
-    expect(new Set(mockPpl.queries)).toEqual(
-      new Set([buildRunsLookupQuery(TEST_INDEX), buildRunCasesQuery(TEST_INDEX, RUN, BEFORE)])
-    );
+    expect(new Set(mockPpl.queries)).toEqual(new Set(RUN_QUERIES()));
     const meta = screen.getByTestId('agtEvlRunMeta');
     expect(meta).toHaveTextContent('golden');
     expect(meta).toHaveTextContent('tp');
@@ -217,8 +221,9 @@ describe('RunPage', () => {
     const timeRange = { from: '2026-10-28T07:00:00.000Z', to: '2026-10-28T07:02:00.000Z' };
     renderWithContext(<RunPage runId={RUN} />, testContext({ browseRange, timeRange }));
     fireEvent.click(screen.getByTestId('agtEvlCompareWith'));
-    expect(mockPpl.ranges.get(buildRunsLookupQuery(TEST_INDEX))).toEqual(browseRange);
-    expect(mockPpl.ranges.get(buildRunCasesQuery(TEST_INDEX, RUN, BEFORE))).toEqual(browseRange);
+    expect(mockPpl.ranges.get(buildRunsLookupQuery(TEST_INDEX, 'golden'))).toEqual(browseRange);
+    expect(mockPpl.ranges.get(buildRunCasesQuery(TEST_INDEX, RUN))).toEqual(browseRange);
+    expect(mockPpl.ranges.get(buildRunCasesQuery(TEST_INDEX, BEFORE))).toEqual(browseRange);
     expect(mockPpl.ranges.get(buildSuiteRunsQuery(TEST_INDEX, 'golden'))).toEqual(browseRange);
   });
 
@@ -257,9 +262,7 @@ describe('RunPage', () => {
     expect(screen.getByTestId('agtEvlCaseRow-c3')).toBeInTheDocument();
     expect(screen.queryByTestId('agtEvlCaseRow-c2')).not.toBeInTheDocument();
     // Status and search run in the browser only.
-    expect(new Set(mockPpl.queries)).toEqual(
-      new Set([buildRunsLookupQuery(TEST_INDEX), buildRunCasesQuery(TEST_INDEX, RUN, BEFORE)])
-    );
+    expect(new Set(mockPpl.queries)).toEqual(new Set(RUN_QUERIES()));
   });
 
   it('View trace opens the case trace', () => {
@@ -286,6 +289,57 @@ describe('RunPage', () => {
       runA: 'run_20261027_bbbb2222',
       runB: RUN,
     });
+  });
+
+  it('keeps the run when the run before cannot be read, and says so', () => {
+    mockPpl.reset();
+    mockPpl.answer((q) =>
+      q.includes('as t0')
+        ? [caseRow('c1', 'accuracy', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05')]
+        : []
+    );
+    const hook = mockPpl.hook;
+    const spy = jest
+      .spyOn(mockPpl, 'hook')
+      .mockImplementation((dataset: unknown, query: string | undefined, range?: unknown) =>
+        query?.includes('sort - started')
+          ? { rows: [], loading: false, loaded: true, error: 'Boom' }
+          : hook(dataset, query, range)
+      );
+    renderWithContext(<RunPage runId={RUN} />);
+    expect(screen.getByTestId('agtEvlRunBeforeError')).toHaveTextContent('Boom');
+    expect(screen.getByTestId('agtEvlStatCases')).toHaveTextContent('1 / 1');
+    expect(screen.getByTestId('agtEvlCompareWith')).toBeDisabled();
+    spy.mockRestore();
+  });
+
+  it('warns when the cases aggregation hit its cap', () => {
+    mockPpl.answer((q) =>
+      q.includes('as t0')
+        ? Array.from({ length: 10000 }, (_, i) =>
+            caseRow(`c${i}`, 'accuracy', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05')
+          )
+        : []
+    );
+    renderWithContext(<RunPage runId={RUN} />);
+    expect(screen.getByTestId('agtEvlTruncated')).toHaveTextContent('Results truncated');
+  });
+
+  it('a case with scores only is Scored, not passed', () => {
+    mockPpl.answer((q) =>
+      q.includes('as t0')
+        ? [
+            caseRow('c1', 'accuracy', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05'),
+            caseRow('c2', 'helpfulness', 'scored', '2026-10-28 07:00:00', '2026-10-28 07:00:05'),
+          ]
+        : []
+    );
+    renderWithContext(<RunPage runId={RUN} />);
+    expect(screen.getByTestId('agtEvlStatCases')).toHaveTextContent('1 / 2');
+    expect(
+      within(screen.getByTestId('agtEvlCaseRow-c2')).getByTestId('agtEvlVerdict-scored')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlCaseStatus-scored')).toBeInTheDocument();
   });
 
   it('filterCases matches name and id', () => {

@@ -4,6 +4,7 @@
  */
 
 import {
+  AGG_LIMIT,
   DEFAULT_RESULTS_SORT,
   EMPTY_RESULTS_FILTERS,
   NO_AGENT,
@@ -30,6 +31,8 @@ import {
   buildTraceResultsQuery,
   buildTraceSpansQuery,
   buildTracesTallyQuery,
+  isTruncated,
+  likeLiteral,
   trendStep,
 } from './eval_ppl';
 
@@ -142,9 +145,10 @@ describe('evaluation PPL', () => {
       [
         ...BASE,
         "where `attributes.test.suite.name` = 'it\\'s'",
-        "eval bad = if(isnotnull(`attributes.error.type`) or `attributes.gen_ai.evaluation.score.label` = 'fail', 1, 0)",
-        'stats sum(bad) as bad by `attributes.test.suite.run.id`, `attributes.test.case.id`',
-        'eval ok = if(bad = 0, 1, 0)',
+        "eval bad = if(isnotnull(`attributes.error.type`) or `attributes.gen_ai.evaluation.score.label` = 'fail', 1, 0), good = if(`attributes.gen_ai.evaluation.score.label` = 'pass', 1, 0)",
+        'stats sum(bad) as bad, sum(good) as good by `attributes.test.suite.run.id`, `attributes.test.case.id`',
+        // A case with scores only (no pass rule) has not passed.
+        'eval ok = if(bad = 0 and good > 0, 1, 0)',
         'stats count() as cases, sum(ok) as passed by `attributes.test.suite.run.id`',
         'head 10000',
       ].join(' | ')
@@ -184,6 +188,28 @@ describe('evaluation PPL', () => {
         'head 10000',
       ].join(' | ')
     );
+    // One suite's runs, latest first: the cap drops the oldest runs.
+    expect(buildRunsLookupQuery(I, "it's")).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.name` = 'it\\'s'",
+        'stats min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.test.suite.run.id`',
+        'sort - started',
+        'head 10000',
+      ].join(' | ')
+    );
+  });
+
+  it('escapes LIKE wildcards in search text', () => {
+    expect(likeLiteral('50%_a\\b')).toBe('50\\%\\_a\\\\b');
+    expect(buildAgentsQuery(I, 'all', 'a_b')).toContain(
+      "where like(`attributes.gen_ai.agent.name`, '%a\\\\_b%')"
+    );
+  });
+
+  it('flags an aggregation that hit the cap', () => {
+    expect(isTruncated(new Array(AGG_LIMIT))).toBe(true);
+    expect(isTruncated(new Array(AGG_LIMIT - 1))).toBe(false);
   });
 
   it('Run, compare runs: the first and last result of the runs (their window)', () => {
@@ -231,6 +257,7 @@ describe('evaluation PPL', () => {
         'source = spans-*',
         "where `traceId` = 't1' and `parentSpanId` = ''",
         'fields `traceId`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
+        'dedup `traceId`',
         'head 1',
       ].join(' | ')
     );
@@ -239,6 +266,8 @@ describe('evaluation PPL', () => {
         'source = spans-*',
         "where (`traceId` = 't1' or `traceId` = 't2') and `parentSpanId` = ''",
         'fields `traceId`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
+        // One root per trace, so a trace with two parentless spans cannot take the other's place.
+        'dedup `traceId`',
         'head 2',
       ].join(' | ')
     );

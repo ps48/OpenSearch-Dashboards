@@ -40,10 +40,12 @@ describe('scoreScale', () => {
     expect(scoreScale({ value: 40, scoreMin: 0, scoreMax: 100 })).toEqual({ min: 0, max: 100 });
   });
 
-  it('falls back to 0 to 1 when the value fits it', () => {
+  it('falls back to 0 to 1 for a value in [0, 1)', () => {
     expect(scoreScale({ value: 0.4 })).toEqual({ min: 0, max: 1 });
     expect(scoreScale({ value: 0 })).toEqual({ min: 0, max: 1 });
-    expect(scoreScale({ value: 1 })).toEqual({ min: 0, max: 1 });
+    // A bare 1 may be the worst score of a 1 to 5 judge: no scale, the number shows.
+    expect(scoreScale({ value: 1 })).toBeUndefined();
+    expect(scoreScale({ value: 1, scoreMin: 0 })).toEqual({ min: 0, max: 1 });
     // A declared min of 0 without a max: 0 to 1 when the value fits.
     expect(scoreScale({ value: 0.5, scoreMin: 0 })).toEqual({ min: 0, max: 1 });
   });
