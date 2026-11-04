@@ -41,7 +41,9 @@ import {
   saveEvalsConfig,
   sortDatasets,
 } from './eval_dataset';
-import { errorMessage } from './use_ppl_rows';
+import { errorMessage, evalsLookupDataset, runPpl } from './use_ppl_rows';
+import { EVAL_EVENT, F, fld } from './eval_ppl';
+import { num } from './eval_model';
 import type { EvaluationsServices } from '.';
 
 export type Option = EuiComboBoxOptionOption<DatasetRef>;
@@ -61,21 +63,52 @@ const MODAL_TITLE = i18n.translate('agentTraces.evalsSettings.title', {
   defaultMessage: 'Agent evaluations settings',
 });
 
+/** One count over the evaluation indices; a missing index means none (undefined). */
+export const countEvaluationResults = async (
+  services: EvaluationsServices,
+  index = EVALS_DATASET_TITLE,
+  dataSource?: DataSourceRef
+): Promise<number | undefined> => {
+  try {
+    const rows = await runPpl(
+      services.data,
+      evalsLookupDataset(index, dataSource),
+      `source = ${index} | where ${fld(F.eventName)} = '${EVAL_EVENT}' | stats count() as n`
+    );
+    return num(rows[0]?.n) ?? 0;
+  } catch (e) {
+    if (/no such index|index_not_found|IndexNotFound/i.test(errorMessage(e))) return undefined;
+    throw e;
+  }
+};
+
+/** The index pattern titled like the evaluations dataset on that data source, if any. */
+export const findEvalsDatasetPattern = async (
+  services: EvaluationsServices,
+  dataSource?: DataSourceRef
+): Promise<DatasetRef | undefined> =>
+  (await listDatasets(services.savedObjects.client)).find(
+    (d) => d.title === EVALS_DATASET_TITLE && (d.dataSource?.id ?? '') === (dataSource?.id ?? '')
+  );
+
 /**
- * Agent Evaluations settings, styled like the APM settings: the traces dataset and the
- * evaluations dataset (a logs dataset over the evaluation events), saved as the workspace's
- * `AgentEvals-Config-*` object (one per workspace, updated in place).
- */
-/**
- * Creates the logs dataset over the evaluation events (its fields read from the indices, as
- * createAndSave refreshes them before saving).
+ * The logs dataset over the evaluation events: an index pattern with its title on that data
+ * source is reused (whatever its type: one made in Dashboards Management, or by a setup that
+ * failed after creating it), else one is created. Its fields are read from the indices when
+ * they exist (`indexExists`), else the pattern is saved without them (no "no matching
+ * indices" toasts; the field list is read again once the time field shows up). It is not made
+ * the default index pattern.
  */
 export const createEvalsDataset = async (
   services: EvaluationsServices,
   /** The data source the evaluation indices are on (the traces dataset's). */
-  dataSource?: DataSourceRef
-): Promise<DatasetRef> => {
-  const pattern = await services.data.indexPatterns.createAndSave(
+  dataSource?: DataSourceRef,
+  { indexExists = true }: { indexExists?: boolean } = {}
+): Promise<{ dataset: DatasetRef; created: boolean }> => {
+  const existing = await findEvalsDatasetPattern(services, dataSource);
+  if (existing) return { dataset: existing, created: false };
+  const { indexPatterns } = services.data;
+  const pattern = await indexPatterns.create(
     {
       title: EVALS_DATASET_TITLE,
       timeFieldName: EVALS_DATASET_TIME_FIELD,
@@ -86,18 +119,28 @@ export const createEvalsDataset = async (
         ? { dataSourceRef: { id: dataSource.id, type: 'data-source', name: 'dataSource' } }
         : {}),
     },
-    false,
-    false
+    !indexExists
   );
+  // createSavedObject, not createAndSave: that one also sets the default index pattern.
+  const saved = await indexPatterns.createSavedObject(pattern);
   return {
-    id: pattern.id as string,
-    title: EVALS_DATASET_TITLE,
-    displayName: EVALS_DATASET_DISPLAY_NAME,
-    signalType: 'logs',
-    timeFieldName: EVALS_DATASET_TIME_FIELD,
-    dataSource,
+    created: true,
+    dataset: {
+      id: saved.id as string,
+      title: EVALS_DATASET_TITLE,
+      displayName: EVALS_DATASET_DISPLAY_NAME,
+      signalType: 'logs',
+      timeFieldName: EVALS_DATASET_TIME_FIELD,
+      dataSource,
+    },
   };
 };
+
+/**
+ * Agent Evaluations settings, styled like the APM settings: the traces dataset and the
+ * evaluations dataset (a logs dataset over the evaluation events), saved as the workspace's
+ * `AgentEvals-Config-*` object (one per workspace, updated in place).
+ */
 
 export const EvalSettingsModal: React.FC<{
   config?: EvalsDatasetConfig;
@@ -119,7 +162,7 @@ export const EvalSettingsModal: React.FC<{
     config?.evaluationsDataset
   );
   const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState<{ title: string; error?: string }>();
+  const [created, setCreated] = useState<{ title: string; reused?: boolean; error?: string }>();
   const [saving, setSaving] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
 
@@ -151,16 +194,23 @@ export const EvalSettingsModal: React.FC<{
 
   const hasEvalsDataset = logs.some(looksLikeEvalsDataset);
 
-  // Guided creation: the logs dataset over the evaluation events, its fields read from the
-  // indices (createAndSave refreshes them before saving), then selected.
+  // Guided creation: the logs dataset over the evaluation events (an existing pattern with its
+  // title is reused), its fields read from the indices when they exist, then selected.
   const createDataset = async () => {
     setCreating(true);
     setCreated(undefined);
     try {
-      const dataset = await createEvalsDataset(services, selectedTraces?.dataSource);
-      setLogs((l) => sortDatasets([...l, dataset]));
+      const dataSource = selectedTraces?.dataSource;
+      // A failed count is not a reason to stop: read the fields as usual.
+      const results = await countEvaluationResults(services, EVALS_DATASET_TITLE, dataSource).catch(
+        () => 0
+      );
+      const { dataset, created: isNew } = await createEvalsDataset(services, dataSource, {
+        indexExists: results !== undefined,
+      });
+      setLogs((l) => sortDatasets([...l.filter((d) => d.id !== dataset.id), dataset]));
       setSelectedEvals(dataset);
-      setCreated({ title: EVALS_DATASET_TITLE });
+      setCreated({ title: EVALS_DATASET_TITLE, reused: !isNew });
     } catch (e) {
       setCreated({ title: EVALS_DATASET_TITLE, error: errorMessage(e) });
     } finally {
@@ -354,10 +404,18 @@ export const EvalSettingsModal: React.FC<{
                   size="s"
                   color="success"
                   iconType="check"
-                  title={i18n.translate('agentTraces.evalsSettings.created', {
-                    defaultMessage: 'Created the evaluations dataset {title} and selected it',
-                    values: { title: created.title },
-                  })}
+                  title={
+                    created.reused
+                      ? i18n.translate('agentTraces.evalsSettings.reused', {
+                          defaultMessage:
+                            'Selected the existing index pattern {title} as the evaluations dataset',
+                          values: { title: created.title },
+                        })
+                      : i18n.translate('agentTraces.evalsSettings.created', {
+                          defaultMessage: 'Created the evaluations dataset {title} and selected it',
+                          values: { title: created.title },
+                        })
+                  }
                   data-test-subj="agtEvlSettingsCreated"
                 />
               </>

@@ -16,7 +16,8 @@ jest.mock('./use_ppl_rows', () => ({
   runPpl: (...args: unknown[]) => mockRunPpl(...args),
 }));
 
-const patterns = ({ withEvals = true, withTraces = true } = {}) => [
+const patterns = ({ withEvals = true, withTraces = true, extra = [] as unknown[] } = {}) => [
+  ...extra,
   ...(withTraces
     ? [
         { id: 'tr', attributes: { title: 'otel-v1-apm-span*', signalType: 'traces' } },
@@ -35,15 +36,17 @@ const makeServices = ({
   queryDataset,
   createError,
   saveError,
+  extra,
 }: {
   withEvals?: boolean;
   withTraces?: boolean;
   queryDataset?: unknown;
   createError?: string;
   saveError?: string;
+  extra?: unknown[];
 } = {}) => {
   const client = {
-    find: jest.fn(async () => ({ savedObjects: patterns({ withEvals, withTraces }) })),
+    find: jest.fn(async () => ({ savedObjects: patterns({ withEvals, withTraces, extra }) })),
     get: jest.fn(),
     create: jest.fn(async () => {
       if (saveError) throw new Error(saveError);
@@ -51,20 +54,21 @@ const makeServices = ({
     }),
     update: jest.fn(async () => ({})),
   };
-  const createAndSave = jest.fn(async () => {
+  const create = jest.fn(async (spec: Record<string, unknown>) => ({ ...spec }));
+  const createSavedObject = jest.fn(async (pattern: Record<string, unknown>) => {
     if (createError) throw new Error(createError);
-    return { id: 'ev-new' };
+    return { ...pattern, id: 'ev-new' };
   });
   const addSuccess = jest.fn();
   const services = {
     savedObjects: { client },
     data: {
-      indexPatterns: { createAndSave },
+      indexPatterns: { create, createSavedObject },
       query: { queryString: { getQuery: () => ({ query: '', dataset: queryDataset }) } },
     },
     notifications: { toasts: { addSuccess, addDanger: jest.fn() } },
   };
-  return { services, client, createAndSave, addSuccess };
+  return { services, client, createAndSave: createSavedObject, create, addSuccess };
 };
 
 const renderWizard = (
@@ -190,7 +194,7 @@ describe('EvalSetupWizard', () => {
     await waitFor(() => expect(mockRunPpl).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('agtEvlSetupStep-create'));
     expect(screen.getByTestId('agtEvlSetupReview')).toHaveTextContent(
-      'Create otel-v1-genai-evaluation* (logs, time field time)'
+      'Create otel-v1-genai-evaluation* (logs, time field @timestamp)'
     );
     fireEvent.click(screen.getByTestId('agtEvlSetupCreate'));
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
@@ -233,6 +237,74 @@ describe('EvalSetupWizard', () => {
       'Duplicate index pattern'
     );
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('retries after the dataset was created but the settings failed, without a duplicate', async () => {
+    const { services, client, createAndSave } = makeServices({
+      withEvals: false,
+      queryDataset: { id: 'tr', signalType: 'traces' },
+    });
+    client.create.mockRejectedValueOnce(new Error('403 Forbidden'));
+    const { onClose } = renderWizard(services);
+    await waitFor(() => expect(mockRunPpl).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('agtEvlSetupStep-create'));
+    fireEvent.click(screen.getByTestId('agtEvlSetupCreate'));
+    expect(await screen.findByTestId('agtEvlSetupCreateError')).toHaveTextContent('403 Forbidden');
+    expect(createAndSave).toHaveBeenCalledTimes(1);
+    // The review shows the dataset it made; the retry saves the settings with it.
+    expect(screen.getByTestId('agtEvlSetupReview')).toHaveTextContent('Evaluation Dataset');
+    fireEvent.click(screen.getByTestId('agtEvlSetupCreate'));
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
+    expect(createAndSave).toHaveBeenCalledTimes(1);
+    expect(client.create).toHaveBeenLastCalledWith(
+      'correlations',
+      expect.anything(),
+      expect.objectContaining({
+        references: [
+          expect.objectContaining({ id: 'tr' }),
+          expect.objectContaining({ id: 'ev-new' }),
+        ],
+      })
+    );
+  });
+
+  it('uses an existing non-logs index pattern with the evaluations title', async () => {
+    const { services, client, create } = makeServices({
+      withEvals: false,
+      queryDataset: { id: 'tr', signalType: 'traces' },
+      extra: [{ id: 'plain', attributes: { title: 'otel-v1-genai-evaluation*' } }],
+    });
+    const { onClose } = renderWizard(services);
+    await waitFor(() => expect(mockRunPpl).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('agtEvlSetupStep-create'));
+    expect(screen.getByTestId('agtEvlSetupReview')).toHaveTextContent('otel-v1-genai-evaluation*');
+    fireEvent.click(screen.getByTestId('agtEvlSetupCreate'));
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
+    expect(create).not.toHaveBeenCalled();
+    expect(client.create).toHaveBeenCalledWith(
+      'correlations',
+      expect.anything(),
+      expect.objectContaining({
+        references: [
+          expect.objectContaining({ id: 'tr' }),
+          expect.objectContaining({ id: 'plain' }),
+        ],
+      })
+    );
+  });
+
+  it('does not read fields when no evaluation index exists', async () => {
+    mockRunPpl.mockRejectedValue(new Error('no such index [otel-v1-genai-evaluation*]'));
+    const { services, create } = makeServices({
+      withEvals: false,
+      queryDataset: { id: 'tr', signalType: 'traces' },
+    });
+    const { onClose } = renderWizard(services);
+    await waitFor(() => expect(mockRunPpl).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('agtEvlSetupStep-create'));
+    fireEvent.click(screen.getByTestId('agtEvlSetupCreate'));
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
+    expect(create).toHaveBeenCalledWith(expect.anything(), true);
   });
 
   it('without a traces dataset: says so, and Create is disabled', async () => {

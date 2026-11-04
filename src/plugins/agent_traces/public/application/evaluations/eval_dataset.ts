@@ -11,6 +11,7 @@ import { SavedObjectsClientContract } from '../../../../../core/public';
 import { getWorkspaceIdFromUrl } from '../../../../../core/public/utils';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
+import { EVALS_TIME_FIELD } from './eval_ppl';
 
 /**
  * The Agent Evaluations app config: the traces dataset and the evaluations dataset (a logs
@@ -37,13 +38,17 @@ export const EVALS_CONFIG_TITLE = 'AgentEvals-Config';
 export const DEFAULT_SPANS_INDEX_PATTERN = 'otel-v1-apm-span-*';
 /** The workspace part of the config's type without workspaces. */
 export const NO_WORKSPACE_ID = 'default';
-/** The dataset "Create evaluations dataset" makes, as the observability stack does. */
+/**
+ * The dataset "Create evaluations dataset" makes. Its time field is the one the queries bound
+ * and bucket by (`@timestamp`, copied from the OTel `time` by Data Prepper), so the dataset and
+ * the Evaluations screens agree.
+ */
 export const EVALS_DATASET_TITLE = 'otel-v1-genai-evaluation*';
-export const EVALS_DATASET_TIME_FIELD = 'time';
+export const EVALS_DATASET_TIME_FIELD = EVALS_TIME_FIELD;
 export const EVALS_DATASET_DISPLAY_NAME = 'Evaluation Dataset';
 export const EVALS_SCHEMA_MAPPINGS = {
   otelLogs: {
-    timestamp: 'time',
+    timestamp: EVALS_TIME_FIELD,
     traceId: 'traceId',
     spanId: 'spanId',
     serviceName: 'resource.attributes.service.name',

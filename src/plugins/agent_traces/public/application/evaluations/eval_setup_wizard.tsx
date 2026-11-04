@@ -27,8 +27,8 @@ import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import {
-  DataSourceRef,
   DatasetRef,
+  EVALS_DATASET_TIME_FIELD,
   EVALS_DATASET_TITLE,
   datasetLabel,
   defaultEvalsDatasets,
@@ -36,10 +36,13 @@ import {
   saveEvalsConfig,
   sortDatasets,
 } from './eval_dataset';
-import { agentTracesDatasetId, createEvalsDataset, toOption } from './eval_settings_modal';
-import { EVAL_EVENT, F, fld } from './eval_ppl';
-import { errorMessage, evalsLookupDataset, runPpl } from './use_ppl_rows';
-import { num } from './eval_model';
+import {
+  agentTracesDatasetId,
+  countEvaluationResults,
+  createEvalsDataset,
+  toOption,
+} from './eval_settings_modal';
+import { errorMessage } from './use_ppl_rows';
 import {
   DATA_PREPPER_SNIPPET,
   OFFLINE_SNIPPET,
@@ -61,24 +64,7 @@ export interface EvalsDetection {
   results?: number;
 }
 
-/** One count over the evaluation indices; a missing index means none. */
-export const countEvaluationResults = async (
-  services: EvaluationsServices,
-  index = EVALS_DATASET_TITLE,
-  dataSource?: DataSourceRef
-): Promise<number | undefined> => {
-  try {
-    const rows = await runPpl(
-      services.data,
-      evalsLookupDataset(index, dataSource),
-      `source = ${index} | where ${fld(F.eventName)} = '${EVAL_EVENT}' | stats count() as n`
-    );
-    return num(rows[0]?.n) ?? 0;
-  } catch (e) {
-    if (/no such index|index_not_found|IndexNotFound/i.test(errorMessage(e))) return undefined;
-    throw e;
-  }
-};
+export { countEvaluationResults };
 
 /** Auto-detect: the workspace's datasets and the evaluation indices' results. */
 export const detectEvals = async (services: EvaluationsServices): Promise<EvalsDetection> => {
@@ -89,11 +75,21 @@ export const detectEvals = async (services: EvaluationsServices): Promise<EvalsD
   const defaults = defaultEvalsDatasets(tracesAll, logsAll, agentTracesDatasetId(services));
   const traces = sortDatasets(tracesAll);
   const logs = sortDatasets(logsAll);
-  const index = defaults.evaluations?.title ?? EVALS_DATASET_TITLE;
+  // No logs dataset over the results, but an index pattern with the evaluations title (made in
+  // Dashboards Management, or by an earlier setup): the setup uses it rather than failing to
+  // create a duplicate.
+  const sameTitle =
+    defaults.evaluations ??
+    all.find(
+      (d) =>
+        d.title === EVALS_DATASET_TITLE &&
+        (d.dataSource?.id ?? '') === (defaults.traces?.dataSource?.id ?? '')
+    );
+  const index = sameTitle?.title ?? EVALS_DATASET_TITLE;
   return {
     traces,
     logs,
-    evaluationsDataset: defaults.evaluations,
+    evaluationsDataset: sameTitle,
     tracesDataset: defaults.traces,
     // The results sit on the evaluations dataset's data source, else next to the spans.
     results: await countEvaluationResults(
@@ -134,6 +130,8 @@ export const EvalSetupWizard: React.FC<{
   const [traces, setTraces] = useState<DatasetRef>();
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string>();
+  // The dataset this setup created (or found) before a later step failed: a retry uses it.
+  const [createdEvals, setCreatedEvals] = useState<DatasetRef>();
 
   const detect = useCallback(async () => {
     setDetecting(true);
@@ -162,8 +160,20 @@ export const EvalSetupWizard: React.FC<{
     setCreating(true);
     setCreateError(undefined);
     try {
-      const evaluations =
-        detection?.evaluationsDataset ?? (await createEvalsDataset(services, traces.dataSource));
+      const reusable =
+        createdEvals && (createdEvals.dataSource?.id ?? '') === (traces.dataSource?.id ?? '')
+          ? createdEvals
+          : undefined;
+      let evaluations = detection?.evaluationsDataset ?? reusable;
+      if (!evaluations) {
+        // No index yet (nothing detected): save the pattern without reading its fields.
+        evaluations = (
+          await createEvalsDataset(services, traces.dataSource, {
+            indexExists: detection?.results !== undefined,
+          })
+        ).dataset;
+        setCreatedEvals(evaluations);
+      }
       await saveEvalsConfig(services.savedObjects.client, traces, evaluations, {
         existingId: configId,
         workspaceId,
@@ -222,8 +232,8 @@ export const EvalSetupWizard: React.FC<{
                   })
                 : i18n.translate('agentTraces.evalsSetup.foundNoDataset', {
                     defaultMessage:
-                      'The setup creates a logs dataset over {index} to read them (time field time).',
-                    values: { index: EVALS_DATASET_TITLE },
+                      'The setup creates a logs dataset over {index} to read them (time field {time}).',
+                    values: { index: EVALS_DATASET_TITLE, time: EVALS_DATASET_TIME_FIELD },
                   })}
             </p>
           </EuiCallOut>
@@ -358,12 +368,13 @@ export const EvalSetupWizard: React.FC<{
             title: i18n.translate('agentTraces.evalsSetup.reviewEvals', {
               defaultMessage: 'Evaluations dataset',
             }),
-            description: detection?.evaluationsDataset
-              ? datasetLabel(detection.evaluationsDataset)
-              : i18n.translate('agentTraces.evalsSetup.reviewCreate', {
-                  defaultMessage: 'Create {index} (logs, time field time)',
-                  values: { index: EVALS_DATASET_TITLE },
-                }),
+            description:
+              (detection?.evaluationsDataset ?? createdEvals)
+                ? datasetLabel((detection?.evaluationsDataset ?? createdEvals) as DatasetRef)
+                : i18n.translate('agentTraces.evalsSetup.reviewCreate', {
+                    defaultMessage: 'Create {index} (logs, time field {time})',
+                    values: { index: EVALS_DATASET_TITLE, time: EVALS_DATASET_TIME_FIELD },
+                  }),
           },
           {
             title: i18n.translate('agentTraces.evalsSetup.reviewTraces', {

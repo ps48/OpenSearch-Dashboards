@@ -9,7 +9,14 @@ import { I18nProvider } from '@osd/i18n/react';
 import { OpenSearchDashboardsContextProvider } from '../../../../opensearch_dashboards_react/public';
 import { EvalSettingsModal, looksLikeEvalsDataset } from './eval_settings_modal';
 
-const patterns = (withEvals: boolean) => [
+const mockRunPpl = jest.fn();
+jest.mock('./use_ppl_rows', () => ({
+  ...jest.requireActual('./use_ppl_rows'),
+  runPpl: (...args: unknown[]) => mockRunPpl(...args),
+}));
+
+const patterns = (withEvals: boolean, extra: unknown[] = []) => [
+  ...extra,
   { id: 'tr', attributes: { title: 'otel-v1-apm-span*', signalType: 'traces' } },
   { id: 'tr2', attributes: { title: 'agent-spans*', signalType: 'traces' } },
   { id: 'lg', attributes: { title: 'logs-otel-v1*', signalType: 'logs' } },
@@ -21,22 +28,28 @@ const patterns = (withEvals: boolean) => [
 const setup = (
   withEvals: boolean,
   config?: React.ComponentProps<typeof EvalSettingsModal>['config'],
-  { queryDataset, createError }: { queryDataset?: unknown; createError?: string } = {}
+  {
+    queryDataset,
+    createError,
+    extraPatterns,
+  }: { queryDataset?: unknown; createError?: string; extraPatterns?: unknown[] } = {}
 ) => {
   const client = {
-    find: jest.fn(async () => ({ savedObjects: patterns(withEvals) })),
+    find: jest.fn(async () => ({ savedObjects: patterns(withEvals, extraPatterns) })),
     get: jest.fn(),
     create: jest.fn(async () => ({ id: 'corr-new' })),
     update: jest.fn(async () => ({})),
   };
-  const createAndSave = jest.fn(async () => {
+  const create = jest.fn(async (spec: Record<string, unknown>) => ({ ...spec }));
+  const createSavedObject = jest.fn(async (pattern: Record<string, unknown>) => {
     if (createError) throw new Error(createError);
-    return { id: 'ev-new' };
+    return { ...pattern, id: 'ev-new' };
   });
+  const createAndSave = jest.fn();
   const services = {
     savedObjects: { client },
     data: {
-      indexPatterns: { createAndSave },
+      indexPatterns: { create, createSavedObject, createAndSave },
       query: { queryString: { getQuery: () => ({ query: '', dataset: queryDataset }) } },
     },
     notifications: { toasts: { addSuccess: jest.fn(), addDanger: jest.fn() } },
@@ -52,7 +65,7 @@ const setup = (
       </OpenSearchDashboardsContextProvider>
     </I18nProvider>
   );
-  return { client, createAndSave, onClose };
+  return { client, create, createSavedObject, createAndSave, onClose };
 };
 
 describe('EvalSettingsModal', () => {
@@ -79,29 +92,33 @@ describe('EvalSettingsModal', () => {
     );
   });
 
-  it('creates the evaluations dataset when there is none', async () => {
-    const { createAndSave } = setup(false);
+  it('creates the evaluations dataset when there is none, on @timestamp, not as the default', async () => {
+    mockRunPpl.mockResolvedValue([{ n: 5 }]);
+    const { create, createSavedObject, createAndSave } = setup(false);
     fireEvent.click(await screen.findByTestId('agtEvlSettingsCreateDataset'));
     await waitFor(() =>
-      expect(createAndSave).toHaveBeenCalledWith(
+      expect(create).toHaveBeenCalledWith(
         {
           title: 'otel-v1-genai-evaluation*',
-          timeFieldName: 'time',
+          timeFieldName: '@timestamp',
           signalType: 'logs',
           displayName: 'Evaluation Dataset',
           schemaMappings: {
             otelLogs: {
-              timestamp: 'time',
+              timestamp: '@timestamp',
               traceId: 'traceId',
               spanId: 'spanId',
               serviceName: 'resource.attributes.service.name',
             },
           },
         },
-        false,
+        // The index exists: its fields are read.
         false
       )
     );
+    expect(createSavedObject).toHaveBeenCalledTimes(1);
+    // createAndSave would also make it the default index pattern.
+    expect(createAndSave).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(screen.getByTestId('agtEvlSettingsEvals')).toHaveTextContent('Evaluation Dataset')
     );
@@ -109,6 +126,28 @@ describe('EvalSettingsModal', () => {
       'Created the evaluations dataset otel-v1-genai-evaluation* and selected it'
     );
     expect(screen.queryByTestId('agtEvlSettingsNoDataset')).not.toBeInTheDocument();
+  });
+
+  it('does not read fields when no evaluation index exists yet', async () => {
+    mockRunPpl.mockRejectedValue(new Error('no such index [otel-v1-genai-evaluation*]'));
+    const { create } = setup(false);
+    fireEvent.click(await screen.findByTestId('agtEvlSettingsCreateDataset'));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.anything(), true));
+  });
+
+  it('reuses an existing non-logs index pattern with the evaluations title', async () => {
+    mockRunPpl.mockResolvedValue([{ n: 5 }]);
+    const { create } = setup(false, undefined, {
+      extraPatterns: [{ id: 'plain', attributes: { title: 'otel-v1-genai-evaluation*' } }],
+    });
+    fireEvent.click(await screen.findByTestId('agtEvlSettingsCreateDataset'));
+    expect(await screen.findByTestId('agtEvlSettingsCreated')).toHaveTextContent(
+      'Selected the existing index pattern otel-v1-genai-evaluation* as the evaluations dataset'
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(screen.getByTestId('agtEvlSettingsEvals')).toHaveTextContent(
+      'otel-v1-genai-evaluation*'
+    );
   });
 
   it('says why the evaluations dataset could not be created', async () => {
