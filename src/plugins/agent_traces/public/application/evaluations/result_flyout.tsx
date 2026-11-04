@@ -8,6 +8,7 @@ import {
   EuiAccordion,
   EuiBadge,
   EuiButtonEmpty,
+  EuiButtonIcon,
   EuiCodeBlock,
   EuiDescriptionList,
   EuiFlexGroup,
@@ -95,19 +96,26 @@ const SectionLabel: React.FC = ({ children }) => (
   </EuiText>
 );
 
-/** "New tab": the judged session, trace or span in Agent Traces, in a new tab. */
-const NewTabLink: React.FC<{ r: EvalResult; after?: boolean }> = ({ r, after }) => {
+/** The judged session, trace or span in Agent Traces, in a new tab: an icon after its link. */
+const NewTabLink: React.FC<{ r: EvalResult }> = ({ r }) => {
   const { hrefOf } = useEvalContext();
   const href = hrefOf?.(r);
   if (!href) return null;
+  const label = i18n.translate('agentTraces.evals.flyout.newTab', {
+    defaultMessage: 'Open in a new tab',
+  });
   return (
-    <>
-      {!after && ' · '}
-      <EuiLink href={href} target="_blank" external data-test-subj="agtEvlFlyoutNewTab">
-        {i18n.translate('agentTraces.evals.flyout.newTab', { defaultMessage: 'New tab' })}
-      </EuiLink>
-      {after && ' · '}
-    </>
+    <EuiButtonIcon
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      iconType="popout"
+      iconSize="s"
+      size="xs"
+      aria-label={label}
+      title={label}
+      data-test-subj="agtEvlFlyoutNewTab"
+    />
   );
 };
 
@@ -148,7 +156,6 @@ const SessionJudgedSection: React.FC<{
         {r.conversationId && openSession && (
           <EuiFlexItem grow={false}>
             <EuiText size="xs">
-              <NewTabLink r={r} after />
               <EuiLink
                 onClick={() => r.conversationId && openSession(r.conversationId, r.time)}
                 data-test-subj="agtEvlFlyoutViewSession"
@@ -157,6 +164,7 @@ const SessionJudgedSection: React.FC<{
                   defaultMessage: 'View session',
                 })}
               </EuiLink>
+              <NewTabLink r={r} />
             </EuiText>
           </EuiFlexItem>
         )}
