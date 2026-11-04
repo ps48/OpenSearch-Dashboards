@@ -11,7 +11,6 @@ import { DocViewFilterFn, OpenSearchSearchHit } from '../../../types/doc_views_t
 import { TraceExpansionProvider, RowMeta } from './trace_expansion_context';
 import { useTraceFlyout } from './flyout/trace_flyout_context';
 import { RowEvaluationsProvider } from './row_evaluations_context';
-import { FailingEvaluationFilter } from './failing_evaluation_filter';
 import { BaseRow, LoadingState, buildFullSpanTree, hitsToAgentSpans } from './hooks/tree_utils';
 import { transformPPLDataToTraceHits } from './trace_details/traces/ppl_to_trace_hits';
 import { usePPLQueryDeps } from './hooks/use_ppl_query_deps';
@@ -431,17 +430,14 @@ export const TracesDataTable: React.FC = () => {
 
   if (!isQueryLoading && isInitialized && hits.length === 0) {
     return (
-      <>
-        <FailingEvaluationFilter />
-        <TableEmptyState
-          title={
-            <FormattedMessage
-              id="agentTraces.tracesDataTable.emptyTitle"
-              defaultMessage="No agent traces found"
-            />
-          }
-        />
-      </>
+      <TableEmptyState
+        title={
+          <FormattedMessage
+            id="agentTraces.tracesDataTable.emptyTitle"
+            defaultMessage="No agent traces found"
+          />
+        }
+      />
     );
   }
 
@@ -459,7 +455,6 @@ export const TracesDataTable: React.FC = () => {
             entityName="trace"
             wrapCellText={wrapCellText}
             onWrapCellTextChange={setWrapCellText}
-            controls={<FailingEvaluationFilter />}
           />
           <div
             ref={scrollContainerRef}

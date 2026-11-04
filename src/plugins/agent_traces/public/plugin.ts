@@ -67,7 +67,7 @@ import { setServices } from './services/services';
 import { AgentTracesIcon } from './assets/agent_traces_icon';
 import { AgentSpansIcon } from './assets/agent_spans_icon';
 import { AgentEvalsIcon } from './assets/agent_evals_icon';
-import { agentTracesNavPopover, agentSpansNavPopover } from './nav_popover';
+import { agentEvalsNavPopover, agentTracesNavPopover, agentSpansNavPopover } from './nav_popover';
 import { SlotRegistryService } from './services/slot_registry';
 
 // Log Actions
@@ -396,8 +396,10 @@ export class AgentTracesPlugin implements Plugin<
             defaultMessage: 'Evaluations',
           }),
           category: DEFAULT_APP_CATEGORIES.agentMonitoring,
-          order: 300,
+          // First in Agent monitoring.
+          order: 50,
           euiIconType: AgentEvalsIcon,
+          navPopover: agentEvalsNavPopover,
         },
       ]);
     }

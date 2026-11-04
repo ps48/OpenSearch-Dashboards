@@ -4,6 +4,8 @@
  */
 
 import { AgentTracesPlugin } from './plugin';
+import { agentEvalsNavPopover } from './nav_popover';
+import { AGENT_EVALS_NAV_ID } from '../common';
 import { coreMock } from '../../../core/public/mocks';
 import { CoreSetup, CoreStart } from 'opensearch-dashboards/public';
 import {
@@ -266,6 +268,19 @@ describe('AgentTracesPlugin', () => {
           id: 'agentTraces',
         })
       );
+    });
+
+    it('registers Evaluations first in Agent monitoring, with its popover (icon side nav)', () => {
+      (coreSetup.chrome.getIsIconSideNavEnabled as jest.Mock).mockReturnValue(true);
+      plugin.setup(coreSetup, setupDeps);
+      const calls = (coreSetup.chrome.navGroup.addNavLinksToGroup as jest.Mock).mock.calls;
+      const links = calls.flatMap((c) => c[1] as Array<{ id: string; order?: number }>);
+      const evals = links.find((l) => l.id === AGENT_EVALS_NAV_ID) as
+        { order?: number; navPopover?: unknown } | undefined;
+      expect(evals?.order).toBe(50);
+      expect(evals?.navPopover).toBe(agentEvalsNavPopover);
+      const others = links.filter((l) => l.id !== AGENT_EVALS_NAV_ID && l.order !== undefined);
+      expect(others.every((l) => (l.order as number) > 50)).toBe(true);
     });
 
     it('should register nav links during setup', () => {

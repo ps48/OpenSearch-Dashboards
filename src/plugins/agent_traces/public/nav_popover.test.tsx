@@ -4,7 +4,8 @@
  */
 
 import { of } from 'rxjs';
-import { agentTracesNavPopover, agentSpansNavPopover } from './nav_popover';
+import { agentEvalsNavPopover, agentTracesNavPopover, agentSpansNavPopover } from './nav_popover';
+import { AGENT_EVALS_NAV_ID } from '../common';
 import { httpServiceMock } from '../../../core/public/mocks';
 import { NavPopoverServices } from '../../../core/public';
 
@@ -40,6 +41,28 @@ describe('agent_traces nav popovers', () => {
       expect(services.navigateToApp).toHaveBeenCalledWith(appId, {
         path: `#/?_openSaved=true&_a=(ui:(activeTabId:${tab},showHistogram:!t))`,
       });
+    });
+  });
+
+  describe('Evaluations popover', () => {
+    it('declares Agents, Results and Settings', () => {
+      expect((agentEvalsNavPopover.actions ?? []).map((a) => a.id)).toEqual([
+        'agents',
+        'results',
+        'settings',
+      ]);
+    });
+
+    it.each([
+      ['agents', '#/agents'],
+      ['results', '#/results'],
+      // The app opens Settings once mounted.
+      ['settings', '#/agents?openSettings=true'],
+    ])('%s navigates to %s', (id, path) => {
+      const services = makeServices();
+      const action = (agentEvalsNavPopover.actions ?? []).find((a) => a.id === id);
+      action?.onClick(services);
+      expect(services.navigateToApp).toHaveBeenCalledWith(AGENT_EVALS_NAV_ID, { path });
     });
   });
 });

@@ -38,9 +38,8 @@ The result flyout (`result_flyout.tsx`) opens from any result row. It reads the 
 the root span) for "What the judge saw", offline the case's results in this run and the run
 before, and the judge trace (`opensearch.gen_ai.evaluation.judge.trace_id`) only when clicked.
 Agent Traces integration: the Evaluations column (`pages/traces/row_evaluations_context.tsx`),
-the "Has a failing evaluation" filter (`pages/traces/failing_evaluation_filter.tsx`,
-`failing_traces_filter.ts`), span marks and the Evaluations tab of the trace flyout
-(`pages/traces/flyout/trace_evaluations.tsx`).
+span marks and the Evaluations tab of the trace flyout (`pages/traces/flyout/trace_evaluations.tsx`),
+and the session view's session evaluations. A "failing evaluations only" traces filter is P1.
 
 App state (`_a`): the filters, the version pair compared on each agent page (`versionPick`) and
 a chart slice (`slice`, cleared by a new range or "Back to ...").
@@ -52,5 +51,5 @@ range is applied by the PPL service (the dataset's `@timestamp`). A screen runs 
 while shown, and again only on a range, filter or Refresh change (`use_ppl_rows.ts`).
 Aggregations end in `head 10000`; documents are read only for a page of results (25), one case
 (100), one or two root spans (1 / 2), one span or one trace (1 / 200), the two traces of Compare
-traces (2000) and the failing trace ids of the Agent Traces filter (500). Span lookups by trace
+traces (2000) and a session's turns (50). Span lookups by trace
 id carry no time range.

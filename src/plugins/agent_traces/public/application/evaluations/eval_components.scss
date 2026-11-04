@@ -358,3 +358,16 @@
 .agtEvlRunSelect {
   width: $euiSizeXL * 12;
 }
+
+.agtEvlShot {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: $euiBorderThin;
+  border-radius: $euiBorderRadius;
+}
+
+.agtEvlShowcase {
+  max-width: 1200px;
+  margin: $euiSizeL auto 0;
+}

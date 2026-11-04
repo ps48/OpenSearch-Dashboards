@@ -15,7 +15,6 @@ import {
   buildCaseResultsQuery,
   buildCompareRunsQuery,
   buildFacetQuery,
-  buildFailingTracesQuery,
   buildOneTraceSpansQuery,
   buildRootSpansQuery,
   buildRunsLookupQuery,
@@ -251,19 +250,6 @@ describe('evaluation PPL', () => {
     );
     expect(buildOneTraceSpansQuery('spans-*', 'j1')).toBe(
       "source = spans-* | where `traceId` = 'j1' | sort startTime | head 200"
-    );
-  });
-
-  it('Agent Traces filter: at most the 500 most recent failing traces', () => {
-    expect(buildFailingTracesQuery(I)).toBe(
-      [
-        ...BASE,
-        VERD,
-        "where verdict = 'fail'",
-        'stats max(`@timestamp`) as last by `traceId`',
-        'sort - last',
-        'head 500',
-      ].join(' | ')
     );
   });
 

@@ -43,15 +43,15 @@ import {
 import { errorMessage } from './use_ppl_rows';
 import type { EvaluationsServices } from '.';
 
-type Option = EuiComboBoxOptionOption<DatasetRef>;
+export type Option = EuiComboBoxOptionOption<DatasetRef>;
 
-const toOption = (d: DatasetRef): Option => ({ label: datasetLabel(d), value: d });
+export const toOption = (d: DatasetRef): Option => ({ label: datasetLabel(d), value: d });
 
 /** An index pattern over the evaluation events, whatever its exact wildcard. */
 export const looksLikeEvalsDataset = (d: DatasetRef) => isEvalsDatasetTitle(d.title);
 
 /** The traces dataset Agent Traces has open (the query's dataset), if any. */
-const agentTracesDatasetId = (services: EvaluationsServices): string | undefined => {
+export const agentTracesDatasetId = (services: EvaluationsServices): string | undefined => {
   const dataset = services.data?.query?.queryString?.getQuery?.()?.dataset;
   return dataset?.signalType === 'traces' ? dataset.id : undefined;
 };
@@ -65,6 +65,31 @@ const MODAL_TITLE = i18n.translate('agentTraces.evalsSettings.title', {
  * evaluations dataset (a logs dataset over the evaluation events), saved as the workspace's
  * `AgentEvals-Config-*` object (one per workspace, updated in place).
  */
+/**
+ * Creates the logs dataset over the evaluation events (its fields read from the indices, as
+ * createAndSave refreshes them before saving).
+ */
+export const createEvalsDataset = async (services: EvaluationsServices): Promise<DatasetRef> => {
+  const pattern = await services.data.indexPatterns.createAndSave(
+    {
+      title: EVALS_DATASET_TITLE,
+      timeFieldName: EVALS_DATASET_TIME_FIELD,
+      signalType: 'logs',
+      displayName: EVALS_DATASET_DISPLAY_NAME,
+      schemaMappings: EVALS_SCHEMA_MAPPINGS,
+    },
+    false,
+    false
+  );
+  return {
+    id: pattern.id as string,
+    title: EVALS_DATASET_TITLE,
+    displayName: EVALS_DATASET_DISPLAY_NAME,
+    signalType: 'logs',
+    timeFieldName: EVALS_DATASET_TIME_FIELD,
+  };
+};
+
 export const EvalSettingsModal: React.FC<{
   config?: EvalsDatasetConfig;
   /** The saved config object (updated in place), even when its datasets do not resolve. */
@@ -123,24 +148,7 @@ export const EvalSettingsModal: React.FC<{
     setCreating(true);
     setCreated(undefined);
     try {
-      const pattern = await services.data.indexPatterns.createAndSave(
-        {
-          title: EVALS_DATASET_TITLE,
-          timeFieldName: EVALS_DATASET_TIME_FIELD,
-          signalType: 'logs',
-          displayName: EVALS_DATASET_DISPLAY_NAME,
-          schemaMappings: EVALS_SCHEMA_MAPPINGS,
-        },
-        false,
-        false
-      );
-      const dataset: DatasetRef = {
-        id: pattern.id as string,
-        title: EVALS_DATASET_TITLE,
-        displayName: EVALS_DATASET_DISPLAY_NAME,
-        signalType: 'logs',
-        timeFieldName: EVALS_DATASET_TIME_FIELD,
-      };
+      const dataset = await createEvalsDataset(services);
       setLogs((l) => sortDatasets([...l, dataset]));
       setSelectedEvals(dataset);
       setCreated({ title: EVALS_DATASET_TITLE });

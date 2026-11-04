@@ -10,7 +10,7 @@
  *
  * Aggregations end in `head 10000`; raw documents are read only for one page of results (25),
  * one case (100), one or two root spans (1 / 2), one trace (200), the two traces of Compare
- * traces (2000) and the failing trace ids of the Agent Traces filter (500).
+ * traces (2000) and the turns of one session (50).
  *
  * Attribute names follow OTel; OpenSearch gap fields mirror them under `opensearch.*`
  * (`opensearch.gen_ai.evaluation.*`, `opensearch.test.case.*`).
@@ -69,7 +69,6 @@ export const FACET_LIMIT = 50;
 export const CASE_RESULTS_LIMIT = 100;
 export const TRACE_RESULTS_LIMIT = 200;
 export const COMPARE_SPANS_LIMIT = 2000;
-export const FAILING_TRACES_LIMIT = 500;
 export const SESSION_TURNS_LIMIT = 50;
 
 /** The key of results without `gen_ai.agent.name` (routes, filters), or without a version. */
@@ -366,17 +365,6 @@ export const buildTracesTallyQuery = (index: string, traceIds: string[], bySpan 
     VERDICT_EVAL,
     `stats count() as n by ${fld(F.traceId)}, ${bySpan ? `${fld(F.spanId)}, ` : ''}verdict`,
     head,
-  ]);
-
-/** "Has a failing evaluation": the most recent failing traces in the range. */
-export const buildFailingTracesQuery = (index: string): string =>
-  join([
-    ...base(index),
-    VERDICT_EVAL,
-    `where verdict = 'fail'`,
-    `stats max(${fld(F.time)}) as last by ${fld(F.traceId)}`,
-    'sort - last',
-    `head ${FAILING_TRACES_LIMIT}`,
   ]);
 
 // ---------------------------------------------------------------------- Results

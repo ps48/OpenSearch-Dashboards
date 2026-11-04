@@ -5,7 +5,7 @@
 
 import { i18n } from '@osd/i18n';
 import { NavPopoverConfig } from '../../../core/public';
-import { AGENT_TRACES_NAV_ID, AGENT_SPANS_NAV_ID } from '../common';
+import { AGENT_EVALS_NAV_ID, AGENT_TRACES_NAV_ID, AGENT_SPANS_NAV_ID } from '../common';
 
 /**
  * Hash path that lands the agent-traces app on the given tab and asks it to open
@@ -58,3 +58,31 @@ export const agentSpansNavPopover: NavPopoverConfig = buildAgentNavPopover(
   AGENT_SPANS_NAV_ID,
   'spans'
 );
+
+/**
+ * Evaluations: its two screens and its settings. Settings navigates with `openSettings=true`
+ * in the hash query, which the app honors once mounted (an action only has navigateToApp).
+ */
+export const agentEvalsNavPopover: NavPopoverConfig = {
+  actions: [
+    {
+      id: 'agents',
+      label: i18n.translate('agentTraces.navPopover.evalsAgents', { defaultMessage: 'Agents' }),
+      iconType: 'users',
+      onClick: ({ navigateToApp }) => navigateToApp(AGENT_EVALS_NAV_ID, { path: '#/agents' }),
+    },
+    {
+      id: 'results',
+      label: i18n.translate('agentTraces.navPopover.evalsResults', { defaultMessage: 'Results' }),
+      iconType: 'list',
+      onClick: ({ navigateToApp }) => navigateToApp(AGENT_EVALS_NAV_ID, { path: '#/results' }),
+    },
+    {
+      id: 'settings',
+      label: i18n.translate('agentTraces.navPopover.evalsSettings', { defaultMessage: 'Settings' }),
+      iconType: 'gear',
+      onClick: ({ navigateToApp }) =>
+        navigateToApp(AGENT_EVALS_NAV_ID, { path: '#/agents?openSettings=true' }),
+    },
+  ],
+};

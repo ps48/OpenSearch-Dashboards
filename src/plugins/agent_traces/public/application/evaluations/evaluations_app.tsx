@@ -52,7 +52,10 @@ import {
   targetOf,
 } from './eval_links';
 import { EvalSettingsModal } from './eval_settings_modal';
-import { EvalHeader, EvalSettingsButton } from './eval_header';
+import { EvalGettingStartedButton, EvalHeader, EvalSettingsButton } from './eval_header';
+import { GettingStartedModal } from './eval_onboarding';
+import { EvalSetupWizard } from './eval_setup_wizard';
+import { takeHashParam } from '../pages/traces/deep_link';
 import { NoEvalsDatasetPrompt } from './eval_empty_states';
 import { QueryErrorCallout, agentLabel, shortId } from './eval_components';
 import { useEvalTimezone } from './eval_time';
@@ -312,10 +315,23 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     !dataset.unavailable && (dataset.status === 'idle' || dataset.status === 'loading');
   const config = dataset.config;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+
   const [result, setResult] = useState<EvalResult>();
 
   // A new screen closes the result flyout.
   useEffect(() => setResult(undefined), [route]);
+
+  // The nav popover's Settings: `openSettings=true` in the hash query, taken on any navigation
+  // (also when the app is already open).
+  useEffect(() => {
+    const check = () => {
+      if (takeHashParam('openSettings')) setSettingsOpen(true);
+    };
+    check();
+    return params.history.listen(check);
+  }, [params.history]);
 
   // A new range drops the chart slice (the slice belongs to the range it was clicked in).
   const firstTime = useRef(true);
@@ -436,6 +452,9 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     ]
   );
 
+  const gettingStartedButton = (
+    <EvalGettingStartedButton key="gettingStarted" onClick={() => setTourOpen(true)} />
+  );
   const settingsButton = (
     <EvalSettingsButton key="settings" onClick={() => setSettingsOpen(true)} />
   );
@@ -489,7 +508,11 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
       );
     if (!context) {
       return (
-        <NoEvalsDatasetPrompt onGetStarted={() => setSettingsOpen(true)} error={dataset.error} />
+        <NoEvalsDatasetPrompt
+          onSetUp={() => setSetupOpen(true)}
+          onGettingStarted={() => setTourOpen(true)}
+          error={dataset.error}
+        />
       );
     }
     return (
@@ -528,10 +551,10 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             }
             controls={
               !config
-                ? [settingsButton]
+                ? [gettingStartedButton, settingsButton]
                 : onRunPage
-                  ? [refreshButton, settingsButton]
-                  : [datePicker, settingsButton]
+                  ? [refreshButton, gettingStartedButton, settingsButton]
+                  : [datePicker, gettingStartedButton, settingsButton]
             }
           />
           {!services.chrome.navGroup?.getNavGroupEnabled() && <EuiSpacer size="m" />}
@@ -545,6 +568,22 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
           workspaceId={dataset.workspaceId}
           onClose={(saved) => {
             setSettingsOpen(false);
+            if (saved) dataset.refresh();
+          }}
+        />
+      )}
+      {tourOpen && (
+        <GettingStartedModal
+          onClose={() => setTourOpen(false)}
+          onSetUp={config ? undefined : () => setSetupOpen(true)}
+        />
+      )}
+      {setupOpen && (
+        <EvalSetupWizard
+          configId={dataset.configId}
+          workspaceId={dataset.workspaceId}
+          onClose={(saved) => {
+            setSetupOpen(false);
             if (saved) dataset.refresh();
           }}
         />

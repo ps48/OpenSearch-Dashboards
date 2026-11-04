@@ -11,15 +11,18 @@ import {
   EuiCode,
   EuiCodeBlock,
   EuiEmptyPrompt,
+  EuiFlexGrid,
   EuiFlexGroup,
   EuiFlexItem,
   EuiLink,
+  EuiPanel,
   EuiSpacer,
   EuiText,
+  EuiTitle,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { euiThemeVars } from '@osd/ui-shared-deps/theme';
+import { EvalScreenshot, OnlineOfflineCards, Screenshot } from './eval_onboarding';
 
 /** The Agent evaluations docs (producing results, pass rules) and the AI observability docs. */
 export const AGENT_EVALS_DOCS_URL = 'https://observability.opensearch.org/docs/agent-evals/';
@@ -27,7 +30,6 @@ export const AI_OBSERVABILITY_DOCS_URL =
   'https://observability.opensearch.org/docs/ai-observability/';
 export const EVALS_QUICKSTART_URL = `${AGENT_EVALS_DOCS_URL}quickstart/`;
 export const EVALS_CI_URL = `${AGENT_EVALS_DOCS_URL}ci/`;
-export const EVALS_AGENTCORE_URL = `${AGENT_EVALS_DOCS_URL}agentcore/`;
 
 export const SDK_SNIPPET = `pip install opensearch-genai-observability-sdk-py
 
@@ -73,186 +75,179 @@ export const AgentsEmptyState: React.FC<{ range: string }> = ({ range }) => (
             defaultMessage: 'Run a suite in CI',
           })}
         </EuiLink>
-        {' · '}
-        <EuiLink href={EVALS_AGENTCORE_URL} target="_blank" data-test-subj="agtEvlImportAgentCore">
-          {i18n.translate('agentTraces.evalsEmpty.importAgentCore', {
-            defaultMessage: 'Import AgentCore evaluations',
-          })}
-        </EuiLink>
       </p>
     </EuiText>
   </div>
 );
 
-/**
- * A small picture of what the page shows: a trace's steps, each with a pass or fail grade, and
- * the pass rate over time. Theme colors, so it reads in light and dark mode.
- */
-const EvalsIllustration: React.FC = () => {
-  const pass = euiThemeVars.euiColorSuccess;
-  const fail = euiThemeVars.euiColorDanger;
-  const ink = euiThemeVars.euiColorMediumShade;
-  const panel = euiThemeVars.euiColorLightestShade;
-  const rows = [
-    { y: 26, w: 92, ok: true },
-    { y: 50, w: 70, ok: true },
-    { y: 74, w: 108, ok: false },
-    { y: 98, w: 60, ok: true },
-  ];
-  const bars = [0.9, 0.85, 0.6, 0.7, 0.95, 0.9];
-  return (
-    <svg
-      width="320"
-      height="132"
-      viewBox="0 0 320 132"
-      role="img"
-      aria-hidden="true"
-      className="agtEvlEmptyIllustration"
-      data-test-subj="agtEvlEmptyIllustration"
-    >
-      <rect x="1" y="1" width="170" height="126" rx="6" fill={panel} stroke={ink} />
-      {rows.map((r, i) => (
-        <g key={r.y}>
-          <rect
-            x={16 + i * 6}
-            y={r.y - 6}
-            width={r.w}
-            height="10"
-            rx="2"
-            fill={ink}
-            opacity="0.5"
-          />
-          <circle cx="150" cy={r.y - 1} r="7" fill={r.ok ? pass : fail} />
-          <path
-            d={
-              r.ok
-                ? `M146.5 ${r.y - 1} l2.5 2.5 l4.5 -5`
-                : `M147 ${r.y - 4} l6 6 M153 ${r.y - 4} l-6 6`
-            }
-            stroke="#fff"
-            strokeWidth="1.6"
-            fill="none"
-          />
-        </g>
-      ))}
-      <rect x="186" y="1" width="133" height="126" rx="6" fill={panel} stroke={ink} />
-      {bars.map((v, i) => {
-        const h = Math.round(v * 84);
-        return (
-          <g key={i}>
-            <rect x={200 + i * 19} y={112 - h} width="13" height={h} fill={pass} rx="1" />
-            <rect
-              x={200 + i * 19}
-              y={112 - 84}
-              width="13"
-              height={84 - h}
-              fill={fail}
-              opacity="0.8"
-              rx="1"
-            />
-          </g>
-        );
-      })}
-    </svg>
-  );
-};
+const FEATURES: Array<{ shot: EvalScreenshot; title: string; text: string }> = [
+  {
+    shot: 'agents_home',
+    title: i18n.translate('agentTraces.evalsEmpty.featureAgents', {
+      defaultMessage: 'Every agent version at a glance',
+    }),
+    text: i18n.translate('agentTraces.evalsEmpty.featureAgentsText', {
+      defaultMessage:
+        'One row per agent version with its pass rate and results, including two versions running side by side.',
+    }),
+  },
+  {
+    shot: 'agent_page',
+    title: i18n.translate('agentTraces.evalsEmpty.featureTrend', {
+      defaultMessage: 'Pass rate over time, per version',
+    }),
+    text: i18n.translate('agentTraces.evalsEmpty.featureTrendText', {
+      defaultMessage:
+        'See a deploy change quality, compare two versions evaluation by evaluation, and open the failing results.',
+    }),
+  },
+  {
+    shot: 'compare_runs',
+    title: i18n.translate('agentTraces.evalsEmpty.featureCompare', {
+      defaultMessage: 'Compare two test runs',
+    }),
+    text: i18n.translate('agentTraces.evalsEmpty.featureCompareText', {
+      defaultMessage:
+        'The cases that regressed or got fixed between two runs, with both outputs and both traces side by side.',
+    }),
+  },
+  {
+    shot: 'agent_traces',
+    title: i18n.translate('agentTraces.evalsEmpty.featureTraces', {
+      defaultMessage: 'Debug in Agent Traces',
+    }),
+    text: i18n.translate('agentTraces.evalsEmpty.featureTracesText', {
+      defaultMessage:
+        'Each trace shows its evaluation results, and the trace flyout marks the spans that were judged.',
+    }),
+  },
+];
 
 /**
- * No evaluations dataset configured: what evaluations are, Get started (the settings), and
- * how to produce results.
+ * Nothing configured: what Agent Evaluations does (online and offline evaluations, product
+ * screenshots), Set up (auto-detects the data and saves the settings) and Getting started.
  */
 export const NoEvalsDatasetPrompt: React.FC<{
-  onGetStarted: () => void;
+  onSetUp: () => void;
+  onGettingStarted: () => void;
   /** The config lookup failed. */
   error?: string;
-}> = ({ onGetStarted, error }) => (
-  <EuiFlexGroup
-    direction="column"
-    alignItems="center"
-    gutterSize="none"
-    className="agtEvlEmpty"
-    data-test-subj="agtEvlNoDataset"
-  >
-    <EuiFlexItem grow={false}>
-      <EuiSpacer size="l" />
-      <EvalsIllustration />
-      <EuiSpacer size="l" />
-    </EuiFlexItem>
-    <EuiFlexItem grow={false}>
-      <EuiText textAlign="center">
-        <h2>
-          <FormattedMessage
-            id="agentTraces.evalsEmpty.title"
-            defaultMessage="Measure how well your agents do their job"
-          />
-        </h2>
-      </EuiText>
-    </EuiFlexItem>
-    <EuiFlexItem grow={false} className="agtEvlEmpty__body">
-      <EuiSpacer size="s" />
-      <EuiText size="s" color="subdued" textAlign="center">
-        <p>
-          <FormattedMessage
-            id="agentTraces.evalsEmpty.body"
-            defaultMessage="Evaluations score your agents' spans, traces and sessions: online evaluators grade production traffic as it happens, offline runs score a test suite before you ship. Results are OpenTelemetry log events ({event}) next to your traces. Select the dataset that holds them to see pass rates, regressions, and the traces where an evaluation fails."
-            values={{ event: <EuiCode>gen_ai.evaluation.result</EuiCode> }}
-          />
-        </p>
-      </EuiText>
-      <EuiSpacer size="m" />
-    </EuiFlexItem>
-    {error && (
-      <EuiFlexItem grow={false} className="agtEvlEmpty__body">
-        <EuiCallOut
-          size="s"
-          color="danger"
-          iconType="alert"
-          title={i18n.translate('agentTraces.evalsEmpty.lookupError', {
-            defaultMessage: 'Could not read the evaluations dataset settings',
-          })}
-          data-test-subj="agtEvlNoDatasetError"
-        >
-          <p className="agtEvlMono">{error}</p>
-        </EuiCallOut>
-        <EuiSpacer size="m" />
-      </EuiFlexItem>
-    )}
-    <EuiFlexItem grow={false}>
-      <EuiButton fill iconType="gear" onClick={onGetStarted} data-test-subj="agtEvlGetStarted">
-        {i18n.translate('agentTraces.evalsEmpty.getStarted', { defaultMessage: 'Get started' })}
-      </EuiButton>
-      <EuiSpacer size="m" />
-    </EuiFlexItem>
-    <EuiFlexItem grow={false}>
-      <EuiFlexGroup gutterSize="l" justifyContent="center" responsive={false} wrap>
-        <EuiFlexItem grow={false}>
-          <EuiLink
-            href={AGENT_EVALS_DOCS_URL}
-            target="_blank"
-            external
-            data-test-subj="agtEvlEvalsDocsLink"
-          >
-            {i18n.translate('agentTraces.evalsEmpty.evalsDocsLink', {
-              defaultMessage: 'Agent evaluations docs',
-            })}
-          </EuiLink>
+}> = ({ onSetUp, onGettingStarted, error }) => (
+  <div className="agtEvlShowcase" data-test-subj="agtEvlNoDataset">
+    <EuiPanel paddingSize="l" hasShadow={false} hasBorder className="agtEvlShowcase__hero">
+      <EuiFlexGroup gutterSize="xl" alignItems="center">
+        <EuiFlexItem grow={5}>
+          <EuiTitle size="l">
+            <h2>
+              <FormattedMessage
+                id="agentTraces.evalsEmpty.title"
+                defaultMessage="Measure how well your agents do their job"
+              />
+            </h2>
+          </EuiTitle>
+          <EuiSpacer size="m" />
+          <EuiText size="m" color="subdued">
+            <p>
+              <FormattedMessage
+                id="agentTraces.evalsEmpty.body"
+                defaultMessage="Agent Evaluations shows the verdicts your evaluators give your agents' spans, traces and sessions, as OpenTelemetry {event} events next to your traces: pass rates per agent version, regressions between test runs, and the traces where an evaluation failed."
+                values={{ event: <EuiCode>gen_ai.evaluation.result</EuiCode> }}
+              />
+            </p>
+          </EuiText>
+          <EuiSpacer size="l" />
+          {error && (
+            <>
+              <EuiCallOut
+                size="s"
+                color="danger"
+                iconType="alert"
+                title={i18n.translate('agentTraces.evalsEmpty.lookupError', {
+                  defaultMessage: 'Could not read the evaluations dataset settings',
+                })}
+                data-test-subj="agtEvlNoDatasetError"
+              >
+                <p className="agtEvlMono">{error}</p>
+              </EuiCallOut>
+              <EuiSpacer size="m" />
+            </>
+          )}
+          <EuiFlexGroup gutterSize="s" responsive={false} wrap alignItems="center">
+            <EuiFlexItem grow={false}>
+              <EuiButton fill iconType="gear" onClick={onSetUp} data-test-subj="agtEvlGetStarted">
+                {i18n.translate('agentTraces.evalsEmpty.setUp', {
+                  defaultMessage: 'Set up evaluations',
+                })}
+              </EuiButton>
+            </EuiFlexItem>
+            <EuiFlexItem grow={false}>
+              <EuiButton iconType="help" onClick={onGettingStarted} data-test-subj="agtEvlTour">
+                {i18n.translate('agentTraces.evalsEmpty.gettingStarted', {
+                  defaultMessage: 'Getting started',
+                })}
+              </EuiButton>
+            </EuiFlexItem>
+            <EuiFlexItem grow={false}>
+              <EuiLink
+                href={AGENT_EVALS_DOCS_URL}
+                target="_blank"
+                external
+                data-test-subj="agtEvlEvalsDocsLink"
+              >
+                {i18n.translate('agentTraces.evalsEmpty.evalsDocsLink', {
+                  defaultMessage: 'Agent evaluations docs',
+                })}
+              </EuiLink>
+            </EuiFlexItem>
+          </EuiFlexGroup>
         </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiLink
-            href={AI_OBSERVABILITY_DOCS_URL}
-            target="_blank"
-            external
-            data-test-subj="agtEvlAiObservabilityDocsLink"
-          >
-            {i18n.translate('agentTraces.evalsEmpty.aiObservabilityDocsLink', {
-              defaultMessage: 'AI observability docs',
+        <EuiFlexItem grow={6}>
+          <Screenshot
+            name="agents_home"
+            alt={i18n.translate('agentTraces.evalsEmpty.heroAlt', {
+              defaultMessage: 'The Agents page: pass rate per agent version',
             })}
-          </EuiLink>
+          />
         </EuiFlexItem>
       </EuiFlexGroup>
-      <EuiSpacer size="xl" />
-    </EuiFlexItem>
-  </EuiFlexGroup>
+    </EuiPanel>
+    <EuiSpacer size="l" />
+    <EuiTitle size="s">
+      <h3>
+        {i18n.translate('agentTraces.evalsEmpty.twoWays', {
+          defaultMessage: 'Two ways to evaluate',
+        })}
+      </h3>
+    </EuiTitle>
+    <EuiSpacer size="s" />
+    <OnlineOfflineCards />
+    <EuiSpacer size="l" />
+    <EuiTitle size="s">
+      <h3>
+        {i18n.translate('agentTraces.evalsEmpty.whatYouGet', {
+          defaultMessage: 'What you can do',
+        })}
+      </h3>
+    </EuiTitle>
+    <EuiSpacer size="s" />
+    <EuiFlexGrid columns={2} gutterSize="m" data-test-subj="agtEvlFeatures">
+      {FEATURES.map((f) => (
+        <EuiFlexItem key={f.shot}>
+          <EuiPanel hasBorder hasShadow={false} paddingSize="m">
+            <Screenshot name={f.shot} alt={f.title} />
+            <EuiSpacer size="s" />
+            <EuiTitle size="xs">
+              <h4>{f.title}</h4>
+            </EuiTitle>
+            <EuiText size="s" color="subdued">
+              <p>{f.text}</p>
+            </EuiText>
+          </EuiPanel>
+        </EuiFlexItem>
+      ))}
+    </EuiFlexGrid>
+    <EuiSpacer size="xl" />
+  </div>
 );
 
 export interface QuickRangeButton {

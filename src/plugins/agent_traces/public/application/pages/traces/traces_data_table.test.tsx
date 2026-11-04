@@ -8,9 +8,6 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { TracesDataTable } from './traces_data_table';
 
 jest.mock('../../../components/data_table/data_table', () => ({ DataTable: () => <div /> }));
-jest.mock('./failing_evaluation_filter', () => ({
-  FailingEvaluationFilter: () => <div data-test-subj="failingFilter" />,
-}));
 jest.mock('./row_evaluations_context', () => ({
   RowEvaluationsProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -160,22 +157,15 @@ describe('TracesDataTable deep link', () => {
   });
 });
 
-describe('TracesDataTable failing evaluations filter', () => {
+describe('TracesDataTable info bar', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     window.location.hash = '#/';
   });
 
-  it('renders the filter in the info bar controls', () => {
+  it('renders the info bar with no extra controls', () => {
     mockCore = core([hit('t1')]);
     render(<TracesDataTable />);
-    expect(within(screen.getByTestId('infoBar')).getByTestId('failingFilter')).toBeTruthy();
-    expect(screen.getAllByTestId('failingFilter')).toHaveLength(1);
-  });
-
-  it('has no filter while the first query loads', () => {
-    mockCore = core([], true);
-    render(<TracesDataTable />);
-    expect(screen.queryByTestId('failingFilter')).not.toBeInTheDocument();
+    expect(screen.getByTestId('infoBar')).toBeEmptyDOMElement();
   });
 });

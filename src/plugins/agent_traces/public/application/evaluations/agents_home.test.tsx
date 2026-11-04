@@ -132,9 +132,8 @@ describe('AgentsHome', () => {
     expect(empty).toHaveTextContent('pip install opensearch-genai-observability-sdk-py');
     expect(screen.getByTestId('agtEvlQuickstart')).toHaveTextContent('Quickstart');
     expect(screen.getByTestId('agtEvlSuiteInCi')).toHaveTextContent('Run a suite in CI');
-    expect(screen.getByTestId('agtEvlImportAgentCore')).toHaveTextContent(
-      'Import AgentCore evaluations'
-    );
+    // The AgentCore import link is gone.
+    expect(screen.queryByTestId('agtEvlImportAgentCore')).not.toBeInTheDocument();
   });
 
   it('opens the agent with the clicked version on a row click', () => {
