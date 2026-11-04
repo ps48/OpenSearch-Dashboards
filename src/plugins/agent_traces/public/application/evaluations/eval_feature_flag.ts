@@ -17,10 +17,16 @@ export const isAgentEvalsEnabled = (capabilities?: Partial<Capabilities> | null)
 };
 
 /**
- * The same, from React. Without capabilities in the services (unit tests, embedded use) the
- * flag is treated as on, so callers keep their behavior.
+ * The same, from React. Without capabilities in the services (embedded use, unit tests that do
+ * not provide them) the flag is off, so Evaluations never show by accident.
  */
 export const useAgentEvalsEnabled = (): boolean => {
-  const { services } = useOpenSearchDashboards<{ capabilities?: Capabilities }>();
-  return services?.capabilities ? isAgentEvalsEnabled(services.capabilities) : true;
+  const { services } = useOpenSearchDashboards<{
+    capabilities?: Capabilities;
+    application?: { capabilities?: Capabilities };
+  }>();
+  // Agent Traces services carry `capabilities`; the Evaluations app spreads CoreStart, where
+  // they live under `application`.
+  const capabilities = services?.capabilities ?? services?.application?.capabilities;
+  return capabilities ? isAgentEvalsEnabled(capabilities) : false;
 };

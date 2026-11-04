@@ -191,6 +191,8 @@ const CompareCaseDetail: React.FC<{
   if (loading && !results.length) return <EuiLoadingContent lines={3} />;
   return (
     <div className="agtEvlCaseResults" data-test-subj={`agtEvlCompareCase-${row.caseId}`}>
+      {/* A failed span read is an error, not missing input or output. */}
+      {roots.error && <QueryErrorCallout message={roots.error} />}
       <IOBlock label={INPUT_LABEL} text={ioA?.input ?? ioB?.input} testId="agtEvlCompareInput" />
       <IOBlock
         label={EXPECTED_LABEL}

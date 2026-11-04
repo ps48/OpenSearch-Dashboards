@@ -107,6 +107,8 @@ const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, case
   if (loading && !results.length) return <EuiLoadingContent lines={2} />;
   return (
     <div className="agtEvlCaseResults" data-test-subj={`agtEvlCaseResults-${caseId}`}>
+      {/* A failed span read is an error, not missing input or output. */}
+      {root.error && <QueryErrorCallout message={root.error} />}
       <EuiFlexGroup gutterSize="m" responsive={false}>
         <EuiFlexItem>
           <IOBlock label={INPUT_LABEL} text={io?.input} testId="agtEvlCaseInput" />
