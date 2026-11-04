@@ -1,3 +1,13 @@
 .agtEvlPage {
   min-height: 100%;
 }
+
+.agtEvlGraphPanel {
+  height: 420px;
+  overflow: hidden;
+}
+
+.agtEvlGraphNode--only {
+  outline: 2px dashed $euiColorWarning;
+  outline-offset: 2px;
+}

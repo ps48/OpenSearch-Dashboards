@@ -17,11 +17,24 @@ import { groupBySpan } from './use_trace_evaluations';
 import { indexRowTallies } from '../row_evaluations_context';
 
 const mockNavigate = jest.fn();
+const mockServices: { application: unknown; data?: unknown } = {
+  application: { navigateToApp: mockNavigate },
+};
 jest.mock('../../../../../../opensearch_dashboards_react/public', () => ({
-  useOpenSearchDashboards: () => ({
-    services: { application: { navigateToApp: mockNavigate } },
-  }),
+  useOpenSearchDashboards: () => ({ services: mockServices }),
 }));
+/** The time range of every PPL read, by query (the reads themselves run as usual). */
+const mockRanges = new Map<string, unknown>();
+jest.mock('../../../evaluations/use_ppl_rows', () => {
+  const actual = jest.requireActual('../../../evaluations/use_ppl_rows');
+  return {
+    ...actual,
+    usePplRows: (...args: [unknown, string | undefined, unknown, number?]) => {
+      if (args[1]) mockRanges.set(args[1], args[2]);
+      return actual.usePplRows(...args);
+    },
+  };
+});
 
 const result = (name: string, label: string | undefined, spanId?: string, extra = {}) =>
   recordToResult({
@@ -106,5 +119,37 @@ describe('Agent Traces evaluation marks', () => {
   it('says when a trace has no evaluations', () => {
     wrap(<TraceEvaluationsTab evals={{ results: [], bySpanId: {}, isLoading: false }} />);
     expect(screen.getByText('No evaluations for this trace.')).toBeInTheDocument();
+  });
+
+  it('the result flyout reads the case and the run before over the Agent Traces range', () => {
+    const FROM = '2026-11-02T00:00:00.000Z';
+    mockServices.data = {
+      query: {
+        timefilter: {
+          timefilter: {
+            getTime: () => ({ from: 'now-2d', to: 'now' }),
+            calculateBounds: () => ({ min: { toISOString: () => FROM } }),
+          },
+        },
+      },
+    };
+    mockRanges.clear();
+    const r = result('accuracy', 'fail', 's1', {
+      test: { suite: { name: 'golden', run: { id: 'run_1' } }, case: { id: 'c1' } },
+    });
+    wrap(
+      <TraceEvaluationsTab
+        evals={{ results: [r], bySpanId: { s1: [r] }, isLoading: false }}
+        spanLabelOf={() => 'search_flights'}
+      />
+    );
+    fireEvent.click(screen.getByTestId('agentTracesEvalRow-accuracy'));
+    const lookup = [...mockRanges.entries()].find(([q]) =>
+      q.includes('stats min(`@timestamp`) as started')
+    );
+    expect(lookup).toBeDefined();
+    // The flyout context sets browseRange to the same range as timeRange.
+    expect(lookup?.[1]).toEqual({ from: FROM, to: expect.any(String) });
+    delete mockServices.data;
   });
 });

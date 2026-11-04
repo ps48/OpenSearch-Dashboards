@@ -19,10 +19,12 @@ import {
   buildOneTraceSpansQuery,
   buildRootSpansQuery,
   buildRunsLookupQuery,
+  buildSessionRootsQuery,
   buildSpanQuery,
   buildResultsCountQuery,
   buildResultsPageQuery,
   buildRunCasesQuery,
+  buildRunWindowQuery,
   buildSuiteRunsQuery,
   buildTraceResultsQuery,
   buildTraceSpansQuery,
@@ -164,6 +166,35 @@ describe('evaluation PPL', () => {
         'where isnotnull(`attributes.test.suite.run.id`)',
         'stats min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.test.suite.run.id`',
         'head 10000',
+      ].join(' | ')
+    );
+  });
+
+  it('Run, compare runs: the first and last result of the runs (their window)', () => {
+    expect(buildRunWindowQuery(I, ['run_1'])).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'run_1'",
+        'stats min(`@timestamp`) as first, max(`@timestamp`) as last',
+      ].join(' | ')
+    );
+    expect(buildRunWindowQuery(I, ['run_a', "it's"])).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'run_a' or `attributes.test.suite.run.id` = 'it\\'s'",
+        'stats min(`@timestamp`) as first, max(`@timestamp`) as last',
+      ].join(' | ')
+    );
+  });
+
+  it('Result flyout, session results: the root spans of the session turns, oldest first', () => {
+    expect(buildSessionRootsQuery('spans-*', "conv'1")).toBe(
+      [
+        'source = spans-*',
+        "where `attributes.gen_ai.conversation.id` = 'conv\\'1' and `parentSpanId` = ''",
+        'sort `startTime`',
+        'fields `traceId`, `startTime`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
+        'head 50',
       ].join(' | ')
     );
   });

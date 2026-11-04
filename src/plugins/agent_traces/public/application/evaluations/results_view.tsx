@@ -53,7 +53,7 @@ import {
   VersionBadge,
   agentLabel,
   formatTime,
-  scoreOrLabel,
+  ScoreBricks,
   shortId,
   sliceLabel,
   versionLabel,
@@ -267,7 +267,7 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
       name: i18n.translate('agentTraces.evals.results.score', { defaultMessage: 'Score' }),
       sortable: true,
       align: 'right',
-      render: (_: unknown, r: EvalResult) => <span className="agtEvlMono">{scoreOrLabel(r)}</span>,
+      render: (_: unknown, r: EvalResult) => <ScoreBricks r={r} />,
     },
     {
       field: 'explanation',

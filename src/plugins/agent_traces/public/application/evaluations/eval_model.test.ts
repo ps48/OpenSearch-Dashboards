@@ -6,6 +6,7 @@
 import {
   agentEvaluations,
   agentRows,
+  agentVersionRows,
   agentSuites,
   caseStatusOf,
   changeOf,
@@ -16,6 +17,7 @@ import {
   evaluationRows,
   isLive,
   meanPassRate,
+  otherRunsOfSuite,
   parseTime,
   passRate,
   recordToResult,
@@ -124,6 +126,25 @@ describe('agents', () => {
     const [tp] = agentRows(rows);
     expect(isLive(tp.versions[0], now)).toBe(true);
     expect(isLive(tp.versions[1], now)).toBe(false);
+  });
+
+  it('lists one Agents table row per agent and version', () => {
+    const now = Date.UTC(2026, 9, 30, 15);
+    const items = agentVersionRows(rows, now);
+    expect(items.map((r) => r.id)).toEqual(['tp/v2', 'tp/v1', `${NO_AGENT}/`]);
+    expect(items[0]).toMatchObject({
+      agent: 'tp',
+      version: 'v2',
+      decided: 20,
+      n: 27,
+      last: Date.UTC(2026, 9, 30, 12),
+      live: true,
+    });
+    expect(items[0].rate).toBeCloseTo(0.4);
+    expect(items[1]).toMatchObject({ version: 'v1', decided: 20, n: 20, live: false });
+    expect(items[1].rate).toBeCloseTo(0.9);
+    expect(items[2]).toMatchObject({ agent: NO_AGENT, version: undefined, rate: 1, n: 5 });
+    expect(agentVersionRows([])).toEqual([]);
   });
 
   it('builds the Evaluations table for any two versions, average and top label without a rule', () => {
@@ -316,6 +337,18 @@ describe('suites and runs', () => {
     expect(runBefore(lookup, 'r2')?.runId).toBe('r1');
     expect(runBefore(lookup, 'r0')).toBeUndefined();
     expect(runBefore(lookup, 'missing')).toBeUndefined();
+  });
+
+  it('counts the other runs of a run suite', () => {
+    const lookup = [
+      { started: '2026-10-26 07:00:00', [SUITE]: 'g', [RUN]: 'r0' },
+      { started: '2026-10-27 07:00:00', [SUITE]: 'g', [RUN]: 'r1' },
+      { started: '2026-10-27 08:00:00', [SUITE]: 'other', [RUN]: 'x' },
+    ];
+    expect(otherRunsOfSuite(lookup, 'r1')).toBe(1);
+    expect(otherRunsOfSuite(lookup, 'x')).toBe(0);
+    expect(otherRunsOfSuite(lookup, 'missing')).toBe(0);
+    expect(otherRunsOfSuite([], 'r1')).toBe(0);
   });
 });
 

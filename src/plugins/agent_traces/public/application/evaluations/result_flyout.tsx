@@ -31,7 +31,6 @@ import {
   hitsToAgentSpans,
 } from '../pages/traces/hooks/tree_utils';
 import { readAttribute } from '../pages/traces/hooks/genai_message_preview';
-import { toDisplayMessages } from '../pages/traces/flyout/message_content_view';
 import { transformPPLDataToTraceHits } from '../pages/traces/trace_details/traces/ppl_to_trace_hits';
 import {
   EvalResult,
@@ -45,14 +44,14 @@ import {
 import { buildCaseResultsQuery, buildOneTraceSpansQuery } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
-import { useRootSpans, useSpan } from './eval_spans';
+import { useRootSpans, useSessionTurns, useSpan } from './eval_spans';
 import { useRunBefore } from './run_page';
+import { SpanIOView } from './span_io_view';
 import { SpanList, TraceCompareFlyout, flattenSpans } from './trace_compare_flyout';
 import {
   DASH,
   EXPECTED_LABEL,
   INPUT_LABEL,
-  IOBlock,
   NO_AGENT_LABEL,
   OUTPUT_LABEL,
   QueryErrorCallout,
@@ -62,7 +61,9 @@ import {
   formatDuration,
   formatScore,
   formatTime,
+  ScoreBricks,
   scoreOrLabel,
+  scoreScale,
   shortId,
 } from './eval_components';
 
@@ -71,6 +72,8 @@ export interface ResultLinks {
   openTrace?: (traceId: string, aroundMs: number) => void;
   openSuite?: (suite: string) => void;
   openRun?: (runId: string) => void;
+  /** View session (session-level results). */
+  openSession?: (sessionId: string, aroundMs: number) => void;
 }
 
 /** Where the score sits on its declared scale (`opensearch.gen_ai.evaluation.score.min|max`). */
@@ -91,6 +94,95 @@ const SectionLabel: React.FC = ({ children }) => (
     <h4>{children}</h4>
   </EuiText>
 );
+
+/**
+ * What a session-level judge saw: the conversation (`gen_ai.conversation.id`), its first
+ * input and last output from its turns' root spans (one query, when the flyout opens).
+ */
+const SessionJudgedSection: React.FC<{
+  r: EvalResult;
+  openSession?: (sessionId: string, aroundMs: number) => void;
+}> = ({ r, openSession }) => {
+  const session = useSessionTurns(r.conversationId);
+  const first = session.turns[0];
+  const last = session.turns[session.turns.length - 1];
+  return (
+    <div data-test-subj="agtEvlJudgeSawSession">
+      <EuiFlexGroup gutterSize="s" alignItems="baseline" responsive={false}>
+        <EuiFlexItem grow={false}>
+          <SectionLabel>
+            {i18n.translate('agentTraces.evals.flyout.judgeSaw', {
+              defaultMessage: 'What the judge saw',
+            })}
+          </SectionLabel>
+        </EuiFlexItem>
+        <EuiFlexItem>
+          <EuiText size="xs" color="subdued" data-test-subj="agtEvlFlyoutJudged">
+            {r.conversationId
+              ? i18n.translate('agentTraces.evals.flyout.wholeSession', {
+                  defaultMessage:
+                    'the whole session {id} ({n} {n, plural, one {turn} other {turns}})',
+                  values: { id: shortId(r.conversationId), n: session.turns.length },
+                })
+              : i18n.translate('agentTraces.evals.flyout.sessionNoId', {
+                  defaultMessage: 'a session (the result has no gen_ai.conversation.id)',
+                })}
+          </EuiText>
+        </EuiFlexItem>
+        {r.conversationId && openSession && (
+          <EuiFlexItem grow={false}>
+            <EuiText size="xs">
+              <EuiLink
+                onClick={() => r.conversationId && openSession(r.conversationId, r.time)}
+                data-test-subj="agtEvlFlyoutViewSession"
+              >
+                {i18n.translate('agentTraces.evals.flyout.viewSession', {
+                  defaultMessage: 'View session',
+                })}
+              </EuiLink>
+            </EuiText>
+          </EuiFlexItem>
+        )}
+      </EuiFlexGroup>
+      {session.error ? (
+        <QueryErrorCallout message={session.error} />
+      ) : session.loading && !first ? (
+        <EuiLoadingContent lines={2} />
+      ) : r.conversationId && session.loaded && !first ? (
+        <EuiText size="xs" color="subdued" data-test-subj="agtEvlJudgedMissing">
+          <p className="agtEvlBox">
+            {i18n.translate('agentTraces.evals.flyout.sessionMissing', {
+              defaultMessage: 'The session has no traces in the span index (or outside retention).',
+            })}
+          </p>
+        </EuiText>
+      ) : (
+        first && (
+          <SpanIOView
+            idPrefix={`agtEvlJudgedSession-${r.id}`}
+            testId="agtEvlJudgedIO"
+            sections={[
+              {
+                key: 'input',
+                label: i18n.translate('agentTraces.evals.flyout.firstInput', {
+                  defaultMessage: 'First input',
+                }),
+                value: first.rawInput ?? first.input,
+              },
+              {
+                key: 'output',
+                label: i18n.translate('agentTraces.evals.flyout.lastOutput', {
+                  defaultMessage: 'Last output',
+                }),
+                value: last?.rawOutput ?? last?.output,
+              },
+            ]}
+          />
+        )
+      )}
+    </div>
+  );
+};
 
 /**
  * What the judge saw: the judged span's input and output (the root span for trace-level
@@ -176,17 +268,23 @@ const JudgedSection: React.FC<{
           </p>
         </EuiText>
       ) : (
-        <>
-          <IOBlock label={INPUT_LABEL} text={io?.input} testId="agtEvlJudgedInput" />
-          <IOBlock label={OUTPUT_LABEL} text={io?.output} testId="agtEvlJudgedOutput" />
-        </>
-      )}
-      {r.runId && (
-        <IOBlock
-          label={EXPECTED_LABEL}
-          note={expectedNote(r.expectedTruncated)}
-          text={r.expected}
-          testId="agtEvlJudgedExpected"
+        <SpanIOView
+          idPrefix={`agtEvlJudged-${r.id}`}
+          testId="agtEvlJudgedIO"
+          sections={[
+            { key: 'input', label: INPUT_LABEL, value: io?.rawInput ?? io?.input },
+            { key: 'output', label: OUTPUT_LABEL, value: io?.rawOutput ?? io?.output },
+            ...(r.runId
+              ? [
+                  {
+                    key: 'expected',
+                    label: EXPECTED_LABEL,
+                    note: expectedNote(r.expectedTruncated),
+                    value: r.expected,
+                  },
+                ]
+              : []),
+          ]}
         />
       )}
     </div>
@@ -203,7 +301,7 @@ const CaseSection: React.FC<{
   openResult?: (r: EvalResult) => void;
   onCompareTraces: (traceA: string, traceB: string, versionA?: string) => void;
 }> = ({ r, openRun, openResult, onCompareTraces }) => {
-  const { dataset, index, timeRange, refreshKey } = useEvalContext();
+  const { dataset, index, browseRange, refreshKey } = useEvalContext();
   const { runId, caseId } = r;
   const lookup = useRunBefore(runId);
   const beforeId = lookup.before?.runId;
@@ -211,7 +309,7 @@ const CaseSection: React.FC<{
     runId && caseId && lookup.loaded
       ? buildCaseResultsQuery(index, beforeId ? [runId, beforeId] : runId, caseId)
       : undefined;
-  const { rows, loading, error } = usePplRows(dataset, query, timeRange, refreshKey);
+  const { rows, loading, error } = usePplRows(dataset, query, browseRange, refreshKey);
   const results = useMemo(() => recordsToResults(rows), [rows]);
   if (error || lookup.error) return <QueryErrorCallout message={error ?? lookup.error ?? ''} />;
   if ((loading || !lookup.loaded) && !results.length) return <EuiLoadingContent lines={2} />;
@@ -316,11 +414,6 @@ const recordsToHits = (records: PplRecord[]) => {
   });
 };
 
-const messagesText = (value: unknown) =>
-  toDisplayMessages(value)
-    .map((m) => (m.role ? `${m.role}: ${m.text}` : m.text))
-    .join('\n\n') || undefined;
-
 /** The judge's own trace: spans, prompt and response. One query (head 200), when opened. */
 export const JudgeTraceView: React.FC<{ traceId: string; result: EvalResult }> = ({
   traceId,
@@ -362,8 +455,8 @@ export const JudgeTraceView: React.FC<{ traceId: string; result: EvalResult }> =
       flat,
       model: llm ? str(readAttribute(raw(llm), 'gen_ai.request.model')) : undefined,
       tokens,
-      prompt: llm ? messagesText(readAttribute(raw(llm), 'gen_ai.input.messages')) : undefined,
-      response: llm ? messagesText(readAttribute(raw(llm), 'gen_ai.output.messages')) : undefined,
+      prompt: llm ? readAttribute(raw(llm), 'gen_ai.input.messages') : undefined,
+      response: llm ? readAttribute(raw(llm), 'gen_ai.output.messages') : undefined,
     };
   }, [rows]);
   if (error) return <QueryErrorCallout message={error} />;
@@ -396,19 +489,26 @@ export const JudgeTraceView: React.FC<{ traceId: string; result: EvalResult }> =
         </p>
       </EuiText>
       <SpanList side={{ traceId, spans: view.flat, results: [] }} only={new Set()} />
-      <IOBlock
-        label={i18n.translate('agentTraces.evals.judge.prompt', {
-          defaultMessage: 'Prompt sent to the judge',
-        })}
-        text={view.prompt}
-        testId="agtEvlJudgePrompt"
-      />
-      <IOBlock
-        label={i18n.translate('agentTraces.evals.judge.response', {
-          defaultMessage: 'Judge response',
-        })}
-        text={view.response}
-        testId="agtEvlJudgeResponse"
+      <EuiSpacer size="s" />
+      <SpanIOView
+        idPrefix={`agtEvlJudge-${traceId}`}
+        testId="agtEvlJudgeIO"
+        sections={[
+          {
+            key: 'prompt',
+            label: i18n.translate('agentTraces.evals.judge.prompt', {
+              defaultMessage: 'Prompt sent to the judge',
+            }),
+            value: view.prompt,
+          },
+          {
+            key: 'response',
+            label: i18n.translate('agentTraces.evals.judge.response', {
+              defaultMessage: 'Judge response',
+            }),
+            value: view.response,
+          },
+        ]}
       />
       <EuiSpacer size="s" />
       <EuiText size="xs" color="subdued">
@@ -585,23 +685,9 @@ export const ResultFlyout: React.FC<{
                     )}
                   </span>
                 </EuiText>
-                {at !== undefined && (
-                  <div className="agtEvlScale" data-test-subj="agtEvlFlyoutScale">
-                    <div className="agtEvlScale__track">
-                      <span className="agtEvlScale__mark" style={{ left: `${at * 100}%` }} />
-                    </div>
-                    <EuiFlexGroup justifyContent="spaceBetween" responsive={false}>
-                      <EuiFlexItem grow={false}>
-                        <EuiText size="xs" color="subdued">
-                          {r.scoreMin}
-                        </EuiText>
-                      </EuiFlexItem>
-                      <EuiFlexItem grow={false}>
-                        <EuiText size="xs" color="subdued">
-                          {r.scoreMax}
-                        </EuiText>
-                      </EuiFlexItem>
-                    </EuiFlexGroup>
+                {scoreScale(r) && (
+                  <div className="agtEvlScoreBricksL" data-test-subj="agtEvlFlyoutScale">
+                    <ScoreBricks r={r} showValue={false} />
                   </div>
                 )}
               </EuiPanel>
@@ -619,11 +705,15 @@ export const ResultFlyout: React.FC<{
                   <EuiSpacer size="m" />
                 </>
               )}
-              <JudgedSection
-                r={r}
-                openTrace={links.openTrace}
-                onJudgeTrace={() => setJudge(true)}
-              />
+              {r.level === 'session' ? (
+                <SessionJudgedSection r={r} openSession={links.openSession} />
+              ) : (
+                <JudgedSection
+                  r={r}
+                  openTrace={links.openTrace}
+                  onJudgeTrace={() => setJudge(true)}
+                />
+              )}
               <EuiSpacer size="m" />
               {r.runId && r.caseId && (
                 <>

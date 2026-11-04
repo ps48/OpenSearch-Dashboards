@@ -59,6 +59,8 @@ export const SF = {
   parentSpanId: 'parentSpanId',
   input: 'attributes.gen_ai.input.messages',
   output: 'attributes.gen_ai.output.messages',
+  conversationId: 'attributes.gen_ai.conversation.id',
+  startTime: 'startTime',
 } as const;
 
 export const AGG_LIMIT = 10000;
@@ -68,6 +70,7 @@ export const CASE_RESULTS_LIMIT = 100;
 export const TRACE_RESULTS_LIMIT = 200;
 export const COMPARE_SPANS_LIMIT = 2000;
 export const FAILING_TRACES_LIMIT = 500;
+export const SESSION_TURNS_LIMIT = 50;
 
 /** The key of results without `gen_ai.agent.name` (routes, filters), or without a version. */
 export const NO_AGENT = '~none';
@@ -211,6 +214,14 @@ export const buildRunsLookupQuery = (index: string): string =>
 const runsWhere = (runIds: string[]) =>
   runIds.map((id) => `${fld(F.runId)} = ${quote(id)}`).join(' or ');
 
+/** First and last result of one or two runs: the window the run and compare pages read. */
+export const buildRunWindowQuery = (index: string, runIds: string[]): string =>
+  join([
+    ...base(index),
+    `where ${runsWhere(runIds)}`,
+    `stats min(${fld(F.time)}) as first, max(${fld(F.time)}) as last`,
+  ]);
+
 /** The cases of a run and of the run before it (when there is one), in one query. */
 export const buildRunCasesQuery = (index: string, runId: string, beforeId?: string): string =>
   join([
@@ -278,6 +289,16 @@ export const buildRootSpansQuery = (spansIndex: string, traceIds: string[]): str
     `head ${traceIds.length}`,
   ]);
 };
+
+/** The root spans of a session (`gen_ai.conversation.id`), oldest first: its turns. */
+export const buildSessionRootsQuery = (spansIndex: string, conversationId: string): string =>
+  join([
+    `source = ${spansIndex}`,
+    `where ${fld(SF.conversationId)} = ${quote(conversationId)} and ${fld(SF.parentSpanId)} = ''`,
+    `sort ${fld(SF.startTime)}`,
+    `fields ${[SF.traceId, SF.startTime, SF.input, SF.output].map(fld).join(', ')}`,
+    `head ${SESSION_TURNS_LIMIT}`,
+  ]);
 
 /** One span (a span-level result's judged span), the whole document (tool fields included). */
 export const buildSpanQuery = (spansIndex: string, traceId: string, spanId: string): string =>

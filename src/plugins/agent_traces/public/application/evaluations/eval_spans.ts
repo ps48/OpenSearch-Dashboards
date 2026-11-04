@@ -10,7 +10,7 @@ import {
   readAttribute,
 } from '../pages/traces/hooks/genai_message_preview';
 import { PplRecord, get, str } from './eval_model';
-import { SF, buildRootSpansQuery, buildSpanQuery } from './eval_ppl';
+import { SF, buildRootSpansQuery, buildSessionRootsQuery, buildSpanQuery } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 
@@ -20,6 +20,9 @@ export interface SpanIO {
   name?: string;
   input?: string;
   output?: string;
+  /** The raw attribute values (GenAI messages JSON), for the formatted / JSON views. */
+  rawInput?: unknown;
+  rawOutput?: unknown;
 }
 
 /**
@@ -38,6 +41,8 @@ export const spanIOOf = (row: PplRecord): SpanIO => {
     name: str(row.name),
     input: previewSpanInput(span) || undefined,
     output: previewSpanOutput(span) || undefined,
+    rawInput: span.input ?? readAttribute(doc, 'gen_ai.tool.call.arguments'),
+    rawOutput: span.output ?? readAttribute(doc, 'gen_ai.tool.call.result'),
   };
 };
 
@@ -76,4 +81,15 @@ export const useSpan = (
   const { rows, loading, loaded, error } = usePplRows(spans, query, undefined, refreshKey);
   const span = useMemo(() => (rows[0] ? spanIOOf(rows[0]) : undefined), [rows]);
   return { span, loading, loaded, error };
+};
+
+/** A session's turns (its root spans, oldest first); no id: nothing runs. */
+export const useSessionTurns = (
+  conversationId?: string
+): { turns: SpanIO[]; loading: boolean; loaded: boolean; error?: string } => {
+  const { spans, refreshKey } = useEvalContext();
+  const query = conversationId ? buildSessionRootsQuery(spans.title, conversationId) : undefined;
+  const { rows, loading, loaded, error } = usePplRows(spans, query, undefined, refreshKey);
+  const turns = useMemo(() => rows.map(spanIOOf), [rows]);
+  return { turns, loading, loaded, error };
 };

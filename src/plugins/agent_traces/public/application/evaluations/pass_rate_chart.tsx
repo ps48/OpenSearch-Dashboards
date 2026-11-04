@@ -84,8 +84,12 @@ export const PassRateChart: React.FC<{
     },
   ];
   const xs = lines.flatMap((l) => l.points.map((p) => p.t));
-  const min = domain?.min ?? Math.min(...xs);
-  const max = domain?.max ?? Math.max(...xs);
+  const lo = Math.min(...xs);
+  const hi = Math.max(...xs);
+  // Pad the data's ends so the first and last points (and their markers) are not cut off.
+  const pad = Number.isFinite(hi - lo) ? Math.max((hi - lo) * 0.02, 60e3) : 0;
+  const min = domain?.min ?? lo - pad;
+  const max = domain?.max ?? hi + pad;
   return (
     <div style={{ height }} data-test-subj={`agtEvlChart-${id}`}>
       <Chart>

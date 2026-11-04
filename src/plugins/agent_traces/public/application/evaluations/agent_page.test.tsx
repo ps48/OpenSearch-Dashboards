@@ -139,6 +139,37 @@ describe('AgentPage', () => {
     expect(props.series[0].points).toEqual([{ t: Date.UTC(2026, 9, 28, 3), rate: 0.75, n: 4 }]);
   });
 
+  it('one version: no version picker, no A and Change columns, sorted by name', () => {
+    mockPpl.answer((q) =>
+      q.includes('avg_score')
+        ? [
+            evalRow('tone', 'v2', 'pass', 6, 28),
+            evalRow('tone', 'v2', 'fail', 4, 28),
+            evalRow('accuracy', 'v2', 'pass', 25, 28),
+            evalRow('accuracy', 'v2', 'fail', 25, 28),
+          ]
+        : []
+    );
+    renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
+    expect(screen.queryByTestId('agtEvlVersionB')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlVersionA')).not.toBeInTheDocument();
+    const table = screen.getByTestId('agtEvlEvaluationsTable');
+    const headers = within(table)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent);
+    expect(headers.some((h) => h?.includes('Pass rate'))).toBe(true);
+    expect(headers.some((h) => h?.includes('Change'))).toBe(false);
+    expect(headers).toHaveLength(3);
+    const acc = screen.getByTestId('agtEvlEvalRow-accuracy');
+    expect(within(acc).getByText('50%')).toBeInTheDocument();
+    expect(within(acc).queryByTestId('agtEvlDelta')).not.toBeInTheDocument();
+    expect(screen.getByText(/^Click an evaluation to see its failing results\./)).toBeTruthy();
+    expect(screen.queryByText(/Sorted by change/)).not.toBeInTheDocument();
+    expect(
+      screen.getAllByTestId(/^agtEvlEvalRow-/).map((r) => r.getAttribute('data-test-subj'))
+    ).toEqual(['agtEvlEvalRow-accuracy', 'agtEvlEvalRow-tone']);
+  });
+
   it('remembers the version pair per agent', () => {
     const { ctx } = renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
     fireEvent.change(screen.getByTestId('agtEvlVersionB'), { target: { value: 'v1' } });

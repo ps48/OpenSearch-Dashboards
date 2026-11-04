@@ -44,13 +44,14 @@ import {
   buildCompareRunsQuery,
   buildSuiteRunsQuery,
 } from './eval_ppl';
+import { SpanIOView } from './span_io_view';
 import { useRootSpans } from './eval_spans';
 import {
   DASH,
   DeltaCell,
   EXPECTED_LABEL,
   INPUT_LABEL,
-  IOBlock,
+  ResultRows,
   MetaItem,
   OUTPUT_LABEL,
   QueryErrorCallout,
@@ -126,10 +127,13 @@ const ChangeBadge: React.FC<{ change: CaseChange }> = ({ change }) =>
 const statusCell = (s?: CaseStatus) =>
   s ? <VerdictBadge verdict={s} /> : <span className="agtEvlDim">{NOT_IN_RUN}</span>;
 
-/** A side's failing results (fail and evaluator error) with their explanations. */
-const FailingResults: React.FC<{ results: EvalResult[]; inRun: boolean }> = ({
+const VERDICT_ORDER: Record<string, number> = { fail: 0, error: 1, pass: 2, scored: 3 };
+
+/** A side's results, failing first, with their scores and explanations. */
+const SideResults: React.FC<{ results: EvalResult[]; inRun: boolean; testId: string }> = ({
   results,
   inRun,
+  testId,
 }) => {
   const { openResult } = useEvalContext();
   if (!inRun)
@@ -138,28 +142,10 @@ const FailingResults: React.FC<{ results: EvalResult[]; inRun: boolean }> = ({
         {NOT_IN_RUN}
       </EuiText>
     );
-  const failing = results.filter((r) => r.verdict === 'fail' || r.verdict === 'error');
-  if (!failing.length)
-    return (
-      <EuiText size="xs" color="subdued">
-        {i18n.translate('agentTraces.evals.compare.noFailing', {
-          defaultMessage: 'No failing results',
-        })}
-      </EuiText>
-    );
-  return (
-    <>
-      {failing.map((r) => (
-        <div className="agtEvlCaseResults__row agtEvlCaseResults__row--compact" key={r.id}>
-          <EuiLink onClick={() => openResult(r)}>{r.name}</EuiLink>
-          <span>
-            <VerdictBadge verdict={r.verdict} />
-          </span>
-          <span className="agtEvlDim">{r.explanation ?? r.errorType ?? DASH}</span>
-        </div>
-      ))}
-    </>
+  const sorted = [...results].sort(
+    (x, y) => VERDICT_ORDER[x.verdict] - VERDICT_ORDER[y.verdict] || x.name.localeCompare(y.name)
   );
+  return <ResultRows results={sorted} onOpen={openResult} testId={testId} />;
 };
 
 /**
@@ -193,31 +179,52 @@ const CompareCaseDetail: React.FC<{
     <div className="agtEvlCaseResults" data-test-subj={`agtEvlCompareCase-${row.caseId}`}>
       {/* A failed span read is an error, not missing input or output. */}
       {roots.error && <QueryErrorCallout message={roots.error} />}
-      <IOBlock label={INPUT_LABEL} text={ioA?.input ?? ioB?.input} testId="agtEvlCompareInput" />
-      <IOBlock
-        label={EXPECTED_LABEL}
-        note={expectedNote(expected.truncated)}
-        text={expected.text}
-        testId="agtEvlCompareExpected"
+      <SpanIOView
+        idPrefix={`agtEvlCompareCase-${row.caseId}`}
+        testId="agtEvlCompareIO"
+        sections={[
+          {
+            key: 'input',
+            label: INPUT_LABEL,
+            value: ioA?.rawInput ?? ioB?.rawInput ?? ioA?.input ?? ioB?.input,
+          },
+          {
+            key: 'expected',
+            label: EXPECTED_LABEL,
+            note: expectedNote(expected.truncated),
+            value: expected.text,
+          },
+        ]}
       />
-      <EuiFlexGroup gutterSize="m" responsive={false}>
-        <EuiFlexItem>
-          <IOBlock
-            label={`${OUTPUT_LABEL} · ${RUN_A} (${versionA ?? DASH})`}
-            text={ioA?.output}
-            testId="agtEvlCompareOutputA"
-          />
-          <FailingResults results={ofRun(runA)} inRun={!!row.a} />
-        </EuiFlexItem>
-        <EuiFlexItem>
-          <IOBlock
-            label={`${OUTPUT_LABEL} · ${RUN_B} (${versionB ?? DASH})`}
-            text={ioB?.output}
-            testId="agtEvlCompareOutputB"
-          />
-          <FailingResults results={ofRun(runB)} inRun={!!row.b} />
-        </EuiFlexItem>
-      </EuiFlexGroup>
+      <EuiSpacer size="m" />
+      <div className="agtEvlSideBySide">
+        {(
+          [
+            ['a', runA, ioA, versionA, RUN_A, !!row.a],
+            ['b', runB, ioB, versionB, RUN_B, !!row.b],
+          ] as const
+        ).map(([side, runId, io, version, label, inRun]) => (
+          <div key={side} data-test-subj={`agtEvlCompareSide-${side}`}>
+            <SpanIOView
+              idPrefix={`agtEvlCompareOut-${row.caseId}-${side}`}
+              testId={`agtEvlCompareOutput${side.toUpperCase()}`}
+              sections={[
+                {
+                  key: `output-${side}`,
+                  label: `${OUTPUT_LABEL} · ${label} (${version ?? DASH})`,
+                  value: io?.rawOutput ?? io?.output,
+                },
+              ]}
+            />
+            <EuiSpacer size="s" />
+            <SideResults
+              results={ofRun(runId)}
+              inRun={inRun}
+              testId={`agtEvlCompareResults-${side}`}
+            />
+          </div>
+        ))}
+      </div>
       {row.traceA && row.traceB && (
         <>
           <EuiSpacer size="s" />
@@ -243,12 +250,12 @@ const RunPicker: React.FC<{
   other: string;
   onPick: (runId: string) => void;
 }> = ({ suite, side, other, onPick }) => {
-  const { dataset, index, timeRange, refreshKey } = useEvalContext();
+  const { dataset, index, browseRange, refreshKey } = useEvalContext();
   const [open, setOpen] = useState(false);
   const { rows, loading } = usePplRows(
     dataset,
     open && suite ? buildSuiteRunsQuery(index, suite) : undefined,
-    timeRange,
+    browseRange,
     refreshKey
   );
   const runs = useMemo(

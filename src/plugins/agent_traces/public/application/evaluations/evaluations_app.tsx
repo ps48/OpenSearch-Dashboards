@@ -8,6 +8,8 @@ import './evaluations.scss';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isEqual } from 'lodash';
 import {
+  EuiButtonEmpty,
+  EuiEmptyPrompt,
   EuiErrorBoundary,
   EuiLoadingContent,
   EuiPage,
@@ -29,7 +31,7 @@ import {
 } from '../../../../opensearch_dashboards_utils/public';
 import { syncQueryStateWithUrl } from '../../../../data/public';
 import { TimeRange } from '../../../../data/common';
-import { EvalResult } from './eval_model';
+import { EvalResult, parseTime } from './eval_model';
 import {
   AGENTS_ROUTE,
   APP_STATE_KEY,
@@ -40,13 +42,14 @@ import {
   routeOfHash,
 } from './eval_routes';
 import { EvalContext, EvalScreenContext } from './eval_context';
-import { evalsDataset, spansDataset } from './use_ppl_rows';
+import { evalsDataset, evalsLookupDataset, spansDataset, usePplRows } from './use_ppl_rows';
+import { buildRunWindowQuery } from './eval_ppl';
 import { spansIndexOf, useEvalsDataset } from './eval_dataset';
-import { openTraceInAgentTraces } from './eval_links';
+import { openSessionInAgentTraces, openTraceInAgentTraces } from './eval_links';
 import { EvalSettingsModal } from './eval_settings_modal';
 import { EvalHeader, EvalSettingsButton } from './eval_header';
 import { NoEvalsDatasetPrompt } from './eval_empty_states';
-import { agentLabel, shortId } from './eval_components';
+import { QueryErrorCallout, agentLabel, shortId } from './eval_components';
 import { AgentsHome } from './agents_home';
 import { AgentPage } from './agent_page';
 import { SuitePage } from './suite_page';
@@ -258,6 +261,40 @@ export const EvalScreen: React.FC<{ route: EvalRoute }> = ({ route }) => {
   }
 };
 
+/** Padding around a run's results: its traces start a little before its first result. */
+export const RUN_WINDOW_PAD_MS = 15 * 60e3;
+
+/** How far before a run the run and compare pages look for other runs of its suite. */
+export const RUN_LOOKBACK_MS = 30 * 24 * 3600e3;
+
+/** The runs a page shows (run and compare pages), else none. */
+export const runsOfRoute = (route: EvalRoute): string[] =>
+  route.page === 'run' ? [route.runId] : route.page === 'compare' ? [route.runA, route.runB] : [];
+
+/**
+ * The run and compare pages read the runs' own window (first to last result, padded), found
+ * with one filtered single-row query; other pages read the global range.
+ */
+const useRunWindow = (
+  config: { index: string } | undefined,
+  runIds: string[],
+  refreshKey: number
+): { window?: TimeRange; loading: boolean; missing: boolean; error?: string } => {
+  const dataset = useMemo(() => (config ? evalsLookupDataset(config.index) : undefined), [config]);
+  const query = config && runIds.length ? buildRunWindowQuery(config.index, runIds) : undefined;
+  const { rows, loading, loaded, error } = usePplRows(dataset, query, undefined, refreshKey);
+  const first = parseTime(rows[0]?.first);
+  const last = parseTime(rows[0]?.last);
+  const window =
+    Number.isFinite(first) && Number.isFinite(last)
+      ? {
+          from: new Date(first - RUN_WINDOW_PAD_MS).toISOString(),
+          to: new Date(last + RUN_WINDOW_PAD_MS).toISOString(),
+        }
+      : undefined;
+  return { window, loading: !!query && !loaded, missing: !!query && loaded && !window, error };
+};
+
 export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ params }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
   const { state, setState, navigate } = useAppState(params, services);
@@ -332,6 +369,21 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     [time.time.from, time.time.to, quickRanges, services.uiSettings]
   );
 
+  const runIds = runsOfRoute(route);
+  const runKey = runIds.join('|');
+  const run = useRunWindow(config, runIds, time.refreshKey);
+  const onRunPage = runIds.length > 0;
+  // Other runs (the run before, Compare with): the global range, reaching back at least
+  // RUN_LOOKBACK_MS before the run, so a run opened from a link still finds the run before it.
+  const browseRange = useMemo(() => {
+    if (!run.window) return time.timeRange;
+    const back = new Date(Date.parse(run.window.from) - RUN_LOOKBACK_MS).toISOString();
+    return {
+      from: back < time.timeRange.from ? back : time.timeRange.from,
+      to: run.window.to > time.timeRange.to ? run.window.to : time.timeRange.to,
+    };
+  }, [run.window, time.timeRange]);
+
   const context = useMemo<EvalScreenContext | undefined>(
     () =>
       config
@@ -339,7 +391,8 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             dataset: evalsDataset(config.index),
             spans: spansDataset(spansIndexOf(config)),
             index: config.index,
-            timeRange: time.timeRange,
+            timeRange: onRunPage && run.window ? run.window : time.timeRange,
+            browseRange,
             rangeMs: time.rangeMs,
             rangeLabel,
             refreshKey: time.refreshKey,
@@ -352,6 +405,9 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
         : undefined,
     [
       config,
+      onRunPage,
+      run.window,
+      browseRange,
       time.timeRange,
       time.rangeMs,
       rangeLabel,
@@ -380,8 +436,40 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     />
   );
 
+  const refreshButton = (
+    <EuiButtonEmpty
+      key="refresh"
+      size="s"
+      iconType="refresh"
+      onClick={time.onRefresh}
+      data-test-subj="agtEvlRefresh"
+    >
+      {i18n.translate('agentTraces.evalsPage.refresh', { defaultMessage: 'Refresh' })}
+    </EuiButtonEmpty>
+  );
+
   const renderContent = () => {
     if (datasetLoading && !config) return <EuiLoadingContent lines={6} />;
+    if (config && onRunPage && run.error) return <QueryErrorCallout message={run.error} />;
+    if (config && onRunPage && run.loading) return <EuiLoadingContent lines={6} />;
+    if (config && onRunPage && run.missing)
+      return (
+        <EuiEmptyPrompt
+          iconType="search"
+          title={
+            <h3>
+              {i18n.translate('agentTraces.evalsPage.runMissing', {
+                defaultMessage: 'No results for this run',
+              })}
+            </h3>
+          }
+          body={i18n.translate('agentTraces.evalsPage.runMissingBody', {
+            defaultMessage: 'No evaluation result carries the run id {ids}.',
+            values: { ids: runKey.replace('|', ', ') },
+          })}
+          data-test-subj="agtEvlRunMissing"
+        />
+      );
     if (!context) {
       return (
         <NoEvalsDatasetPrompt onGetStarted={() => setSettingsOpen(true)} error={dataset.error} />
@@ -398,6 +486,8 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             onOpenResult={setResult}
             links={{
               openTrace,
+              openSession: (sessionId: string, aroundMs: number) =>
+                openSessionInAgentTraces(services.application, sessionId, aroundMs),
               openSuite: (suite) => navigate({ page: 'suite', suite }),
               openRun: (runId) => navigate({ page: 'run', runId }),
             }}
@@ -419,7 +509,13 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
                 defaultMessage="Evaluation results of your agents, from online evaluators and suite runs."
               />
             }
-            controls={config ? [datePicker, settingsButton] : [settingsButton]}
+            controls={
+              !config
+                ? [settingsButton]
+                : onRunPage
+                  ? [refreshButton, settingsButton]
+                  : [datePicker, settingsButton]
+            }
           />
           {!services.chrome.navGroup?.getNavGroupEnabled() && <EuiSpacer size="m" />}
           {renderContent()}

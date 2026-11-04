@@ -6,7 +6,7 @@
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { RunPage, filterCases } from './run_page';
-import { TEST_INDEX, fakePpl, renderWithContext } from './eval_test_utils';
+import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
   buildCaseResultsQuery,
   buildRootSpansQuery,
@@ -170,23 +170,74 @@ describe('RunPage', () => {
     expect(screen.getByTestId('agtEvlStatCases')).not.toHaveTextContent('run before');
   });
 
-  it('expands a case: input, expected, output (root span) and its results', () => {
+  it('expands a case: input, output (root span), expected and its results', () => {
     const { ctx } = renderWithContext(<RunPage runId={RUN} />);
     fireEvent.click(screen.getByTestId('agtEvlCaseRow-c1'));
     expect(mockPpl.queries).toContain(buildCaseResultsQuery(TEST_INDEX, RUN, 'c1'));
     expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', ['trace-c1']));
     const results = screen.getByTestId('agtEvlCaseResults-c1');
-    expect(results).toHaveTextContent('Wrong city');
-    expect(screen.getByTestId('agtEvlCaseInput')).toHaveTextContent('Capital of France?');
-    expect(screen.getByTestId('agtEvlCaseExpected')).toHaveTextContent('Paris');
-    expect(screen.getByTestId('agtEvlCaseExpected')).toHaveTextContent(
-      'opensearch.test.case.expected'
+    const io = within(results).getByTestId('agtEvlCaseIO');
+    const section = (key: string) => within(io).getByTestId(`agtEvlIO-${key}`);
+    expect(
+      within(io)
+        .getAllByTestId(/^agtEvlIO-/)
+        .map((el) => el.getAttribute('data-test-subj'))
+    ).toEqual(['agtEvlIO-input', 'agtEvlIO-output', 'agtEvlIO-expected']);
+    // Role-labelled messages from the gen_ai.*.messages JSON.
+    expect(section('input')).toHaveTextContent('Input');
+    expect(section('input')).toHaveTextContent('User');
+    expect(section('input')).toHaveTextContent('Capital of France?');
+    expect(section('output')).toHaveTextContent('Assistant');
+    expect(section('output')).toHaveTextContent('Lyon');
+    expect(section('expected')).toHaveTextContent('Paris');
+    expect(section('expected')).toHaveTextContent('opensearch.test.case.expected');
+    // Formatted / JSON toggle: the JSON view shows the attribute itself.
+    fireEvent.click(
+      within(io).getByTestId('agentTracesMessageViewJson').querySelector('input') as HTMLElement
     );
-    expect(screen.getByTestId('agtEvlCaseOutput')).toHaveTextContent('Lyon');
-    fireEvent.click(within(results).getByText('accuracy'));
+    expect(section('input')).toHaveTextContent('"role": "user"');
+    const rows = within(results).getByTestId('agtEvlCaseResultRows');
+    expect(rows).toHaveTextContent('Wrong city');
+    expect(within(rows).getByTestId('agtEvlVerdict-fail')).toBeInTheDocument();
+    fireEvent.click(within(rows).getByText('accuracy'));
     expect(ctx.openResult).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'accuracy', verdict: 'fail' })
     );
+  });
+
+  it('reads the run before, the cases and the suite runs over the browse range', () => {
+    const browseRange = { from: '2026-10-01T00:00:00.000Z', to: '2026-10-31T00:00:00.000Z' };
+    const timeRange = { from: '2026-10-28T07:00:00.000Z', to: '2026-10-28T07:02:00.000Z' };
+    renderWithContext(<RunPage runId={RUN} />, testContext({ browseRange, timeRange }));
+    fireEvent.click(screen.getByTestId('agtEvlCompareWith'));
+    expect(mockPpl.ranges.get(buildRunsLookupQuery(TEST_INDEX))).toEqual(browseRange);
+    expect(mockPpl.ranges.get(buildRunCasesQuery(TEST_INDEX, RUN, BEFORE))).toEqual(browseRange);
+    expect(mockPpl.ranges.get(buildSuiteRunsQuery(TEST_INDEX, 'golden'))).toEqual(browseRange);
+  });
+
+  it('Compare with… is disabled with a tooltip when the suite has no other run', async () => {
+    mockPpl.answer((q) =>
+      q.includes('stats min(`@timestamp`) as started')
+        ? [
+            { started: '2026-10-28 07:00:00', [SUITE]: 'golden', [RUN_ID]: RUN },
+            { started: '2026-10-27 07:00:00', [SUITE]: 'other', [RUN_ID]: 'x' },
+          ]
+        : q.includes('as t0')
+          ? [caseRow('c1', 'accuracy', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05')]
+          : []
+    );
+    renderWithContext(<RunPage runId={RUN} />);
+    const button = screen.getByTestId('agtEvlCompareWith');
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(mockPpl.queries).not.toContain(buildSuiteRunsQuery(TEST_INDEX, 'golden'));
+    // EUI opens the tooltip after a delay and a queued state change (real timers).
+    fireEvent.mouseOver(button.closest('.euiToolTipAnchor') as HTMLElement);
+    expect(
+      await screen.findByText(/^No other run of this suite in Last 7 days/, undefined, {
+        timeout: 5000,
+      })
+    ).toBeInTheDocument();
   });
 
   it('filters cases by status and search in the browser', () => {

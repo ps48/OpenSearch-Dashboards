@@ -414,7 +414,6 @@ export const TracesDataTable: React.FC = () => {
   if ((isQueryLoading || !isInitialized) && hits.length === 0) {
     return (
       <>
-        <FailingEvaluationFilter />
         <TableLoadingState
           message={
             <FormattedMessage
@@ -449,7 +448,6 @@ export const TracesDataTable: React.FC = () => {
     <TraceExpansionProvider value={expansionContextValue}>
       <RowEvaluationsProvider traceIds={evalTraceIds} mode="trace">
         <div className="agentTracesTable__container">
-          <FailingEvaluationFilter />
           <DataTableInfoBar
             hasHead={hasHead}
             hitsCount={hits.length}
@@ -458,6 +456,7 @@ export const TracesDataTable: React.FC = () => {
             entityName="trace"
             wrapCellText={wrapCellText}
             onWrapCellTextChange={setWrapCellText}
+            controls={<FailingEvaluationFilter />}
           />
           <div
             ref={scrollContainerRef}

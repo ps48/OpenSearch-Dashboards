@@ -28,12 +28,14 @@ import {
   EuiStat,
   EuiText,
   EuiTitle,
+  EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import {
   CaseRow,
   CaseStatus,
   recordsToResults,
+  otherRunsOfSuite,
   runBefore,
   runDetail,
   suiteRuns,
@@ -45,12 +47,13 @@ import {
   buildRunsLookupQuery,
   buildSuiteRunsQuery,
 } from './eval_ppl';
+import { SpanIOView } from './span_io_view';
 import { useRootSpans } from './eval_spans';
 import {
   DASH,
   EXPECTED_LABEL,
   INPUT_LABEL,
-  IOBlock,
+  ResultRows,
   MetaItem,
   OUTPUT_LABEL,
   QueryErrorCallout,
@@ -62,7 +65,6 @@ import {
   expectedOf,
   formatDuration,
   formatTime,
-  scoreOrLabel,
   shortId,
 } from './eval_components';
 import { useEvalContext } from './eval_context';
@@ -109,67 +111,65 @@ const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, case
     <div className="agtEvlCaseResults" data-test-subj={`agtEvlCaseResults-${caseId}`}>
       {/* A failed span read is an error, not missing input or output. */}
       {root.error && <QueryErrorCallout message={root.error} />}
-      <EuiFlexGroup gutterSize="m" responsive={false}>
-        <EuiFlexItem>
-          <IOBlock label={INPUT_LABEL} text={io?.input} testId="agtEvlCaseInput" />
-          <IOBlock
-            label={EXPECTED_LABEL}
-            note={expectedNote(expected.truncated)}
-            text={expected.text}
-            testId="agtEvlCaseExpected"
-          />
-        </EuiFlexItem>
-        <EuiFlexItem>
-          <IOBlock label={OUTPUT_LABEL} text={io?.output} testId="agtEvlCaseOutput" />
-        </EuiFlexItem>
-      </EuiFlexGroup>
-      <EuiText size="xs" className="agtEvlIO__label">
+      <SpanIOView
+        idPrefix={`agtEvlCase-${caseId}`}
+        testId="agtEvlCaseIO"
+        sections={[
+          { key: 'input', label: INPUT_LABEL, value: io?.rawInput ?? io?.input },
+          { key: 'output', label: OUTPUT_LABEL, value: io?.rawOutput ?? io?.output },
+          {
+            key: 'expected',
+            label: EXPECTED_LABEL,
+            note: expectedNote(expected.truncated),
+            value: expected.text,
+          },
+        ]}
+      />
+      <EuiSpacer size="s" />
+      <EuiTitle size="xxs">
         <span>
           {i18n.translate('agentTraces.evals.run.caseResults', { defaultMessage: 'Results' })}
         </span>
-      </EuiText>
-      {results.map((r) => (
-        <div className="agtEvlCaseResults__row" key={r.id}>
-          <EuiLink onClick={() => openResult(r)}>{r.name}</EuiLink>
-          <span>
-            <VerdictBadge verdict={r.verdict} />
-          </span>
-          <span className="agtEvlMono">{scoreOrLabel(r)}</span>
-          <span className="agtEvlDim">{r.explanation ?? r.errorType ?? DASH}</span>
-        </div>
-      ))}
+      </EuiTitle>
+      <ResultRows results={results} onOpen={openResult} testId="agtEvlCaseResultRows" />
     </div>
   );
 };
 
 /** The run before a run (same suite, started last before it), from the runs in the range. */
 export const useRunBefore = (runId?: string) => {
-  const { dataset, index, timeRange, refreshKey } = useEvalContext();
+  const { dataset, index, browseRange, refreshKey } = useEvalContext();
   const lookup = usePplRows(
     dataset,
     runId ? buildRunsLookupQuery(index) : undefined,
-    timeRange,
+    browseRange,
     refreshKey
   );
   const before = useMemo(
     () => (runId ? runBefore(lookup.rows, runId) : undefined),
     [lookup.rows, runId]
   );
-  return { before, loaded: lookup.loaded, error: lookup.error };
+  const others = useMemo(
+    () => (runId ? otherRunsOfSuite(lookup.rows, runId) : 0),
+    [lookup.rows, runId]
+  );
+  return { before, others, loaded: lookup.loaded, error: lookup.error };
 };
 
 /** "Compare with…": the suite's other runs, read when the menu opens. */
-const CompareWithMenu: React.FC<{ runId: string; suite?: string; started: number }> = ({
-  runId,
-  suite,
-  started,
-}) => {
-  const { dataset, index, timeRange, refreshKey, navigate } = useEvalContext();
+const CompareWithMenu: React.FC<{
+  runId: string;
+  suite?: string;
+  started: number;
+  /** Other runs of the suite in the range (from the runs lookup). */
+  others: number;
+}> = ({ runId, suite, started, others: otherCount }) => {
+  const { dataset, index, browseRange, refreshKey, rangeLabel, navigate } = useEvalContext();
   const [open, setOpen] = useState(false);
   const { rows, loading } = usePplRows(
     dataset,
     open && suite ? buildSuiteRunsQuery(index, suite) : undefined,
-    timeRange,
+    browseRange,
     refreshKey
   );
   const runs = useMemo(() => suiteRuns(rows), [rows]);
@@ -183,18 +183,30 @@ const CompareWithMenu: React.FC<{ runId: string; suite?: string; started: number
       panelPaddingSize="none"
       anchorPosition="downRight"
       button={
-        <EuiButtonEmpty
-          size="s"
-          iconType="arrowDown"
-          iconSide="right"
-          isDisabled={!suite}
-          onClick={() => setOpen(!open)}
-          data-test-subj="agtEvlCompareWith"
+        <EuiToolTip
+          content={
+            otherCount === 0
+              ? i18n.translate('agentTraces.evals.run.noOtherRuns', {
+                  defaultMessage:
+                    'No other run of this suite in {range} or the 30 days before this run.',
+                  values: { range: rangeLabel },
+                })
+              : undefined
+          }
         >
-          {i18n.translate('agentTraces.evals.run.compareWith', {
-            defaultMessage: 'Compare with…',
-          })}
-        </EuiButtonEmpty>
+          <EuiButtonEmpty
+            size="s"
+            iconType="arrowDown"
+            iconSide="right"
+            isDisabled={!suite || otherCount === 0}
+            onClick={() => setOpen(!open)}
+            data-test-subj="agtEvlCompareWith"
+          >
+            {i18n.translate('agentTraces.evals.run.compareWith', {
+              defaultMessage: 'Compare with…',
+            })}
+          </EuiButtonEmpty>
+        </EuiToolTip>
       }
     >
       <EuiPopoverTitle paddingSize="s">
@@ -265,13 +277,13 @@ const RunStat: React.FC<{
 
 /** A run: its header, figures (against the run before) and cases (expand a case). */
 export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
-  const { dataset, index, timeRange, refreshKey, navigate, openTrace } = useEvalContext();
+  const { dataset, index, browseRange, refreshKey, navigate, openTrace } = useEvalContext();
   const lookup = useRunBefore(runId);
   const beforeId = lookup.before?.runId;
   const { rows, loading, loaded, error } = usePplRows(
     dataset,
     lookup.loaded ? buildRunCasesQuery(index, runId, beforeId) : undefined,
-    timeRange,
+    browseRange,
     refreshKey
   );
   const run = useMemo(() => runDetail(runId, rows), [runId, rows]);
@@ -467,7 +479,12 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
           </EuiFlexItem>
         )}
         <EuiFlexItem grow={false}>
-          <CompareWithMenu runId={runId} suite={run.suite} started={run.started} />
+          <CompareWithMenu
+            runId={runId}
+            suite={run.suite}
+            started={run.started}
+            others={lookup.others}
+          />
         </EuiFlexItem>
       </EuiFlexGroup>
       <EuiFlexGroup gutterSize="m" responsive={false} wrap data-test-subj="agtEvlRunStats">

@@ -14,8 +14,16 @@ export interface EvalScreenContext {
   dataset: Dataset;
   spans: Dataset;
   index: string;
-  /** Absolute ISO bounds of the global range, resolved again on Refresh. */
+  /**
+   * Absolute ISO bounds the screen reads, resolved again on Refresh: the global range, or on
+   * the run and compare pages the runs' own window.
+   */
   timeRange: TimeRange;
+  /**
+   * Where to look for other runs (the run before, Compare with): the global range, reaching
+   * back to the run's window. Equal to `timeRange` outside the run and compare pages.
+   */
+  browseRange: TimeRange;
   rangeMs: number;
   /** The global range in words ("Last 7 days"). */
   rangeLabel: string;
@@ -34,6 +42,7 @@ export const defaultEvalContext = (index: string, spansIndex: string): EvalScree
   spans: spansDataset(spansIndex),
   index,
   timeRange: { from: 'now-7d', to: 'now' },
+  browseRange: { from: 'now-7d', to: 'now' },
   rangeMs: 7 * 24 * 3600e3,
   rangeLabel: 'Last 7 days',
   refreshKey: 0,

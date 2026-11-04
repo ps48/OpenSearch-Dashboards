@@ -5,7 +5,14 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { EuiFilterButton, EuiFilterGroup, EuiFlexGroup, EuiFlexItem, EuiText } from '@elastic/eui';
+import {
+  EuiFlexGroup,
+  EuiFlexItem,
+  EuiLoadingSpinner,
+  EuiSwitch,
+  EuiText,
+  EuiToolTip,
+} from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { useOpenSearchDashboards } from '../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../types';
@@ -91,28 +98,11 @@ export const FailingEvaluationFilter: React.FC = () => {
     <EuiFlexGroup
       gutterSize="s"
       alignItems="center"
+      justifyContent="flexEnd"
       responsive={false}
       className="agentTracesFailingFilter"
       data-test-subj="agtEvlFailingFilterBar"
     >
-      <EuiFlexItem grow={false}>
-        <EuiFilterGroup>
-          <EuiFilterButton
-            hasActiveFilters={on}
-            isLoading={loading}
-            numFilters={filter ? filter.traceIds.length : undefined}
-            onClick={toggle}
-            title={i18n.translate('agentTraces.evals.failingFilter.tip', {
-              defaultMessage: 'Only traces with at least one failing evaluation result',
-            })}
-            data-test-subj="agtEvlFailingFilter"
-          >
-            {i18n.translate('agentTraces.evals.failingFilter.label', {
-              defaultMessage: 'Has a failing evaluation',
-            })}
-          </EuiFilterButton>
-        </EuiFilterGroup>
-      </EuiFlexItem>
       {filter?.capped && (
         <EuiFlexItem grow={false}>
           <EuiText size="xs" color="subdued" data-test-subj="agtEvlFailingFilterCapped">
@@ -129,6 +119,34 @@ export const FailingEvaluationFilter: React.FC = () => {
           <EuiText size="xs" color="danger" data-test-subj="agtEvlFailingFilterError">
             {error}
           </EuiText>
+        </EuiFlexItem>
+      )}
+      <EuiFlexItem grow={false}>
+        <EuiToolTip
+          content={i18n.translate('agentTraces.evals.failingFilter.tip', {
+            defaultMessage: 'Only traces with at least one failing evaluation result',
+          })}
+        >
+          <EuiSwitch
+            compressed
+            label={
+              <span>
+                {i18n.translate('agentTraces.evals.failingFilter.label', {
+                  defaultMessage: 'Failing evaluations only',
+                })}
+                {filter && ` (${filter.traceIds.length.toLocaleString()})`}
+              </span>
+            }
+            checked={on}
+            disabled={loading}
+            onChange={toggle}
+            data-test-subj="agtEvlFailingFilter"
+          />
+        </EuiToolTip>
+      </EuiFlexItem>
+      {loading && (
+        <EuiFlexItem grow={false}>
+          <EuiLoadingSpinner size="s" />
         </EuiFlexItem>
       )}
     </EuiFlexGroup>

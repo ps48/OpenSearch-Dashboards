@@ -273,6 +273,8 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
   const va = data.versions.find((v) => versionKey(v) === a);
   const labelB = vb ? versionLabel(vb.version) : DASH;
   const labelA = va ? versionLabel(va.version) : DASH;
+  // With one version there is nothing to compare: show its values only.
+  const single = data.versions.length < 2;
 
   const pick = (next: { b?: string; a?: string }) =>
     setState({ versionPick: { ...state.versionPick, [agent]: next } });
@@ -282,7 +284,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
     slice,
   });
 
-  const columns: Array<EuiBasicTableColumn<EvaluationRow>> = [
+  const allColumns: Array<EuiBasicTableColumn<EvaluationRow>> = [
     {
       field: 'name',
       name: i18n.translate('agentTraces.evals.agent.evaluation', { defaultMessage: 'Evaluation' }),
@@ -318,7 +320,9 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
     },
     {
       field: 'b',
-      name: labelB,
+      name: single
+        ? i18n.translate('agentTraces.evals.agent.passRate', { defaultMessage: 'Pass rate' })
+        : labelB,
       align: 'right',
       sortable: (r: EvaluationRow) => (r.hasPassRule ? r.b?.rate : r.b?.avg) ?? -1,
       render: (_: unknown, r: EvaluationRow) => <ScoreText stat={r.b} />,
@@ -348,6 +352,9 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
       render: (_: unknown, r: EvaluationRow) => (r.b?.tally.n ?? 0).toLocaleString(),
     },
   ];
+  const columns = single
+    ? allColumns.filter((c) => !['a', 'delta'].includes((c as { field?: string }).field ?? ''))
+    : allColumns;
 
   const sourceWord =
     source === 'online'
@@ -409,14 +416,21 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
             <SectionTitle
               title={TAB_LABEL.evaluations}
               count={rows.length}
-              sub={i18n.translate('agentTraces.evals.agent.evalsSub', {
-                defaultMessage:
-                  'Sorted by change, worst first. Click an evaluation to see its failing results for {version}. Evaluations without a pass rule show their average score or most common label.',
-                values: { version: labelB },
-              })}
+              sub={
+                single
+                  ? i18n.translate('agentTraces.evals.agent.evalsSubSingle', {
+                      defaultMessage:
+                        'Click an evaluation to see its failing results. Evaluations without a pass rule show their average score or most common label.',
+                    })
+                  : i18n.translate('agentTraces.evals.agent.evalsSub', {
+                      defaultMessage:
+                        'Sorted by change, worst first. Click an evaluation to see its failing results for {version}. Evaluations without a pass rule show their average score or most common label.',
+                      values: { version: labelB },
+                    })
+              }
             />
           </EuiFlexItem>
-          {data.versions.length > 0 && (
+          {!single && (
             <EuiFlexItem grow={false}>
               <VersionPicker versions={data.versions} b={b} a={a} onChange={pick} />
             </EuiFlexItem>
@@ -430,7 +444,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
             itemId="name"
             columns={columns}
             loading={table.loading}
-            sorting={{ sort: { field: 'delta', direction: 'asc' } }}
+            sorting={{ sort: { field: single ? 'name' : 'delta', direction: 'asc' } }}
             pagination={{ initialPageSize: 20, pageSizeOptions: [20, 50] }}
             rowProps={(r: EvaluationRow) => ({
               className: 'agtEvlClickRow',

@@ -4,11 +4,13 @@
  */
 
 import React from 'react';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { TracesDataTable } from './traces_data_table';
 
 jest.mock('../../../components/data_table/data_table', () => ({ DataTable: () => <div /> }));
-jest.mock('./failing_evaluation_filter', () => ({ FailingEvaluationFilter: () => null }));
+jest.mock('./failing_evaluation_filter', () => ({
+  FailingEvaluationFilter: () => <div data-test-subj="failingFilter" />,
+}));
 jest.mock('./row_evaluations_context', () => ({
   RowEvaluationsProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -16,7 +18,9 @@ jest.mock('./row_evaluations_context', () => ({
 let mockCore: Record<string, unknown>;
 jest.mock('./table_shared', () => ({
   useDataTableCore: () => mockCore,
-  DataTableInfoBar: () => <div />,
+  DataTableInfoBar: ({ controls }: { controls?: React.ReactNode }) => (
+    <div data-test-subj="infoBar">{controls}</div>
+  ),
   TableLoadingState: () => <div />,
   TableEmptyState: () => <div />,
   hitToBaseRow: (h: { _source: Record<string, string> }) => ({
@@ -135,5 +139,25 @@ describe('TracesDataTable deep link', () => {
     mockCore = core([hit('t2')]);
     await act(async () => rerender(<TracesDataTable />));
     expect(mockFetchTraceSpans).not.toHaveBeenCalled();
+  });
+});
+
+describe('TracesDataTable failing evaluations filter', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.location.hash = '#/';
+  });
+
+  it('renders the filter in the info bar controls', () => {
+    mockCore = core([hit('t1')]);
+    render(<TracesDataTable />);
+    expect(within(screen.getByTestId('infoBar')).getByTestId('failingFilter')).toBeTruthy();
+    expect(screen.getAllByTestId('failingFilter')).toHaveLength(1);
+  });
+
+  it('has no filter while the first query loads', () => {
+    mockCore = core([], true);
+    render(<TracesDataTable />);
+    expect(screen.queryByTestId('failingFilter')).not.toBeInTheDocument();
   });
 });

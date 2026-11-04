@@ -5,7 +5,7 @@
 
 import './trace_evaluations.scss';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   EuiBasicTable,
   EuiBasicTableColumn,
@@ -29,8 +29,9 @@ import { JudgeMark } from '../../../evaluations/judge_mark';
 import { ResultFlyout } from '../../../evaluations/result_flyout';
 import { EvalContext, defaultEvalContext } from '../../../evaluations/eval_context';
 import { useEvalsIndexPattern, useSpansIndexPattern } from '../../../evaluations/eval_dataset';
-import { openInEvaluations } from '../../../evaluations/eval_links';
+import { openInEvaluations, openSessionInAgentTraces } from '../../../evaluations/eval_links';
 import { TraceEvaluations } from './use_trace_evaluations';
+import { TraceFlyoutContext } from './trace_flyout_state';
 
 /** A span's results in the trace tree: the judge mark and a small tally. */
 export const SpanEvalMark: React.FC<{ results?: EvalResult[] }> = ({ results }) => {
@@ -114,6 +115,7 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
   const application = services.application;
   const index = useEvalsIndexPattern();
   const spansIndex = useSpansIndexPattern();
+  const traceFlyout = useContext(TraceFlyoutContext);
   const [shown, setShown] = useState(result);
   useEffect(() => setShown(result), [result]);
   // The flyout's lazy reads (judged span, case, judge trace) use the evaluations and span
@@ -122,7 +124,9 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
     const ctx = defaultEvalContext(index ?? 'otel-v1-genai-evaluation-*', spansIndex);
     const timefilter = services.data?.query.timefilter.timefilter;
     const from = timefilter?.calculateBounds(timefilter.getTime()).min?.toISOString();
-    return from ? { ...ctx, timeRange: { from, to: new Date().toISOString() } } : ctx;
+    if (!from) return ctx;
+    const range = { from, to: new Date().toISOString() };
+    return { ...ctx, timeRange: range, browseRange: range };
   }, [index, spansIndex, services.data]);
   return (
     <EvalContext.Provider value={context}>
@@ -134,6 +138,13 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
         links={{
           openSuite: (suite) => openInEvaluations(application, { page: 'suite', suite }),
           openRun: (runId) => openInEvaluations(application, { page: 'run', runId }),
+          // Inside Agent Traces the session opens in its flyout; elsewhere through a link.
+          openSession: (sessionId, aroundMs) => {
+            if (traceFlyout) {
+              onClose();
+              traceFlyout.openSession(sessionId);
+            } else openSessionInAgentTraces(application, sessionId, aroundMs);
+          },
         }}
       />
     </EvalContext.Provider>

@@ -53,30 +53,46 @@ describe('AgentsHome', () => {
     ]);
   });
 
-  it('runs one aggregation and lists a pass rate per version, most recent first', () => {
+  it('runs one aggregation and lists one row per agent version, most recent first', () => {
     renderWithContext(<AgentsHome />);
     expect(new Set(mockPpl.queries)).toEqual(new Set([buildAgentsQuery(TEST_INDEX, 'all', '')]));
-    const tp = screen.getByTestId('agtEvlAgentRow-travel_planner');
-    const badges = within(tp).getAllByTestId(/^agtEvlVersionRate-/);
-    expect(badges.map((b) => b.getAttribute('data-test-subj'))).toEqual([
-      'agtEvlVersionRate-v2',
-      'agtEvlVersionRate-v1',
-      'agtEvlVersionRate-v4',
-      'agtEvlVersionRate-v3',
+    const ids = screen
+      .getAllByTestId(/^agtEvlAgentRow-/)
+      .map((r) => r.getAttribute('data-test-subj'));
+    expect(ids).toEqual([
+      'agtEvlAgentRow-travel_planner/v2',
+      `agtEvlAgentRow-${NO_AGENT}/`,
+      'agtEvlAgentRow-travel_planner/v1',
+      'agtEvlAgentRow-travel_planner/v4',
+      'agtEvlAgentRow-travel_planner/v3',
+      'agtEvlAgentRow-travel_planner/v0',
     ]);
-    expect(badges[0]).toHaveTextContent('v2 60%');
-    expect(badges[0]).toHaveClass('agtEvlVersionBadge--low');
-    expect(badges[1]).toHaveTextContent('v1 95%');
-    expect(badges[1]).not.toHaveClass('agtEvlVersionBadge--low');
-    expect(within(tp).getByText('+1')).toBeInTheDocument();
-    expect(within(tp).getByText('93')).toBeInTheDocument();
-    expect(within(tp).queryByText(/pts/)).not.toBeInTheDocument();
-    expect(screen.getByText('(no agent name)')).toBeInTheDocument();
-    // No version: one pass rate.
-    expect(within(screen.getByTestId(`agtEvlAgentRow-${NO_AGENT}`)).getByText('100%')).toBeTruthy();
+    const v2 = screen.getByTestId('agtEvlVersionRate-travel_planner/v2');
+    expect(v2).toHaveTextContent('60%');
+    // Under 30 results with a pass rule: faded.
+    expect(v2).toHaveClass('agtEvlLowN');
+    const v1 = screen.getByTestId('agtEvlVersionRate-travel_planner/v1');
+    expect(v1).toHaveTextContent('95%');
+    expect(v1).not.toHaveClass('agtEvlLowN');
+    const v1Row = screen.getByTestId('agtEvlAgentRow-travel_planner/v1');
+    expect(within(v1Row).getByText('travel_planner')).toBeInTheDocument();
+    expect(within(v1Row).getByText('v1')).toBeInTheDocument();
+    expect(within(v1Row).getByText('80')).toBeInTheDocument();
+    // No agent name and no version.
+    const none = screen.getByTestId(`agtEvlAgentRow-${NO_AGENT}/`);
+    expect(within(none).getByText('(no agent name)')).toBeInTheDocument();
+    expect(within(none).getByText('(no version)')).toBeInTheDocument();
+    expect(within(none).getByText('100%')).toBeInTheDocument();
   });
 
-  it('marks a version with results in the last 6 hours', () => {
+  it('titles the panel with the row count and a description, no footnote', () => {
+    renderWithContext(<AgentsHome />);
+    expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent('Agents (6)');
+    expect(screen.getByText(/One row per agent version with evaluation results/)).toBeTruthy();
+    expect(screen.queryByText(/pts/)).not.toBeInTheDocument();
+  });
+
+  it('marks a version with results in the last 6 hours in its Version badge', () => {
     const now = Date.now();
     const iso = (ms: number) => new Date(ms).toISOString().replace('T', ' ').replace('Z', '');
     mockPpl.answer(() => [
@@ -100,11 +116,11 @@ describe('AgentsHome', () => {
       },
     ]);
     renderWithContext(<AgentsHome />);
+    const live = screen.getByTestId('agtEvlAgentRow-tp/v5');
+    const dot = within(live).getByTestId('agtEvlLiveDot');
+    expect(dot.closest('.euiBadge')).toHaveTextContent('v5');
     expect(
-      within(screen.getByTestId('agtEvlVersionRate-v5')).getByTestId('agtEvlLiveDot')
-    ).toBeTruthy();
-    expect(
-      within(screen.getByTestId('agtEvlVersionRate-v4')).queryByTestId('agtEvlLiveDot')
+      within(screen.getByTestId('agtEvlAgentRow-tp/v4')).queryByTestId('agtEvlLiveDot')
     ).not.toBeInTheDocument();
   });
 
@@ -121,14 +137,22 @@ describe('AgentsHome', () => {
     );
   });
 
-  it('opens an agent on a row click', () => {
+  it('opens the agent with the clicked version on a row click', () => {
     const { ctx } = renderWithContext(<AgentsHome />);
-    fireEvent.click(screen.getByTestId('agtEvlAgentRow-travel_planner'));
-    expect(ctx.navigate).toHaveBeenCalledWith({
-      page: 'agent',
-      agent: 'travel_planner',
-      tab: 'evaluations',
-    });
+    fireEvent.click(screen.getByTestId('agtEvlAgentRow-travel_planner/v1'));
+    expect(ctx.navigate).toHaveBeenCalledWith(
+      { page: 'agent', agent: 'travel_planner', tab: 'evaluations' },
+      { versionPick: { travel_planner: { b: 'v1' } } }
+    );
+  });
+
+  it('opens an agent without a version with an empty version key', () => {
+    const { ctx } = renderWithContext(<AgentsHome />);
+    fireEvent.click(screen.getByTestId(`agtEvlAgentRow-${NO_AGENT}/`));
+    expect(ctx.navigate).toHaveBeenCalledWith(
+      { page: 'agent', agent: NO_AGENT, tab: 'evaluations' },
+      { versionPick: { [NO_AGENT]: { b: '' } } }
+    );
   });
 
   it('pushes the source filter and the search into the query', () => {
@@ -136,11 +160,20 @@ describe('AgentsHome', () => {
     const ctx = testContext({ state: { ...testContext().state, agentsSource: 'offline' } });
     renderWithContext(<AgentsHome />, ctx);
     fireEvent.change(screen.getByTestId('agtEvlAgentsSearch'), { target: { value: 'travel' } });
+    // Debounced: not before a pause in typing.
+    expect(mockPpl.queries).not.toContain(buildAgentsQuery(TEST_INDEX, 'offline', 'travel'));
     act(() => {
       jest.advanceTimersByTime(400);
     });
     expect(mockPpl.queries).toContain(buildAgentsQuery(TEST_INDEX, 'offline', 'travel'));
-    fireEvent.click(screen.getByTestId('agtEvlSource-online'));
+    // The source filter is a button group: the option test id is on the label and its radio.
+    const radio = (s: string) =>
+      screen
+        .getAllByTestId(`agtEvlSource-${s}`)
+        .find((el) => el.tagName === 'INPUT') as HTMLElement;
+    expect(radio('offline')).toBeChecked();
+    expect(radio('online')).not.toBeChecked();
+    fireEvent.click(radio('online'));
     expect(ctx.setState).toHaveBeenCalledWith({ agentsSource: 'online' });
     jest.useRealTimers();
   });

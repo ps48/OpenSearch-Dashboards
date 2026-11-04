@@ -263,6 +263,37 @@ export const agentRows = (rows: PplRecord[]): AgentRow[] => {
   return [...byAgent.entries()].map(([agent, list]) => agentRowOf(agent, list));
 };
 
+/** An Agents table row: one version of an agent. */
+export interface AgentVersionRow {
+  /** `<agent>/<version key>`. */
+  id: string;
+  agent: string;
+  /** Undefined: results without `gen_ai.agent.version`. */
+  version?: string;
+  /** Mean of the version's evaluation pass rates. */
+  rate?: number;
+  /** Results with a pass rule (pass + fail). */
+  decided: number;
+  n: number;
+  last: number;
+  live: boolean;
+}
+
+/** Agents table rows from `buildAgentsQuery`: one row per agent and version. */
+export const agentVersionRows = (rows: PplRecord[], now = Date.now()): AgentVersionRow[] =>
+  agentRows(rows).flatMap((agent) =>
+    agent.versions.map((v) => ({
+      id: `${agent.agent}/${versionKey(v)}`,
+      agent: agent.agent,
+      version: v.version,
+      rate: v.rate,
+      decided: v.decided,
+      n: v.tally.n,
+      last: v.last,
+      live: isLive(v, now),
+    }))
+  );
+
 // ---------------------------------------------------------------------- Agent page
 
 /** The version key of a version stat ('' when the results carry none). */
@@ -540,6 +571,15 @@ export const runBefore = (rows: PplRecord[], runId: string): RunRef | undefined 
   return runs
     .filter((r) => r.runId !== runId && r.suite === self.suite && r.started < self.started)
     .sort((a, b) => b.started - a.started)[0];
+};
+
+/** The number of other runs of a run's suite in `buildRunsLookupQuery` rows. */
+export const otherRunsOfSuite = (rows: PplRecord[], runId: string): number => {
+  const suiteOf = (row: PplRecord) => str(get(row, F.suiteName));
+  const self = rows.find((row) => str(get(row, F.runId)) === runId);
+  if (!self) return 0;
+  return rows.filter((row) => str(get(row, F.runId)) !== runId && suiteOf(row) === suiteOf(self))
+    .length;
 };
 
 // ---------------------------------------------------------------------- Compare runs

@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { TraceCompareFlyout, flattenSpans, onlyIn, resultsOfSpan } from './trace_compare_flyout';
 import { TEST_INDEX, renderWithContext } from './eval_test_utils';
 import { buildTraceResultsQuery, buildTraceSpansQuery } from './eval_ppl';
@@ -23,6 +23,18 @@ jest.mock('./use_ppl_rows', () => ({
   runPpl: (...a: unknown[]) => mockRunPpl(...a),
 }));
 const mockServices = { services: { data: {} } };
+interface FlowProps {
+  spanTree: Array<{ spanId: string }>;
+  totalDuration: number;
+  decorateNode: (span: { spanId: string }) => { className?: string } | undefined;
+}
+const mockFlow = jest.fn();
+jest.mock('../pages/traces/flow/trace_flow_view', () => ({
+  TraceFlowView: (props: FlowProps) => {
+    mockFlow(props);
+    return <div data-test-subj="flow" />;
+  },
+}));
 jest.mock('../../../../opensearch_dashboards_react/public', () => ({
   useOpenSearchDashboards: () => mockServices,
 }));
@@ -40,6 +52,7 @@ describe('TraceCompareFlyout', () => {
   beforeEach(() => {
     mockExecute.mockReset();
     mockRunPpl.mockReset();
+    mockFlow.mockClear();
     mockExecute.mockResolvedValue({
       schema: ['traceId', 'spanId', 'parentSpanId', 'name', 'startTime', 'durationInNanos'].map(
         (name) => ({ name, type: 'string' })
@@ -85,6 +98,67 @@ describe('TraceCompareFlyout', () => {
     // The trace-level result marks the root span of trace B.
     expect(within(b).getByTestId('agtEvlJudgeMark')).toHaveAttribute('data-state', 'fail');
     expect(screen.getByText('Wrong')).toBeInTheDocument();
+  });
+
+  const renderCompare = () =>
+    renderWithContext(
+      <TraceCompareFlyout
+        caseId="c1"
+        traceA="ta"
+        traceB="tb"
+        versionA="v1"
+        versionB="v2"
+        onClose={jest.fn()}
+      />
+    );
+
+  it('shows each output and every result of each trace', async () => {
+    const { ctx } = renderCompare();
+    await waitFor(() => expect(screen.getByTestId('agtEvlSpans-tb')).toBeInTheDocument());
+    expect(screen.getByTestId('agtEvlTraceCompareOutput-ta')).toHaveTextContent('Not recorded');
+    fireEvent.click(screen.getByText('accuracy'));
+    expect(ctx.openResult).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'accuracy', verdict: 'fail' })
+    );
+  });
+
+  it('switches between the Spans and the Trace map tabs', async () => {
+    renderCompare();
+    await waitFor(() => expect(screen.getByTestId('agtEvlSpans-tb')).toBeInTheDocument());
+    expect(screen.getByTestId('agtEvlTraceCompareTab-spans')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    expect(screen.queryByTestId('agtEvlTraceMap-ta')).not.toBeInTheDocument();
+    expect(mockFlow).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('agtEvlTraceCompareTab-map'));
+    expect(screen.getByTestId('agtEvlTraceCompareTab-map')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    expect(screen.queryByTestId('agtEvlSpans-ta')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('agtEvlTraceMap-ta')).getByTestId('flow')).toBeTruthy();
+    expect(within(screen.getByTestId('agtEvlTraceMap-tb')).getByTestId('flow')).toBeTruthy();
+    // One map per trace, its own span tree and duration.
+    const props = mockFlow.mock.calls.map((c) => c[0] as FlowProps);
+    const ofTrace = (root: string) => props.find((p) => p.spanTree[0]?.spanId === root);
+    const a = ofTrace('a1') as FlowProps;
+    const b = ofTrace('b1') as FlowProps;
+    expect(a.totalDuration).toBe(2000);
+    expect(b.totalDuration).toBe(3000);
+    // B: the trace-level result marks the root; a span only in B is outlined.
+    expect(b.decorateNode({ spanId: 'b1' })?.className).toContain('agtEvlFlowNode--fail');
+    expect(b.decorateNode({ spanId: 'b2' })?.className).toBe('agtEvlGraphNode--only');
+    expect(a.decorateNode({ spanId: 'a1' })).toBeUndefined();
+    expect(a.decorateNode({ spanId: 'a2' })?.className).toBe('agtEvlGraphNode--only');
+    // The output and results stay below either view.
+    expect(screen.getByTestId('agtEvlTraceCompareOutput-tb')).toBeInTheDocument();
+    expect(screen.getByText('Wrong')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('agtEvlTraceCompareTab-spans'));
+    expect(screen.getByTestId('agtEvlSpans-ta')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlTraceMap-ta')).not.toBeInTheDocument();
   });
 
   it('helpers: flatten, only-in-one and results per span', () => {

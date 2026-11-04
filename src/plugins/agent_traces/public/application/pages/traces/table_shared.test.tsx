@@ -326,6 +326,22 @@ describe('table_shared', () => {
       fireEvent.click(switchEl);
       expect(onWrapChange).toHaveBeenCalledWith(true);
     });
+
+    it('renders extra controls before the wrap switch', () => {
+      render(
+        // @ts-expect-error TS2769 TODO(ts-error): fixme
+        <IntlProvider locale="en">
+          <DataTableInfoBar
+            {...defaultProps}
+            controls={<div data-test-subj="extraControl">Failing evaluations only</div>}
+          />
+        </IntlProvider>
+      );
+      const extra = screen.getByTestId('extraControl');
+      const wrap = screen.getByTestId('agentTracesWrapCellTextSwitch');
+      // eslint-disable-next-line no-bitwise
+      expect(extra.compareDocumentPosition(wrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
   });
 });
 

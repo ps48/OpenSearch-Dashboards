@@ -51,7 +51,7 @@ jest.mock('../../evaluations/use_ppl_rows', () => ({
 
 const T = 'traceId';
 
-describe('Has a failing evaluation (Agent Traces)', () => {
+describe('Failing evaluations only (Agent Traces)', () => {
   afterEach(() => {
     setFailingTracesFilter(undefined);
     mockDispatch.mockClear();
@@ -88,8 +88,13 @@ describe('Has a failing evaluation (Agent Traces)', () => {
     expect(failingTracesOf(many).capped).toBe(true);
   });
 
-  it('turning it on runs one bounded query, then the traces query again', async () => {
-    mockRunPpl.mockResolvedValue(Array.from({ length: 500 }, (_, i) => ({ [T]: `t${i}` })));
+  it('is disabled with a spinner while the failing traces load', async () => {
+    let resolve: (rows: unknown[]) => void = () => undefined;
+    mockRunPpl.mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      })
+    );
     render(
       <I18nProvider>
         <FailingEvaluationFilter />
@@ -98,7 +103,42 @@ describe('Has a failing evaluation (Agent Traces)', () => {
     await act(async () => {
       fireEvent.click(screen.getByTestId('agtEvlFailingFilter'));
     });
+    expect(screen.getByTestId('agtEvlFailingFilter')).toBeDisabled();
+    expect(
+      screen.getByTestId('agtEvlFailingFilterBar').querySelector('.euiLoadingSpinner')
+    ).toBeInTheDocument();
+    await act(async () => {
+      resolve([{ [T]: 'a' }]);
+    });
+    expect(screen.getByTestId('agtEvlFailingFilter')).not.toBeDisabled();
+    expect(screen.getByTestId('agtEvlFailingFilterBar')).toHaveTextContent(
+      'Failing evaluations only (1)'
+    );
+    expect(
+      screen.getByTestId('agtEvlFailingFilterBar').querySelector('.euiLoadingSpinner')
+    ).not.toBeInTheDocument();
+  });
+
+  it('turning it on runs one bounded query, then the traces query again', async () => {
+    mockRunPpl.mockResolvedValue(Array.from({ length: 500 }, (_, i) => ({ [T]: `t${i}` })));
+    render(
+      <I18nProvider>
+        <FailingEvaluationFilter />
+      </I18nProvider>
+    );
+    const toggle = screen.getByTestId('agtEvlFailingFilter');
+    // A switch, off at first, with no count yet.
+    expect(toggle).toHaveAttribute('role', 'switch');
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText('Failing evaluations only')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
     expect(mockRunPpl).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('agtEvlFailingFilter')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('agtEvlFailingFilterBar')).toHaveTextContent(
+      'Failing evaluations only (500)'
+    );
     const [, dataset, query, range] = mockRunPpl.mock.calls[0];
     expect(query).toBe(buildFailingTracesQuery('evals-*'));
     expect((dataset as { timeFieldName: string }).timeFieldName).toBe('@timestamp');
@@ -113,6 +153,8 @@ describe('Has a failing evaluation (Agent Traces)', () => {
       fireEvent.click(screen.getByTestId('agtEvlFailingFilter'));
     });
     expect(getFailingTracesFilter()).toBeUndefined();
+    expect(screen.getByTestId('agtEvlFailingFilter')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByTestId('agtEvlFailingFilterCapped')).not.toBeInTheDocument();
     expect(mockDispatch).toHaveBeenCalledTimes(2);
     expect(mockRunPpl).toHaveBeenCalledTimes(1);
   });

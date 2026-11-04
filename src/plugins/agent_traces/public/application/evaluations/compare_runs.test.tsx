@@ -6,7 +6,7 @@
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { CompareRuns, filterCompareCases } from './compare_runs';
-import { TEST_INDEX, fakePpl, renderWithContext } from './eval_test_utils';
+import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
   buildCaseResultsQuery,
   buildCompareRunsQuery,
@@ -138,25 +138,60 @@ describe('CompareRuns', () => {
     expect(screen.getByTestId('agtEvlCompareEvaluations')).toHaveTextContent('n 4/3');
   });
 
-  it('expands a case: input, expected, both outputs with failing explanations', () => {
+  it('expands a case: input, expected, both outputs and every result of each run', () => {
     renderWithContext(<CompareRuns runA={A} runB={B} />);
     fireEvent.click(screen.getByTestId('agtEvlCompareRow-c1'));
     expect(mockPpl.queries).toContain(buildCaseResultsQuery(TEST_INDEX, [A, B], 'c1'));
     expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', [`${A}-c1`, `${B}-c1`]));
     const detail = screen.getByTestId('agtEvlCompareCase-c1');
-    expect(within(detail).getByTestId('agtEvlCompareInput')).toHaveTextContent(
-      'Capital of France?'
+    const io = within(detail).getByTestId('agtEvlCompareIO');
+    const input = within(io).getByTestId('agtEvlIO-input');
+    expect(input).toHaveTextContent('User');
+    expect(input).toHaveTextContent('Capital of France?');
+    expect(within(io).getByTestId('agtEvlIO-expected')).toHaveTextContent('Paris, with flights');
+    expect(within(io).getByTestId('agtEvlIO-expected')).toHaveTextContent(
+      'opensearch.test.case.expected'
     );
-    expect(within(detail).getByTestId('agtEvlCompareExpected')).toHaveTextContent(
-      'Paris, with flights'
-    );
-    expect(within(detail).getByTestId('agtEvlCompareOutputA')).toHaveTextContent('Paris');
-    expect(within(detail).getByTestId('agtEvlCompareOutputB')).toHaveTextContent('Lyon');
-    expect(detail).toHaveTextContent('No failing results');
-    expect(detail).toHaveTextContent('Wrong city');
-    expect(detail).not.toHaveTextContent('Polite');
+    const sideA = within(detail).getByTestId('agtEvlCompareSide-a');
+    const sideB = within(detail).getByTestId('agtEvlCompareSide-b');
+    const outA = within(sideA).getByTestId('agtEvlIO-output-a');
+    expect(outA).toHaveTextContent('Run A (v1)');
+    expect(outA).toHaveTextContent('Assistant');
+    expect(outA).toHaveTextContent('Paris');
+    const outB = within(sideB).getByTestId('agtEvlIO-output-b');
+    expect(outB).toHaveTextContent('Run B (v2)');
+    expect(outB).toHaveTextContent('Lyon');
+    // Every result of the run, failing first, passing ones too.
+    const resultsA = within(sideA).getByTestId('agtEvlCompareResults-a');
+    expect(resultsA).toHaveTextContent('Right city');
+    expect(within(resultsA).getByTestId('agtEvlVerdict-pass')).toBeInTheDocument();
+    const resultsB = within(sideB).getByTestId('agtEvlCompareResults-b');
+    expect(resultsB).toHaveTextContent(/Wrong city.*Polite/);
+    expect(
+      within(resultsB)
+        .getAllByTestId(/^agtEvlVerdict-/)
+        .map((el) => el.getAttribute('data-test-subj'))
+    ).toEqual(['agtEvlVerdict-fail', 'agtEvlVerdict-pass']);
     fireEvent.click(within(detail).getByTestId('agtEvlCompareTracesDetail-c1'));
     expect(mockFlyout).toHaveBeenCalledWith(expect.objectContaining({ caseId: 'c1' }));
+  });
+
+  it('opens a result from a side', () => {
+    const { ctx } = renderWithContext(<CompareRuns runA={A} runB={B} />);
+    fireEvent.click(screen.getByTestId('agtEvlCompareRow-c1'));
+    fireEvent.click(within(screen.getByTestId('agtEvlCompareResults-b')).getByText('tone'));
+    expect(ctx.openResult).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'tone', verdict: 'pass' })
+    );
+  });
+
+  it('says Not in run for a side without the case', () => {
+    renderWithContext(<CompareRuns runA={A} runB={B} />);
+    fireEvent.click(screen.getByTestId('agtEvlCaseFilter-only'));
+    fireEvent.click(screen.getByTestId('agtEvlCompareRow-c4'));
+    const sideA = screen.getByTestId('agtEvlCompareSide-a');
+    expect(within(sideA).queryByTestId('agtEvlCompareResults-a')).not.toBeInTheDocument();
+    expect(sideA).toHaveTextContent('Not in run');
   });
 
   it('opens Compare traces for a case', () => {
@@ -180,5 +215,12 @@ describe('CompareRuns', () => {
     expect(mockPpl.queries).toContain(buildSuiteRunsQuery(TEST_INDEX, 'golden'));
     fireEvent.click(screen.getByText('zzzz9999'));
     expect(ctx.navigate).toHaveBeenCalledWith({ page: 'compare', runA: 'run_x_zzzz9999', runB: B });
+  });
+
+  it('reads the suite runs for the picker over the browse range', () => {
+    const browseRange = { from: '2026-10-01T00:00:00.000Z', to: '2026-10-31T00:00:00.000Z' };
+    renderWithContext(<CompareRuns runA={A} runB={B} />, testContext({ browseRange }));
+    fireEvent.click(screen.getByTestId('agtEvlPickRun-a'));
+    expect(mockPpl.ranges.get(buildSuiteRunsQuery(TEST_INDEX, 'golden'))).toEqual(browseRange);
   });
 });

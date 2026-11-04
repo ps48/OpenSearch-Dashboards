@@ -9,11 +9,9 @@ import React from 'react';
 import moment from 'moment';
 import {
   EuiBadge,
+  EuiButtonGroup,
+  EuiLink,
   EuiCallOut,
-  EuiFilterButton,
-  EuiFilterGroup,
-  EuiFlexGroup,
-  EuiFlexItem,
   EuiIconTip,
   EuiText,
   EuiToolTip,
@@ -85,6 +83,62 @@ export const formatScore = (value?: number) =>
 /** A result's score, else the label of a scored result. */
 export const scoreOrLabel = (r: { value?: number; label?: string; verdict: Verdict }) =>
   r.value !== undefined ? formatScore(r.value) : r.label && r.verdict === 'scored' ? r.label : DASH;
+
+/** The scale of a score: declared min / max, else 0 to 1 when the value fits it. */
+export const scoreScale = (r: { value?: number; scoreMin?: number; scoreMax?: number }) => {
+  if (r.value === undefined) return undefined;
+  const min =
+    r.scoreMin ?? (r.scoreMax === undefined && r.value >= 0 && r.value <= 1 ? 0 : undefined);
+  const max = r.scoreMax ?? (min === 0 && r.value <= 1 ? 1 : undefined);
+  return min !== undefined && max !== undefined && max > min ? { min, max } : undefined;
+};
+
+/**
+ * Bricks of a scale and how many a value fills: one brick per point on small integer scales
+ * (1 to 5: five bricks, a 1 fills one), else 10 by the value's share of the scale.
+ */
+export const brickCount = ({ min, max }: { min: number; max: number }) =>
+  min === 1 && Number.isInteger(max) && max <= 10 ? max : 10;
+
+export const bricksFilled = (value: number, scale: { min: number; max: number }) => {
+  const n = brickCount(scale);
+  if (scale.min === 1 && n === scale.max) return Math.min(n, Math.max(0, Math.round(value)));
+  const share = (value - scale.min) / (scale.max - scale.min);
+  return Math.round(Math.min(1, Math.max(0, share)) * n);
+};
+
+/**
+ * A score as a row of bricks, filled by its share of the scale; the color is the verdict's
+ * (score.label from the producer), never a threshold applied here. Unknown scale: the number.
+ */
+export const ScoreBricks: React.FC<{
+  r: { value?: number; label?: string; verdict: Verdict; scoreMin?: number; scoreMax?: number };
+  showValue?: boolean;
+}> = ({ r, showValue = true }) => {
+  const scale = scoreScale(r);
+  if (!scale || r.value === undefined) return <span className="agtEvlMono">{scoreOrLabel(r)}</span>;
+  const n = brickCount(scale);
+  const filled = bricksFilled(r.value, scale);
+  const tip = i18n.translate('agentTraces.evals.scoreTip', {
+    defaultMessage: '{value} on a {min} to {max} scale',
+    values: { value: formatScore(r.value), min: scale.min, max: scale.max },
+  });
+  return (
+    <EuiToolTip content={tip}>
+      <span className="agtEvlBricks" data-test-subj="agtEvlScoreBricks">
+        <span className={`agtEvlBricks__row agtEvlBricks__row--${r.verdict}`} aria-label={tip}>
+          {Array.from({ length: n }, (_, i) => (
+            <span
+              key={i}
+              className={`agtEvlBricks__brick${i < filled ? ' agtEvlBricks__brick--on' : ''}`}
+            />
+          ))}
+        </span>
+        {showValue && <span className="agtEvlMono">{formatScore(r.value)}</span>}
+      </span>
+    </EuiToolTip>
+  );
+};
 
 export const VerdictBadge: React.FC<{ verdict: Verdict | CaseStatus }> = ({ verdict }) => (
   <EuiBadge color={VERDICT_COLOR[verdict]} data-test-subj={`agtEvlVerdict-${verdict}`}>
@@ -228,23 +282,24 @@ export const SourceFilter: React.FC<{
   value: EvalSource;
   onChange: (source: EvalSource) => void;
 }> = ({ value, onChange }) => (
-  <EuiFlexGroup gutterSize="none" responsive={false}>
-    <EuiFlexItem grow={false}>
-      <EuiFilterGroup data-test-subj="agtEvlSource">
-        {(['all', 'online', 'offline'] as EvalSource[]).map((s) => (
-          <EuiFilterButton
-            key={s}
-            hasActiveFilters={value === s}
-            onClick={() => onChange(s)}
-            title={SOURCE_TIP[s]}
-            data-test-subj={`agtEvlSource-${s}`}
-          >
-            {SOURCE_LABEL[s]}
-          </EuiFilterButton>
-        ))}
-      </EuiFilterGroup>
-    </EuiFlexItem>
-  </EuiFlexGroup>
+  <div className="agtEvlInline">
+    <EuiButtonGroup
+      legend={i18n.translate('agentTraces.evals.source.legend', {
+        defaultMessage: 'Results source',
+      })}
+      buttonSize="compressed"
+      type="single"
+      idSelected={`agtEvlSource-${value}`}
+      onChange={(id: string) => onChange(id.replace('agtEvlSource-', '') as EvalSource)}
+      options={(['all', 'online', 'offline'] as EvalSource[]).map((s) => ({
+        id: `agtEvlSource-${s}`,
+        label: SOURCE_LABEL[s],
+        title: SOURCE_TIP[s],
+        'data-test-subj': `agtEvlSource-${s}`,
+      }))}
+      data-test-subj="agtEvlSource"
+    />
+  </div>
 );
 
 export const QueryErrorCallout: React.FC<{ message: string }> = ({ message }) => (
@@ -283,6 +338,35 @@ export const MetaItem: React.FC<{ label: string }> = ({ label, children }) => (
 
 export const RUN_A = i18n.translate('agentTraces.evals.runA', { defaultMessage: 'Run A' });
 export const RUN_B = i18n.translate('agentTraces.evals.runB', { defaultMessage: 'Run B' });
+
+/**
+ * Results of a case as rows: evaluation, verdict, score bricks and explanation. The row wraps,
+ * so the explanation gets the space left (or its own line in a narrow column).
+ */
+export const ResultRows: React.FC<{
+  results: EvalResult[];
+  onOpen: (r: EvalResult) => void;
+  testId?: string;
+}> = ({ results, onOpen, testId }) => (
+  <div className="agtEvlResultRows" data-test-subj={testId}>
+    {results.map((r) => (
+      <div className="agtEvlResultRow" key={r.id}>
+        <span className="agtEvlResultRow__name">
+          <EuiLink onClick={() => onOpen(r)}>{r.name}</EuiLink>
+        </span>
+        <span className="agtEvlResultRow__verdict">
+          <VerdictBadge verdict={r.verdict} />
+        </span>
+        <span className="agtEvlResultRow__score">
+          <ScoreBricks r={r} />
+        </span>
+        <span className="agtEvlResultRow__why agtEvlDim">
+          {r.explanation ?? r.errorType ?? DASH}
+        </span>
+      </div>
+    ))}
+  </div>
+);
 
 /** A labelled block of text (input, output, expected output). */
 export const IOBlock: React.FC<{

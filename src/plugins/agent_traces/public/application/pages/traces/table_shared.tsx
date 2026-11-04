@@ -385,6 +385,8 @@ interface DataTableInfoBarProps {
   entityName: 'span' | 'trace' | 'session';
   wrapCellText: boolean;
   onWrapCellTextChange: (v: boolean) => void;
+  /** Extra table controls shown before the wrap switch (e.g. a filter toggle). */
+  controls?: React.ReactNode;
 }
 
 interface InfoBarCountProps {
@@ -483,6 +485,7 @@ export const DataTableInfoBar: React.FC<DataTableInfoBarProps> = ({
   entityName,
   wrapCellText,
   onWrapCellTextChange,
+  controls,
 }) => {
   const CountMessage =
     entityName === 'span'
@@ -508,6 +511,7 @@ export const DataTableInfoBar: React.FC<DataTableInfoBarProps> = ({
           />
         </EuiText>
       </EuiFlexItem>
+      {controls && <EuiFlexItem>{controls}</EuiFlexItem>}
       <EuiFlexItem grow={false}>
         <EuiSwitch
           label={

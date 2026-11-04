@@ -13,6 +13,7 @@ import {
   buildOneTraceSpansQuery,
   buildRootSpansQuery,
   buildRunsLookupQuery,
+  buildSessionRootsQuery,
   buildSpanQuery,
 } from './eval_ppl';
 
@@ -151,9 +152,28 @@ describe('ResultFlyout', () => {
     expect(screen.getByTestId('agtEvlFlyoutJudged')).toHaveTextContent(
       'span execute_tool search_flights'
     );
-    expect(screen.getByTestId('agtEvlJudgedInput')).toHaveTextContent('{"to":"CDG"}');
-    expect(screen.getByTestId('agtEvlJudgedOutput')).toHaveTextContent('3 flights');
-    expect(screen.getByTestId('agtEvlJudgedExpected')).toHaveTextContent('Paris');
+    const io = screen.getByTestId('agtEvlJudgedIO');
+    expect(
+      within(io)
+        .getAllByTestId(/^agtEvlIO-/)
+        .map((el) => el.getAttribute('data-test-subj'))
+    ).toEqual(['agtEvlIO-input', 'agtEvlIO-output', 'agtEvlIO-expected']);
+    // A tool span: its arguments and result.
+    expect(within(io).getByTestId('agtEvlIO-input')).toHaveTextContent('"to":"CDG"');
+    expect(within(io).getByTestId('agtEvlIO-output')).toHaveTextContent('3 flights');
+    expect(within(io).getByTestId('agtEvlIO-expected')).toHaveTextContent('Paris');
+    expect(within(io).getByTestId('agtEvlIO-expected')).toHaveTextContent(
+      'opensearch.test.case.expected'
+    );
+  });
+
+  it('says when the judged span is not in the span index', () => {
+    mockPpl.answer(() => []);
+    renderFlyout();
+    expect(screen.getByTestId('agtEvlJudgedMissing')).toHaveTextContent(
+      'The judged trace is not in the span index'
+    );
+    expect(screen.queryByTestId('agtEvlJudgedIO')).not.toBeInTheDocument();
   });
 
   it('shows the case: its other results, and the run before with Compare traces', () => {
@@ -183,10 +203,23 @@ describe('ResultFlyout', () => {
     const judge = screen.getByTestId('agtEvlJudgeTrace');
     expect(judge).toHaveTextContent('claude-sonnet-4-5');
     expect(judge).toHaveTextContent('1,000 tokens');
-    expect(screen.getByTestId('agtEvlJudgePrompt')).toHaveTextContent(
-      'Grade this answer for helpfulness'
+    const io = within(judge).getByTestId('agtEvlJudgeIO');
+    const prompt = within(io).getByTestId('agtEvlIO-prompt');
+    expect(prompt).toHaveTextContent('Prompt sent to the judge');
+    expect(prompt).toHaveTextContent('User');
+    expect(prompt).toHaveTextContent('Grade this answer for helpfulness');
+    const response = within(io).getByTestId('agtEvlIO-response');
+    expect(response).toHaveTextContent('Judge response');
+    expect(response).toHaveTextContent('Assistant');
+    expect(response).toHaveTextContent('score: 0.4');
+    // The raw gen_ai.input.messages / gen_ai.output.messages values in the JSON view.
+    fireEvent.click(
+      within(io).getByTestId('agentTracesMessageViewJson').querySelector('input') as HTMLElement
     );
-    expect(screen.getByTestId('agtEvlJudgeResponse')).toHaveTextContent('score: 0.4');
+    expect(within(io).getByTestId('agtEvlIO-prompt')).toHaveTextContent('"role": "user"');
+    expect(within(io).getByTestId('agtEvlIO-response')).toHaveTextContent(
+      '"content": "score: 0.4"'
+    );
     fireEvent.click(screen.getByTestId('agtEvlJudgeBack'));
     expect(screen.getByTestId('agtEvlJudgeSaw')).toBeInTheDocument();
   });
@@ -196,7 +229,13 @@ describe('ResultFlyout', () => {
     expect(screen.getByText('helpfulness')).toBeInTheDocument();
     expect(screen.getAllByTestId('agtEvlVerdict-fail').length).toBeGreaterThan(0);
     expect(screen.getByTestId('agtEvlFlyoutScore')).toHaveTextContent('0.40 / 1');
-    expect(screen.getByTestId('agtEvlFlyoutScale')).toBeInTheDocument();
+    const scale = screen.getByTestId('agtEvlFlyoutScale');
+    const bricks = within(scale).getByTestId('agtEvlScoreBricks');
+    // 0.4 on 0 to 1: 4 of 10 bricks, in the verdict color, no number repeated.
+    expect(bricks.querySelectorAll('.agtEvlBricks__brick')).toHaveLength(10);
+    expect(bricks.querySelectorAll('.agtEvlBricks__brick--on')).toHaveLength(4);
+    expect(bricks.querySelector('.agtEvlBricks__row--fail')).toBeInTheDocument();
+    expect(bricks).not.toHaveTextContent('0.40');
     expect(screen.getByText('Vague.')).toBeInTheDocument();
     expect(screen.getByText('helpfulness_judge')).toBeInTheDocument();
     expect(screen.getByText('llm_judge')).toBeInTheDocument();
@@ -228,13 +267,110 @@ describe('ResultFlyout', () => {
       'the whole trace (root span)'
     );
     expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', ['t']));
-    expect(screen.getByTestId('agtEvlJudgedInput')).toHaveTextContent('Hello');
-    expect(screen.getByTestId('agtEvlJudgedOutput')).toHaveTextContent('Hi there');
-    expect(screen.queryByTestId('agtEvlJudgedExpected')).not.toBeInTheDocument();
+    const io = screen.getByTestId('agtEvlJudgedIO');
+    expect(within(io).getByTestId('agtEvlIO-input')).toHaveTextContent('Hello');
+    expect(within(io).getByTestId('agtEvlIO-output')).toHaveTextContent('Hi there');
+    // Online: no expected output.
+    expect(within(io).queryByTestId('agtEvlIO-expected')).not.toBeInTheDocument();
     expect(screen.queryByTestId('agtEvlFlyoutCase')).not.toBeInTheDocument();
     expect(screen.queryByTestId('agtEvlFlyoutJudgeTrace')).not.toBeInTheDocument();
     expect(screen.getByText('Online (live traffic)')).toBeInTheDocument();
+    // No declared scale, but 0.1 fits 0 to 1: bricks on that scale.
+    const scale = screen.getByTestId('agtEvlFlyoutScale');
+    expect(scale.querySelectorAll('.agtEvlBricks__brick--on')).toHaveLength(1);
+    expect(scale.querySelector('.agtEvlBricks__row--scored')).toBeInTheDocument();
+  });
+
+  it('has no scale for a score outside 0 to 1 without a declared scale', () => {
+    renderFlyout(
+      recordToResult({
+        '@timestamp': '2026-10-28 07:00:01',
+        traceId: 't',
+        attributes: { gen_ai: { evaluation: { name: 'latency', score: { value: 42 } } } },
+      })
+    );
     expect(screen.queryByTestId('agtEvlFlyoutScale')).not.toBeInTheDocument();
+  });
+
+  describe('session-level results', () => {
+    const CONV = 'conv-1234567890abcdef';
+    const session = (conversationId?: string) =>
+      recordToResult({
+        '@timestamp': '2026-10-28 07:00:01',
+        traceId: 'turn-3',
+        attributes: {
+          gen_ai: {
+            evaluation: { name: 'goal_success', score: { label: 'pass' } },
+            agent: { name: 'tp' },
+            ...(conversationId ? { conversation: { id: conversationId } } : {}),
+          },
+          opensearch: { gen_ai: { evaluation: { level: 'session' } } },
+        },
+      });
+
+    it('shows the first input and the last output of the session turns (one query)', () => {
+      mockPpl.answer((q) =>
+        q === buildSessionRootsQuery('spans-*', CONV)
+          ? [
+              {
+                traceId: 'turn-1',
+                'attributes.gen_ai.input.messages': msg('user', 'Plan a trip to Paris'),
+                'attributes.gen_ai.output.messages': msg('assistant', 'Which dates?'),
+              },
+              {
+                traceId: 'turn-2',
+                'attributes.gen_ai.input.messages': msg('user', 'Next week'),
+                'attributes.gen_ai.output.messages': msg('assistant', 'Booked: 3 nights'),
+              },
+            ]
+          : []
+      );
+      const links = { openSession: jest.fn() };
+      renderFlyout(session(CONV), links);
+      expect(mockPpl.queries).toContain(buildSessionRootsQuery('spans-*', CONV));
+      // No root span or span query: the session is read through its turns.
+      expect(new Set(mockPpl.queries.filter((q) => q.startsWith('source = spans-*')))).toEqual(
+        new Set([buildSessionRootsQuery('spans-*', CONV)])
+      );
+      const saw = screen.getByTestId('agtEvlJudgeSawSession');
+      expect(screen.queryByTestId('agtEvlJudgeSaw')).not.toBeInTheDocument();
+      expect(within(saw).getByTestId('agtEvlFlyoutJudged')).toHaveTextContent('the whole session');
+      expect(within(saw).getByTestId('agtEvlFlyoutJudged')).toHaveTextContent('2 turns');
+      const io = within(saw).getByTestId('agtEvlJudgedIO');
+      const input = within(io).getByTestId('agtEvlIO-input');
+      expect(input).toHaveTextContent('First input');
+      expect(input).toHaveTextContent('Plan a trip to Paris');
+      const output = within(io).getByTestId('agtEvlIO-output');
+      expect(output).toHaveTextContent('Last output');
+      expect(output).toHaveTextContent('Booked: 3 nights');
+      expect(output).not.toHaveTextContent('Which dates?');
+      fireEvent.click(within(saw).getByTestId('agtEvlFlyoutViewSession'));
+      expect(links.openSession).toHaveBeenCalledWith(CONV, session(CONV).time);
+    });
+
+    it('has no View session link without an openSession link', () => {
+      renderFlyout(session(CONV));
+      expect(screen.queryByTestId('agtEvlFlyoutViewSession')).not.toBeInTheDocument();
+    });
+
+    it('says when the session has no traces in the span index', () => {
+      mockPpl.answer(() => []);
+      renderFlyout(session(CONV), { openSession: jest.fn() });
+      expect(screen.getByTestId('agtEvlJudgedMissing')).toHaveTextContent(
+        'The session has no traces in the span index'
+      );
+      expect(screen.queryByTestId('agtEvlJudgedIO')).not.toBeInTheDocument();
+    });
+
+    it('runs no query and links nothing when the result has no conversation id', () => {
+      renderFlyout(session(), { openSession: jest.fn() });
+      expect(screen.getByTestId('agtEvlFlyoutJudged')).toHaveTextContent(
+        'the result has no gen_ai.conversation.id'
+      );
+      expect(mockPpl.queries.filter((q) => q.startsWith('source = spans-*'))).toEqual([]);
+      expect(screen.queryByTestId('agtEvlFlyoutViewSession')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('agtEvlJudgedMissing')).not.toBeInTheDocument();
+    });
   });
 
   it('places a score on its declared scale', () => {

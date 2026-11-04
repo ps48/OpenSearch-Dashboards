@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   EuiBadge,
   EuiBasicTableColumn,
-  EuiFieldSearch,
+  EuiCompressedFieldSearch,
   EuiFlexGroup,
   EuiFlexItem,
   EuiIcon,
@@ -17,10 +17,11 @@ import {
   EuiPanel,
   EuiSpacer,
   EuiText,
+  EuiTitle,
   EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { AgentRow, MIN_N, VersionStat, agentRows, isLive } from './eval_model';
+import { AgentVersionRow, MIN_N, agentVersionRows } from './eval_model';
 import { NO_AGENT, buildAgentsQuery } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
@@ -31,74 +32,32 @@ import {
   QueryErrorCallout,
   SourceFilter,
   formatTime,
-  pct,
   versionLabel,
 } from './eval_components';
 import { AgentsEmptyState } from './eval_empty_states';
 
-/** Badges shown per agent; the rest are counted. */
-export const MAX_VERSION_BADGES = 4;
-
-const VERSIONS_TIP = i18n.translate('agentTraces.evals.agents.versionsTip', {
+const RATE_TIP = i18n.translate('agentTraces.evals.agents.rateTip', {
   defaultMessage:
-    "One badge per gen_ai.agent.version, most recent result first, up to 4. Pass rate = mean of the version's evaluation pass rates. A dot marks results in the last 6 hours; two dots mean the versions run at the same time. Faded: fewer than {min} results with a pass rule. Compare any two versions on the agent page.",
+    "Mean of the version's evaluation pass rates. Faded: fewer than {min} results with a pass rule.",
   values: { min: MIN_N },
 });
 
-const versionTip = (v: VersionStat) => {
-  const low = v.decided < MIN_N;
-  return [
-    `${versionLabel(v.version)}: ${
-      v.rate === undefined
-        ? i18n.translate('agentTraces.evals.agents.noRule', {
-            defaultMessage: 'no results with a pass rule',
-          })
-        : i18n.translate('agentTraces.evals.agents.rateTip', {
-            defaultMessage: '{rate} pass rate',
-            values: { rate: pct(v.rate) },
-          })
-    }`,
-    i18n.translate('agentTraces.evals.agents.nTip', {
+/** A version's pass rate, faded under the minimum sample size; the tooltip gives n. */
+export const VersionRateCell: React.FC<{ row: AgentVersionRow }> = ({ row }) => (
+  <EuiToolTip
+    content={i18n.translate('agentTraces.evals.agents.nTip', {
       defaultMessage: 'n = {n} results with a pass rule',
-      values: { n: v.decided.toLocaleString() },
-    }) +
-      (low
-        ? i18n.translate('agentTraces.evals.agents.lowTip', {
-            defaultMessage: ' (fewer than {min}: treat with care)',
-            values: { min: MIN_N },
-          })
-        : ''),
-    i18n.translate('agentTraces.evals.agents.firstLastTip', {
-      defaultMessage: 'first result in range {first}, last {last}',
-      values: { first: formatTime(v.first), last: formatTime(v.last) },
-    }),
-  ].join(' · ');
-};
-
-/** One badge per version (most recent result first, up to 4, then "+N"). */
-export const VersionRates: React.FC<{ row: AgentRow }> = ({ row }) => {
-  if (row.versions.length === 1 && row.versions[0].version === undefined)
-    return <PassRateCell rate={row.rate} />;
-  const shown = row.versions.slice(0, MAX_VERSION_BADGES);
-  const more = row.versions.length - shown.length;
-  return (
-    <span data-test-subj={`agtEvlVersionRates-${row.agent}`}>
-      {shown.map((v) => (
-        <EuiToolTip key={v.version ?? ''} content={versionTip(v)}>
-          <EuiBadge
-            color="hollow"
-            className={`agtEvlVersionBadge${v.decided < MIN_N ? ' agtEvlVersionBadge--low' : ''}`}
-            data-test-subj={`agtEvlVersionRate-${v.version ?? ''}`}
-          >
-            {isLive(v) && <LiveDot />}
-            {versionLabel(v.version)} <strong>{pct(v.rate)}</strong>
-          </EuiBadge>
-        </EuiToolTip>
-      ))}
-      {more > 0 && <span className="agtEvlDim agtEvlSmall">+{more}</span>}
+      values: { n: row.decided.toLocaleString() },
+    })}
+  >
+    <span
+      className={row.decided < MIN_N ? 'agtEvlLowN' : undefined}
+      data-test-subj={`agtEvlVersionRate-${row.id}`}
+    >
+      <PassRateCell rate={row.rate} />
     </span>
-  );
-};
+  </EuiToolTip>
+);
 
 /** Debounced value: search is pushed into the query, so it waits for a pause in typing. */
 export const useDebounced = <T,>(value: T, ms = 300): T => {
@@ -110,9 +69,9 @@ export const useDebounced = <T,>(value: T, ms = 300): T => {
   return debounced;
 };
 
-const sortAgent = (r: AgentRow) => (r.agent === NO_AGENT ? '~' : r.agent);
+const sortAgent = (r: AgentVersionRow) => (r.agent === NO_AGENT ? '~' : r.agent);
 
-/** Agents (the Evaluations home): one aggregation, sorted and paged in the browser. */
+/** Agents (the Evaluations home): one row per agent version, from one aggregation. */
 export const AgentsHome: React.FC = () => {
   const { dataset, index, timeRange, rangeLabel, refreshKey, state, setState, navigate } =
     useEvalContext();
@@ -120,9 +79,16 @@ export const AgentsHome: React.FC = () => {
   const q = useDebounced(search);
   const query = buildAgentsQuery(index, state.agentsSource, q);
   const { rows, loading, error, loaded } = usePplRows(dataset, query, timeRange, refreshKey);
-  const agents = useMemo(() => agentRows(rows), [rows]);
+  const items = useMemo(() => agentVersionRows(rows), [rows]);
 
-  const columns: Array<EuiBasicTableColumn<AgentRow>> = [
+  const open = (r: AgentVersionRow) =>
+    navigate(
+      { page: 'agent', agent: r.agent, tab: 'evaluations' },
+      // Open the agent with this version as the one compared.
+      { versionPick: { ...state.versionPick, [r.agent]: { b: r.version ?? '' } } }
+    );
+
+  const columns: Array<EuiBasicTableColumn<AgentVersionRow>> = [
     {
       field: 'agent',
       name: i18n.translate('agentTraces.evals.agents.agent', { defaultMessage: 'Agent' }),
@@ -147,18 +113,32 @@ export const AgentsHome: React.FC = () => {
         ),
     },
     {
-      field: 'versions',
+      field: 'version',
+      name: i18n.translate('agentTraces.evals.agents.version', { defaultMessage: 'Version' }),
+      sortable: (r: AgentVersionRow) => r.version ?? '',
+      render: (_: unknown, r: AgentVersionRow) => (
+        <span className="agtEvlNoWrap">
+          <EuiBadge color="hollow">
+            {r.live && <LiveDot />}
+            {versionLabel(r.version)}
+          </EuiBadge>
+        </span>
+      ),
+    },
+    {
+      field: 'rate',
       name: (
-        <EuiToolTip content={VERSIONS_TIP}>
+        <EuiToolTip content={RATE_TIP}>
           <span>
-            {i18n.translate('agentTraces.evals.agents.passRateByVersion', {
-              defaultMessage: 'Pass rate by version',
+            {i18n.translate('agentTraces.evals.agents.passRate', {
+              defaultMessage: 'Pass rate',
             })}{' '}
             <EuiIcon type="questionInCircle" size="s" color="subdued" />
           </span>
         </EuiToolTip>
       ),
-      render: (_: unknown, r: AgentRow) => <VersionRates row={r} />,
+      sortable: (r: AgentVersionRow) => r.rate ?? -1,
+      render: (_: unknown, r: AgentVersionRow) => <VersionRateCell row={r} />,
     },
     {
       field: 'n',
@@ -179,12 +159,27 @@ export const AgentsHome: React.FC = () => {
   ];
 
   return (
-    <>
+    <EuiPanel paddingSize="m" hasShadow={false} hasBorder>
+      <EuiTitle size="s">
+        <h3>
+          {i18n.translate('agentTraces.evals.agents.title', { defaultMessage: 'Agents' })}
+          <span className="agtEvlDim"> ({items.length})</span>
+        </h3>
+      </EuiTitle>
+      <EuiSpacer size="xs" />
+      <EuiText size="s" color="subdued">
+        <p>
+          {i18n.translate('agentTraces.evals.agents.description', {
+            defaultMessage:
+              'One row per agent version with evaluation results in the time range. A dot marks a version with results in the last 6 hours. Click a row to see its evaluations and compare it with another version.',
+          })}
+        </p>
+      </EuiText>
+      <EuiSpacer size="m" />
       <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
         <EuiFlexItem>
-          <EuiFieldSearch
+          <EuiCompressedFieldSearch
             fullWidth
-            compressed
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={i18n.translate('agentTraces.evals.agents.search', {
@@ -204,34 +199,24 @@ export const AgentsHome: React.FC = () => {
       {error ? (
         <QueryErrorCallout message={error} />
       ) : (
-        <EuiPanel paddingSize="s" hasShadow={false} hasBorder>
-          <EuiInMemoryTable<AgentRow>
-            items={agents}
-            itemId="agent"
-            columns={columns}
-            loading={loading}
-            sorting={{ sort: { field: 'last', direction: 'desc' } }}
-            pagination={{ initialPageSize: 20, pageSizeOptions: [20, 50] }}
-            rowProps={(r: AgentRow) => ({
-              className: 'agtEvlClickRow',
-              onClick: () => navigate({ page: 'agent', agent: r.agent, tab: 'evaluations' }),
-              'data-test-subj': `agtEvlAgentRow-${r.agent}`,
-            })}
-            message={loaded && !loading ? <AgentsEmptyState range={rangeLabel} /> : undefined}
-            data-test-subj="agtEvlAgentsTable"
-          />
-          {agents.length > 0 && (
-            <EuiText size="xs" color="subdued">
-              <p>
-                {i18n.translate('agentTraces.evals.agents.footnote', {
-                  defaultMessage:
-                    'Pass rate counts results with a pass rule (pass or fail); each evaluation counts the same. Hover a version for its sample size.',
-                })}
-              </p>
-            </EuiText>
-          )}
-        </EuiPanel>
+        <EuiInMemoryTable<AgentVersionRow>
+          items={items}
+          itemId="id"
+          columns={columns}
+          loading={loading}
+          tableLayout="auto"
+          sorting={{ sort: { field: 'last', direction: 'desc' } }}
+          allowNeutralSort={false}
+          pagination={{ initialPageSize: 20, pageSizeOptions: [20, 50] }}
+          rowProps={(r: AgentVersionRow) => ({
+            className: 'agtEvlClickRow',
+            onClick: () => open(r),
+            'data-test-subj': `agtEvlAgentRow-${r.id}`,
+          })}
+          message={loaded && !loading ? <AgentsEmptyState range={rangeLabel} /> : undefined}
+          data-test-subj="agtEvlAgentsTable"
+        />
       )}
-    </>
+    </EuiPanel>
   );
 };

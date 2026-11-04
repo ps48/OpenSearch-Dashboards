@@ -32,6 +32,25 @@ export const openTraceInAgentTraces = (
   aroundMs: number
 ) => application.navigateToApp(AGENT_TRACES_NAV_ID, { path: traceDeepLinkPath(traceId, aroundMs) });
 
+/** Agent Traces deep link that opens a session's view, with a time range around it. */
+export const sessionDeepLinkPath = (sessionId: string, aroundMs: number): string => {
+  const center = Number.isFinite(aroundMs) ? aroundMs : Date.now();
+  const from = new Date(center - BEFORE_MS).toISOString();
+  const to = new Date(center + AFTER_MS).toISOString();
+  return `#/?_g=(time:(from:'${from}',to:'${to}'))&_a=(ui:(activeTabId:traces,showHistogram:!t))&openSessionId=${encodeURIComponent(
+    sessionId
+  )}`;
+};
+
+export const openSessionInAgentTraces = (
+  application: ApplicationStart,
+  sessionId: string,
+  aroundMs: number
+) =>
+  application.navigateToApp(AGENT_TRACES_NAV_ID, {
+    path: sessionDeepLinkPath(sessionId, aroundMs),
+  });
+
 /** Opens a screen of the Agent Evaluations app (from Agent Traces). */
 export const openInEvaluations = (application: ApplicationStart, route: EvalRoute) =>
   application.navigateToApp(AGENT_EVALS_NAV_ID, { path: `#${pathOfRoute(route)}` });

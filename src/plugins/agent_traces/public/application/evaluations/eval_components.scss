@@ -87,12 +87,12 @@
   vertical-align: middle;
 }
 
-.agtEvlVersionBadge {
-  margin: 0 $euiSizeXS $euiSizeXS 0;
+.agtEvlLowN {
+  opacity: 0.6;
+}
 
-  &--low {
-    opacity: 0.6;
-  }
+.agtEvlNoWrap {
+  white-space: nowrap;
 }
 
 .agtEvlIO {
@@ -117,7 +117,7 @@
   &__item {
     display: inline-flex;
     align-items: center;
-    gap: $euiSizeXS / 2;
+    gap: calc(#{$euiSizeXS} / 2);
   }
 
   &__dot {
@@ -161,26 +161,50 @@
   }
 }
 
-.agtEvlScale {
+.agtEvlScoreBricksL {
   margin-top: $euiSizeS;
 
-  &__track {
-    position: relative;
-    height: $euiSizeXS;
-    border-radius: $euiSizeXS;
-    background: $euiColorLightShade;
-  }
-
-  &__mark {
-    position: absolute;
-    top: -$euiSizeXS;
-    width: $euiBorderWidthThick;
-    height: $euiSizeM;
-    background: $euiColorPrimary;
+  .agtEvlBricks__brick {
+    width: 14px;
+    height: 16px;
   }
 }
 
+.agtEvlResultRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: $euiSizeXS $euiSizeM;
+  padding: $euiSizeXS 0;
+  font-size: $euiFontSizeS;
+  border-bottom: $euiBorderThin;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &__name {
+    flex: 0 0 160px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__why {
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+}
+
+.agtEvlSideBySide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: $euiSizeL;
+}
+
 .agtEvlCaseResults {
+  // The expanded row's cell is a flex box: take its whole width.
+  flex: 1 1 auto;
+  min-width: 0;
   padding: $euiSizeXS $euiSizeM $euiSizeS $euiSizeXL;
 
   &__row {
@@ -285,4 +309,48 @@
   font-size: $euiFontSizeXS;
   font-weight: $euiFontWeightSemiBold;
   color: $euiTextColor;
+}
+
+.agtEvlBricks {
+  display: inline-flex;
+  align-items: center;
+  gap: $euiSizeS;
+  white-space: nowrap;
+
+  &__row {
+    display: inline-flex;
+    gap: 2px;
+  }
+
+  &__brick {
+    display: inline-block;
+    width: 6px;
+    height: 12px;
+    border-radius: 1px;
+    background: $euiColorLightShade;
+  }
+
+  &__row--pass &__brick--on {
+    background: $euiColorSuccess;
+  }
+
+  &__row--fail &__brick--on {
+    background: $euiColorDanger;
+  }
+
+  &__row--error &__brick--on {
+    background: $euiColorWarning;
+  }
+
+  &__row--scored &__brick--on {
+    background: $euiColorDarkShade;
+  }
+}
+
+.agtEvlInline {
+  display: inline-block;
+}
+
+.agtEvlSpanIO__toggle {
+  margin-left: auto;
 }

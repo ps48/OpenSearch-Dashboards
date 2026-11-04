@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import moment from 'moment-timezone';
 import {
   EuiFlexGroup,
@@ -11,8 +11,11 @@ import {
   EuiFlyout,
   EuiFlyoutBody,
   EuiFlyoutHeader,
-  EuiLink,
   EuiLoadingContent,
+  EuiPanel,
+  EuiSpacer,
+  EuiTab,
+  EuiTabs,
   EuiText,
   EuiTitle,
   EuiToolTip,
@@ -22,8 +25,12 @@ import { DataPublicPluginStart } from '../../../../data/public';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import { transformPPLDataToTraceHits } from '../pages/traces/trace_details/traces/ppl_to_trace_hits';
+import { TraceFlowView } from '../pages/traces/flow/trace_flow_view';
+import { flowEvalDecoration } from '../pages/traces/flyout/trace_evaluations';
+import type { CategorizedSpan } from '../../services/span_categorization';
 import {
   BaseRow,
+  TraceRow,
   buildFullSpanTree,
   formatTimestamp,
   hitsToAgentSpans,
@@ -33,13 +40,15 @@ import { buildTraceResultsQuery, buildTraceSpansQuery } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { errorMessage, runPpl } from './use_ppl_rows';
 import { JudgeMark } from './judge_mark';
+import { SpanIOView } from './span_io_view';
 import {
   DASH,
+  OUTPUT_LABEL,
   QueryErrorCallout,
   RUN_A,
   RUN_B,
+  ResultRows,
   TallyCell,
-  VerdictBadge,
   VersionBadge,
   formatDuration,
   shortId,
@@ -86,9 +95,14 @@ export const resultsOfSpan = (results: EvalResult[], span: FlatSpan, isRoot: boo
 export interface Side {
   traceId: string;
   spans: FlatSpan[];
-  output?: string;
+  /** The span tree as the trace flyout builds it (for the Trace map). */
+  tree?: TraceRow[];
+  /** The root span's raw output (GenAI messages). */
+  output?: unknown;
   results: EvalResult[];
 }
+
+type CompareView = 'spans' | 'map';
 
 export const SpanList: React.FC<{ side: Side; only: Set<string> }> = ({ side, only }) => {
   const root = side.spans[0];
@@ -142,6 +156,42 @@ export const SpanList: React.FC<{ side: Side; only: Set<string> }> = ({ side, on
   );
 };
 
+/** One side's Trace map: the Agent Traces node map, judged nodes marked, extra spans outlined. */
+const TraceMapSide: React.FC<{ side: Side; only: Set<string> }> = ({ side, only }) => {
+  const rootId = side.spans[0]?.spanId;
+  const decorate = useCallback(
+    (span: CategorizedSpan) => {
+      const flat = side.spans.find((x) => x.spanId === span.spanId);
+      const marks = flat ? resultsOfSpan(side.results, flat, span.spanId === rootId) : [];
+      const base = flowEvalDecoration(marks);
+      if (!only.has(span.spanId ?? '')) return base;
+      return {
+        ...base,
+        className: `${base?.className ?? ''} agtEvlGraphNode--only`.trim(),
+      };
+    },
+    [side, only, rootId]
+  );
+  return (
+    <EuiPanel
+      hasBorder
+      hasShadow={false}
+      paddingSize="none"
+      className="agtEvlGraphPanel"
+      data-test-subj={`agtEvlTraceMap-${side.traceId}`}
+    >
+      <TraceFlowView
+        spanTree={side.tree ?? []}
+        totalDuration={side.spans[0]?.durationMs ?? 0}
+        selectedSpan={null}
+        onSelectSpan={() => undefined}
+        decorateNode={decorate}
+        showMinimap={false}
+      />
+    </EuiPanel>
+  );
+};
+
 /**
  * Two traces of the same case (Run A and Run B) side by side: spans with durations (spans
  * only in one trace highlighted), the output and the results of each.
@@ -159,6 +209,7 @@ export const TraceCompareFlyout: React.FC<{
   const [state, setState] = useState<{ loading: boolean; error?: string; sides?: Side[] }>({
     loading: true,
   });
+  const [view, setView] = useState<CompareView>('spans');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -191,6 +242,7 @@ export const TraceCompareFlyout: React.FC<{
           return {
             traceId,
             spans: flattenSpans(tree),
+            tree: tree as TraceRow[],
             output: output && output !== DASH ? output : undefined,
             results: results.filter((r) => r.traceId === traceId),
           };
@@ -220,9 +272,7 @@ export const TraceCompareFlyout: React.FC<{
           })}
         </p>
       </EuiText>
-      {side.spans.length ? (
-        <SpanList side={side} only={onlyIn(side.spans, other.spans)} />
-      ) : (
+      {!side.spans.length ? (
         <EuiText size="xs" color="subdued">
           <p>
             {i18n.translate('agentTraces.evals.compareTraces.noSpans', {
@@ -230,25 +280,24 @@ export const TraceCompareFlyout: React.FC<{
             })}
           </p>
         </EuiText>
+      ) : view === 'spans' ? (
+        <SpanList side={side} only={onlyIn(side.spans, other.spans)} />
+      ) : (
+        <TraceMapSide side={side} only={onlyIn(side.spans, other.spans)} />
       )}
-      <EuiText size="xs">
-        <h5>
-          {i18n.translate('agentTraces.evals.compareTraces.output', { defaultMessage: 'Output' })}
-        </h5>
-        <p className="agtEvlProse agtEvlBox">{side.output ?? DASH}</p>
-        <h5>
+      <EuiSpacer size="s" />
+      <SpanIOView
+        idPrefix={`agtEvlTraceCompare-${side.traceId}`}
+        testId={`agtEvlTraceCompareOutput-${side.traceId}`}
+        sections={[{ key: 'output', label: OUTPUT_LABEL, value: side.output }]}
+      />
+      <EuiSpacer size="s" />
+      <EuiTitle size="xxs">
+        <span>
           {i18n.translate('agentTraces.evals.compareTraces.results', { defaultMessage: 'Results' })}
-        </h5>
-      </EuiText>
-      {side.results.map((r) => (
-        <div className="agtEvlCaseResults__row agtEvlCaseResults__row--compact" key={r.id}>
-          <EuiLink onClick={() => openResult(r)}>{r.name}</EuiLink>
-          <span>
-            <VerdictBadge verdict={r.verdict} />
-          </span>
-          <span className="agtEvlDim">{r.explanation ?? r.errorType ?? DASH}</span>
-        </div>
-      ))}
+        </span>
+      </EuiTitle>
+      <ResultRows results={side.results} onOpen={openResult} />
     </EuiFlexItem>
   );
 
@@ -288,10 +337,40 @@ export const TraceCompareFlyout: React.FC<{
         ) : state.loading || !state.sides ? (
           <EuiLoadingContent lines={8} />
         ) : (
-          <EuiFlexGroup gutterSize="l" responsive={false}>
-            {column(state.sides[0], state.sides[1], RUN_A, versionA)}
-            {column(state.sides[1], state.sides[0], RUN_B, versionB)}
-          </EuiFlexGroup>
+          <>
+            <EuiTabs size="s">
+              {(
+                [
+                  [
+                    'spans',
+                    i18n.translate('agentTraces.evals.compareTraces.tabSpans', {
+                      defaultMessage: 'Spans',
+                    }),
+                  ],
+                  [
+                    'map',
+                    i18n.translate('agentTraces.evals.compareTraces.tabMap', {
+                      defaultMessage: 'Trace map',
+                    }),
+                  ],
+                ] as Array<[CompareView, string]>
+              ).map(([id, label]) => (
+                <EuiTab
+                  key={id}
+                  isSelected={view === id}
+                  onClick={() => setView(id)}
+                  data-test-subj={`agtEvlTraceCompareTab-${id}`}
+                >
+                  {label}
+                </EuiTab>
+              ))}
+            </EuiTabs>
+            <EuiSpacer size="m" />
+            <EuiFlexGroup gutterSize="l" responsive={false}>
+              {column(state.sides[0], state.sides[1], RUN_A, versionA)}
+              {column(state.sides[1], state.sides[0], RUN_B, versionB)}
+            </EuiFlexGroup>
+          </>
         )}
       </EuiFlyoutBody>
     </EuiFlyout>

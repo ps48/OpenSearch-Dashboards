@@ -1,0 +1,172 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React from 'react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { I18nProvider } from '@osd/i18n/react';
+import {
+  ResultRows,
+  ScoreBricks,
+  SourceFilter,
+  brickCount,
+  bricksFilled,
+  scoreScale,
+} from './eval_components';
+import { EvalResult, Verdict } from './eval_model';
+
+const wrap = (ui: React.ReactElement) => render(<I18nProvider>{ui}</I18nProvider>);
+
+const bricksOf = (el: HTMLElement) => ({
+  total: el.querySelectorAll('.agtEvlBricks__brick').length,
+  on: el.querySelectorAll('.agtEvlBricks__brick--on').length,
+});
+
+describe('scoreScale', () => {
+  it('uses the declared min and max', () => {
+    expect(scoreScale({ value: 4, scoreMin: 1, scoreMax: 5 })).toEqual({ min: 1, max: 5 });
+    expect(scoreScale({ value: 40, scoreMin: 0, scoreMax: 100 })).toEqual({ min: 0, max: 100 });
+  });
+
+  it('falls back to 0 to 1 when the value fits it', () => {
+    expect(scoreScale({ value: 0.4 })).toEqual({ min: 0, max: 1 });
+    expect(scoreScale({ value: 0 })).toEqual({ min: 0, max: 1 });
+    expect(scoreScale({ value: 1 })).toEqual({ min: 0, max: 1 });
+    // A declared min of 0 without a max: 0 to 1 when the value fits.
+    expect(scoreScale({ value: 0.5, scoreMin: 0 })).toEqual({ min: 0, max: 1 });
+  });
+
+  it('has no scale otherwise', () => {
+    expect(scoreScale({})).toBeUndefined();
+    expect(scoreScale({ value: 4 })).toBeUndefined();
+    expect(scoreScale({ value: -0.5 })).toBeUndefined();
+    // Only a max: the min is unknown.
+    expect(scoreScale({ value: 0.5, scoreMax: 1 })).toBeUndefined();
+    expect(scoreScale({ value: 3, scoreMin: 5, scoreMax: 5 })).toBeUndefined();
+    expect(scoreScale({ value: 3, scoreMin: 5, scoreMax: 1 })).toBeUndefined();
+  });
+});
+
+describe('brickCount and bricksFilled', () => {
+  it('one brick per point on a 1-based integer scale up to 10', () => {
+    expect(brickCount({ min: 1, max: 5 })).toBe(5);
+    expect(brickCount({ min: 1, max: 3 })).toBe(3);
+    expect(brickCount({ min: 1, max: 10 })).toBe(10);
+    expect(bricksFilled(1, { min: 1, max: 5 })).toBe(1);
+    expect(bricksFilled(4, { min: 1, max: 5 })).toBe(4);
+    expect(bricksFilled(5, { min: 1, max: 5 })).toBe(5);
+    expect(bricksFilled(3.6, { min: 1, max: 5 })).toBe(4);
+    // Clamped to the scale.
+    expect(bricksFilled(9, { min: 1, max: 5 })).toBe(5);
+    expect(bricksFilled(-2, { min: 1, max: 5 })).toBe(0);
+  });
+
+  it('ten bricks by share of the scale otherwise', () => {
+    expect(brickCount({ min: 0, max: 1 })).toBe(10);
+    expect(brickCount({ min: 0, max: 5 })).toBe(10);
+    expect(brickCount({ min: 1, max: 20 })).toBe(10);
+    expect(brickCount({ min: 0.5, max: 2.5 })).toBe(10);
+    expect(bricksFilled(0.4, { min: 0, max: 1 })).toBe(4);
+    expect(bricksFilled(0.04, { min: 0, max: 1 })).toBe(0);
+    expect(bricksFilled(2.5, { min: 0, max: 5 })).toBe(5);
+    expect(bricksFilled(15, { min: 0, max: 100 })).toBe(2);
+    expect(bricksFilled(150, { min: 0, max: 100 })).toBe(10);
+    expect(bricksFilled(-5, { min: 0, max: 100 })).toBe(0);
+  });
+});
+
+describe('ScoreBricks', () => {
+  const r = (p: Partial<{ value: number; label: string; scoreMin: number; scoreMax: number }>) => ({
+    verdict: 'scored' as Verdict,
+    ...p,
+  });
+
+  it('fills bricks by the score, in the verdict color, with the number', () => {
+    wrap(<ScoreBricks r={{ ...r({ value: 0.7 }), verdict: 'pass' }} />);
+    const el = screen.getByTestId('agtEvlScoreBricks');
+    expect(bricksOf(el)).toEqual({ total: 10, on: 7 });
+    expect(el.querySelector('.agtEvlBricks__row--pass')).toBeInTheDocument();
+    expect(el).toHaveTextContent('0.70');
+    expect(el.querySelector('[aria-label="0.70 on a 0 to 1 scale"]')).toBeInTheDocument();
+  });
+
+  it('one brick per point on a 1 to 5 scale', () => {
+    wrap(<ScoreBricks r={{ ...r({ value: 1, scoreMin: 1, scoreMax: 5 }), verdict: 'fail' }} />);
+    const el = screen.getByTestId('agtEvlScoreBricks');
+    expect(bricksOf(el)).toEqual({ total: 5, on: 1 });
+    expect(el.querySelector('.agtEvlBricks__row--fail')).toBeInTheDocument();
+    expect(el).toHaveTextContent('1');
+  });
+
+  it('can hide the number', () => {
+    wrap(<ScoreBricks r={r({ value: 0.5 })} showValue={false} />);
+    expect(screen.getByTestId('agtEvlScoreBricks')).toHaveTextContent('');
+  });
+
+  it('falls back to the number, else the label, when there is no scale', () => {
+    const { unmount } = wrap(<ScoreBricks r={r({ value: 42 })} />);
+    expect(screen.queryByTestId('agtEvlScoreBricks')).not.toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
+    unmount();
+    wrap(<ScoreBricks r={r({ label: 'good' })} />);
+    expect(screen.queryByTestId('agtEvlScoreBricks')).not.toBeInTheDocument();
+    expect(screen.getByText('good')).toBeInTheDocument();
+  });
+});
+
+describe('ResultRows', () => {
+  const result = (p: Partial<EvalResult> & Pick<EvalResult, 'id' | 'name' | 'verdict'>) =>
+    ({ time: 0, level: 'trace', expectedTruncated: false, raw: {}, ...p }) as EvalResult;
+  const results = [
+    result({
+      id: '1',
+      name: 'accuracy',
+      verdict: 'fail',
+      value: 0.2,
+      label: 'fail',
+      explanation: 'Wrong city',
+    }),
+    result({ id: '2', name: 'latency', verdict: 'error', errorType: 'Throttling' }),
+    result({ id: '3', name: 'tone', verdict: 'scored', label: 'polite' }),
+  ];
+
+  it('renders a row per result: name, verdict, score and explanation', () => {
+    wrap(<ResultRows results={results} onOpen={jest.fn()} testId="rows" />);
+    const rows = screen.getByTestId('rows').querySelectorAll('.agtEvlResultRow');
+    expect(rows).toHaveLength(3);
+    const [a, b, c] = Array.from(rows) as HTMLElement[];
+    expect(a).toHaveTextContent('accuracy');
+    expect(within(a).getByTestId('agtEvlVerdict-fail')).toBeInTheDocument();
+    expect(bricksOf(within(a).getByTestId('agtEvlScoreBricks'))).toEqual({ total: 10, on: 2 });
+    expect(a).toHaveTextContent('Wrong city');
+    // No explanation: the error type.
+    expect(within(b).getByTestId('agtEvlVerdict-error')).toBeInTheDocument();
+    expect(b).toHaveTextContent('Throttling');
+    // No score and no explanation: the label, and a dash.
+    expect(c).toHaveTextContent('polite');
+    expect(c).toHaveTextContent('—');
+  });
+
+  it('opens a result from its name', () => {
+    const onOpen = jest.fn();
+    wrap(<ResultRows results={results} onOpen={onOpen} />);
+    fireEvent.click(screen.getByText('latency'));
+    expect(onOpen).toHaveBeenCalledWith(results[1]);
+  });
+});
+
+describe('SourceFilter', () => {
+  it('is a button group of All, Online and Offline', () => {
+    const onChange = jest.fn();
+    wrap(<SourceFilter value="online" onChange={onChange} />);
+    const radio = (s: string) =>
+      screen
+        .getAllByTestId(`agtEvlSource-${s}`)
+        .find((el) => el.tagName === 'INPUT') as HTMLElement;
+    expect(radio('online')).toBeChecked();
+    expect(radio('all')).not.toBeChecked();
+    fireEvent.click(radio('offline'));
+    expect(onChange).toHaveBeenCalledWith('offline');
+  });
+});

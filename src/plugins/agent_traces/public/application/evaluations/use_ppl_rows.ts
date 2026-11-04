@@ -19,6 +19,16 @@ export const evalsDataset = (index: string): Dataset => ({
   timeFieldName: '@timestamp',
 });
 
+/**
+ * The evaluations index without a time bound: only for lookups filtered to a few ids (a run's
+ * window), which must find the run wherever the global range is.
+ */
+export const evalsLookupDataset = (index: string): Dataset => ({
+  id: 'agent-evaluations-lookup',
+  title: index,
+  type: 'INDEXES',
+});
+
 /** The span index, looked up by trace id (no time field). */
 export const spansDataset = (index: string): Dataset => ({
   id: 'agent-evaluations-spans',
