@@ -163,7 +163,7 @@ describe('AgentPage', () => {
     const acc = screen.getByTestId('agtEvlEvalRow-accuracy');
     expect(within(acc).getByText('50%')).toBeInTheDocument();
     expect(within(acc).queryByTestId('agtEvlDelta')).not.toBeInTheDocument();
-    expect(screen.getByText(/^Click an evaluation to see its failing results\./)).toBeTruthy();
+    expect(screen.getByText(/^Click an evaluation to see its results\./)).toBeTruthy();
     expect(screen.queryByText(/Sorted by change/)).not.toBeInTheDocument();
     expect(
       screen.getAllByTestId(/^agtEvlEvalRow-/).map((r) => r.getAttribute('data-test-subj'))
@@ -188,7 +188,7 @@ describe('AgentPage', () => {
     ).toHaveTextContent('+40 pts');
   });
 
-  it('an evaluation row opens its failing results for version B', () => {
+  it('an evaluation row opens its results for version B (no verdict filter)', () => {
     const { ctx } = renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
     fireEvent.click(screen.getByTestId('agtEvlEvalRow-accuracy'));
     expect(ctx.navigate).toHaveBeenCalledWith(
@@ -198,7 +198,7 @@ describe('AgentPage', () => {
           ...ctx.state.results,
           names: ['accuracy'],
           versions: ['v2'],
-          verdicts: ['fail'],
+          verdicts: [],
         },
         slice: undefined,
       }
@@ -213,7 +213,7 @@ describe('AgentPage', () => {
     );
   });
 
-  it('a chart point opens the Results tab for that slice, Fail only', () => {
+  it('a chart point opens the Results tab for that slice, every verdict', () => {
     const { ctx } = renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
     const props = mockChart.mock.calls[0][0] as { onPointClick: (t: number) => void };
     const t = Date.UTC(2026, 9, 28, 3);
@@ -221,10 +221,74 @@ describe('AgentPage', () => {
     expect(ctx.navigate).toHaveBeenCalledWith(
       { page: 'agent', agent: 'tp', tab: 'results' },
       {
-        results: { ...ctx.state.results, names: [], versions: [], verdicts: ['fail'] },
+        results: { ...ctx.state.results, names: [], versions: [], verdicts: [] },
         slice: { from: t, to: t + 3 * 3600e3 },
       }
     );
+  });
+
+  it('an evaluation with evaluator errors in B has a badge that opens them', () => {
+    mockPpl.answer((q) =>
+      q.includes('avg_score')
+        ? [
+            evalRow('accuracy', 'v1', 'pass', 36, 25),
+            evalRow('accuracy', 'v2', 'pass', 30, 28),
+            evalRow('accuracy', 'v2', 'error', 2, 28),
+            // Errors in A only: no badge.
+            evalRow('tone', 'v1', 'error', 3, 25),
+            evalRow('tone', 'v2', 'pass', 3, 28),
+          ]
+        : []
+    );
+    const { ctx } = renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
+    expect(screen.queryByTestId('agtEvlEvalErrors-tone')).not.toBeInTheDocument();
+    const badge = screen.getByTestId('agtEvlEvalErrors-accuracy');
+    expect(badge).toHaveTextContent('2 errors');
+    fireEvent.click(badge);
+    // The badge opens the errors only, not the row's results.
+    expect(ctx.navigate).toHaveBeenCalledTimes(1);
+    expect(ctx.navigate).toHaveBeenCalledWith(
+      { page: 'agent', agent: 'tp', tab: 'results' },
+      {
+        results: {
+          ...ctx.state.results,
+          names: ['accuracy'],
+          versions: ['v2'],
+          verdicts: ['error'],
+        },
+        slice: undefined,
+      }
+    );
+  });
+
+  it('offline: each version at its latest run, exact change (never greyed for n)', () => {
+    const RUN = 'attributes.test.suite.run.id';
+    const run = (version: string, runId: string, verdict: string, n: number, day: number) =>
+      evalRow('accuracy', version, verdict, n, day, { [RUN]: runId });
+    mockPpl.answer((q) =>
+      q.includes('avg_score')
+        ? [
+            // v1: an older run at 0 / 10, its latest run at 8 / 10.
+            run('v1', 'r0', 'fail', 10, 20),
+            run('v1', 'r1', 'pass', 8, 25),
+            run('v1', 'r1', 'fail', 2, 25),
+            // v2: one run at 5 / 10.
+            run('v2', 'r2', 'pass', 5, 28),
+            run('v2', 'r2', 'fail', 5, 28),
+          ]
+        : []
+    );
+    const ctx = testContext({ state: { ...testContext().state, agentSource: 'offline' } });
+    renderWithContext(<AgentPage agent="tp" tab="evaluations" />, ctx);
+    expect(mockPpl.queries).toContain(buildAgentEvaluationsQuery(TEST_INDEX, 'tp', 'offline'));
+    expect(screen.getByText(/^Offline: each version at its latest suite run\./)).toBeTruthy();
+    const acc = screen.getByTestId('agtEvlEvalRow-accuracy');
+    expect(within(acc).getByText('50%')).toBeInTheDocument();
+    // v1 at r1 only (80%), not pooled with r0 (40%).
+    expect(within(acc).getByText('80%')).toBeInTheDocument();
+    // 10 results each, under 30, but a suite run is a fixed set: not greyed.
+    expect(within(acc).queryByTestId('agtEvlDeltaLow')).not.toBeInTheDocument();
+    expect(within(acc).getByTestId('agtEvlDelta')).toHaveTextContent('-30 pts');
   });
 
   it('Online/Offline is pushed into both queries', () => {

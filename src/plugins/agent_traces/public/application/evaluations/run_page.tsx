@@ -10,8 +10,6 @@ import {
   EuiButton,
   EuiButtonEmpty,
   EuiButtonIcon,
-  EuiContextMenuItem,
-  EuiContextMenuPanel,
   EuiFieldSearch,
   EuiFilterButton,
   EuiFilterGroup,
@@ -57,6 +55,7 @@ import {
   MetaItem,
   OUTPUT_LABEL,
   QueryErrorCallout,
+  RunSelectList,
   TallyCell,
   VerdictBadge,
   VersionBadge,
@@ -65,7 +64,6 @@ import {
   expectedOf,
   formatDuration,
   formatTime,
-  shortId,
 } from './eval_components';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
@@ -217,31 +215,18 @@ const CompareWithMenu: React.FC<{
       {loading && !runs.length ? (
         <EuiLoadingContent lines={2} />
       ) : (
-        <EuiContextMenuPanel
-          size="s"
-          items={others.map((r) => (
-            <EuiContextMenuItem
-              key={r.runId}
-              onClick={() => {
-                setOpen(false);
-                const [runA, runB] = compareOrder([r, self ?? { ...r, runId, started }]);
-                navigate({ page: 'compare', runA, runB });
-              }}
-              data-test-subj={`agtEvlCompareWith-${r.runId}`}
-            >
-              {r.runId === before?.runId && (
-                <strong>
-                  {i18n.translate('agentTraces.evals.run.runBefore', {
-                    defaultMessage: 'Run before',
-                  })}
-                  {' · '}
-                </strong>
-              )}
-              <span className="agtEvlMono">{shortId(r.runId)}</span>{' '}
-              <VersionBadge version={r.version} />{' '}
-              <span className="agtEvlDim">{formatTime(r.started)}</span>
-            </EuiContextMenuItem>
-          ))}
+        <RunSelectList
+          runs={others}
+          loading={loading}
+          marked={before?.runId}
+          testId="agtEvlCompareWithList"
+          onPick={(picked) => {
+            setOpen(false);
+            const r = others.find((x) => x.runId === picked);
+            if (!r) return;
+            const [runA, runB] = compareOrder([r, self ?? { ...r, runId, started }]);
+            navigate({ page: 'compare', runA, runB });
+          }}
         />
       )}
     </EuiPopover>

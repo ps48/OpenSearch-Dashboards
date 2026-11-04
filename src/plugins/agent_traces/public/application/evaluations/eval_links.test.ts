@@ -10,6 +10,8 @@ import {
   openSessionInAgentTraces,
   openTraceInAgentTraces,
   sessionDeepLinkPath,
+  targetHref,
+  targetOf,
   traceDeepLinkPath,
 } from './eval_links';
 
@@ -58,5 +60,51 @@ describe('eval links', () => {
     expect(a.navigateToApp).toHaveBeenLastCalledWith(AGENT_EVALS_NAV_ID, {
       path: expect.stringMatching(/^#\/.*r1/),
     });
+  });
+
+  it('opens a span of a trace with openSpanId', () => {
+    expect(traceDeepLinkPath('ab12', AT, 'cd34')).toBe(
+      `#/?${RANGE}&${UI}&openTraceId=ab12&openSpanId=cd34`
+    );
+    expect(traceDeepLinkPath('ab12', AT, 'span 1')).toBe(
+      `#/?${RANGE}&${UI}&openTraceId=ab12&openSpanId=span%201`
+    );
+    expect(traceDeepLinkPath('ab12', AT, '')).toBe(`#/?${RANGE}&${UI}&openTraceId=ab12`);
+  });
+
+  it('tells what a result judged: a session, a span or the trace', () => {
+    expect(targetOf({ level: 'session', conversationId: 'c1', traceId: 't' })).toEqual({
+      kind: 'session',
+      id: 'c1',
+    });
+    expect(targetOf({ level: 'session', traceId: 't' })).toBeUndefined();
+    expect(targetOf({ level: 'span', traceId: 't', spanId: 's' })).toEqual({
+      kind: 'span',
+      traceId: 't',
+      spanId: 's',
+    });
+    // A span id without a span level: the trace (trace-level results carry the root span).
+    expect(targetOf({ level: 'trace', traceId: 't', spanId: 's' })).toEqual({
+      kind: 'trace',
+      traceId: 't',
+    });
+    expect(targetOf({ level: 'span', traceId: 't' })).toEqual({ kind: 'trace', traceId: 't' });
+    expect(targetOf({ level: 'trace' })).toBeUndefined();
+  });
+
+  it('builds a new-tab URL to the target in Agent Traces', () => {
+    const getUrlForApp = jest.fn(
+      (appId: string, { path }: { path?: string } = {}) => `/app/${appId}${path}`
+    );
+    const application = { getUrlForApp };
+    expect(targetHref(application, { kind: 'session', id: 's1' }, AT)).toBe(
+      `/app/${AGENT_TRACES_NAV_ID}${sessionDeepLinkPath('s1', AT)}`
+    );
+    expect(targetHref(application, { kind: 'trace', traceId: 'ab' }, AT)).toBe(
+      `/app/${AGENT_TRACES_NAV_ID}${traceDeepLinkPath('ab', AT)}`
+    );
+    expect(targetHref(application, { kind: 'span', traceId: 'ab', spanId: 'cd' }, AT)).toBe(
+      `/app/${AGENT_TRACES_NAV_ID}${traceDeepLinkPath('ab', AT, 'cd')}`
+    );
   });
 });

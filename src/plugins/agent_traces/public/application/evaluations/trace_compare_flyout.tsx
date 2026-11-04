@@ -4,7 +4,6 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import moment from 'moment-timezone';
 import {
   EuiFlexGroup,
   EuiFlexItem,
@@ -41,6 +40,7 @@ import { useEvalContext } from './eval_context';
 import { errorMessage, runPpl } from './use_ppl_rows';
 import { JudgeMark } from './judge_mark';
 import { SpanIOView } from './span_io_view';
+import { getEvalTimezone } from './eval_time';
 import {
   DASH,
   OUTPUT_LABEL,
@@ -214,7 +214,7 @@ export const TraceCompareFlyout: React.FC<{
   useEffect(() => {
     const controller = new AbortController();
     const ids = [traceA, traceB];
-    const timezone = moment.tz.guess();
+    const timezone = getEvalTimezone();
     setState({ loading: true });
     Promise.all([
       new PPLService(services.data, { signal: controller.signal }).executeQuery(

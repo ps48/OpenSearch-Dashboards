@@ -19,6 +19,8 @@ import {
   buildOneTraceSpansQuery,
   buildRootSpansQuery,
   buildRunsLookupQuery,
+  buildSessionResultsQuery,
+  buildSuiteRunCasesQuery,
   buildSessionRootsQuery,
   buildSpanQuery,
   buildResultsCountQuery,
@@ -90,7 +92,8 @@ describe('evaluation PPL', () => {
         'where isnull(`attributes.gen_ai.agent.name`)',
         'where isnotnull(`attributes.test.suite.run.id`)',
         VERD,
-        EVALS_STATS,
+        // Offline: by run too, so each version is read at its latest run.
+        `${EVALS_STATS}, \`attributes.test.suite.run.id\``,
         'head 10000',
       ].join(' | ')
     );
@@ -130,6 +133,20 @@ describe('evaluation PPL', () => {
         "where `attributes.test.suite.name` = 'golden'",
         VERD,
         'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.cicd.pipeline.run.url.full`, verdict',
+        'head 10000',
+      ].join(' | ')
+    );
+  });
+
+  it('Suite: cases and cases passed per run (two aggregations)', () => {
+    expect(buildSuiteRunCasesQuery(I, "it's")).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.name` = 'it\\'s'",
+        "eval bad = if(isnotnull(`attributes.error.type`) or `attributes.gen_ai.evaluation.score.label` = 'fail', 1, 0)",
+        'stats sum(bad) as bad by `attributes.test.suite.run.id`, `attributes.test.case.id`',
+        'eval ok = if(bad = 0, 1, 0)',
+        'stats count() as cases, sum(ok) as passed by `attributes.test.suite.run.id`',
         'head 10000',
       ].join(' | ')
     );
@@ -286,6 +303,16 @@ describe('evaluation PPL', () => {
   it('Trace flyout: results of one trace', () => {
     expect(buildTraceResultsQuery(I, ['t1'])).toBe(
       [...BASE, "where `traceId` = 't1'", 'head 200'].join(' | ')
+    );
+  });
+
+  it('Session flyout: the session-level results of a conversation', () => {
+    expect(buildSessionResultsQuery(I, 'conv-1')).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.conversation.id` = 'conv-1' and `attributes.opensearch.gen_ai.evaluation.level` = 'session'",
+        'head 200',
+      ].join(' | ')
     );
   });
 

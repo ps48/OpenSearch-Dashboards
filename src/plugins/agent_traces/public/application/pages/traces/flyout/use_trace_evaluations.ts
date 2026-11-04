@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../../types';
 import { EvalResult, isSpanResult, recordsToResults } from '../../../evaluations/eval_model';
-import { buildTraceResultsQuery } from '../../../evaluations/eval_ppl';
+import { buildSessionResultsQuery, buildTraceResultsQuery } from '../../../evaluations/eval_ppl';
 import { useEvalsIndexPattern } from '../../../evaluations/eval_dataset';
 import { errorMessage, evalsDataset, runPpl } from '../../../evaluations/use_ppl_rows';
 
@@ -38,22 +38,26 @@ export const groupBySpan = (
 const isMissingIndex = (message: string) =>
   /no such index|index_not_found|IndexNotFound/i.test(message);
 
+interface ResultsState {
+  results: EvalResult[];
+  isLoading: boolean;
+  error?: string;
+}
+
 /**
- * The results of one trace (head 200), from the start of the global range to now: results
- * land after the trace they judge. Only runs when Agent Evaluations is on (an index is set).
+ * Results for `buildQuery(index)` (head 200), from the start of the global range to now:
+ * results land after what they judge. Nothing runs without a query or an evaluations index.
  */
-export const useTraceEvaluations = (
-  traceId: string | undefined,
-  rootSpanId?: string
-): TraceEvaluations => {
+const useEvalResults = (
+  key: string | undefined,
+  buildQuery: (index: string, key: string) => string
+): ResultsState => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const index = useEvalsIndexPattern();
-  const [state, setState] = useState<{ results: EvalResult[]; isLoading: boolean; error?: string }>(
-    { results: [], isLoading: false }
-  );
+  const [state, setState] = useState<ResultsState>({ results: [], isLoading: false });
 
   useEffect(() => {
-    if (!traceId || !services?.data || !index) {
+    if (!key || !services?.data || !index) {
       setState({ results: [], isLoading: false });
       return;
     }
@@ -64,7 +68,7 @@ export const useTraceEvaluations = (
     runPpl(
       services.data,
       evalsDataset(index),
-      buildTraceResultsQuery(index, [traceId]),
+      buildQuery(index, key),
       { from, to: new Date().toISOString() },
       controller.signal
     )
@@ -85,8 +89,29 @@ export const useTraceEvaluations = (
         });
       });
     return () => controller.abort();
-  }, [traceId, services?.data, index]);
+    // `buildQuery` is a module-level function.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, services?.data, index]);
 
+  return state;
+};
+
+const traceResultsQuery = (index: string, traceId: string) =>
+  buildTraceResultsQuery(index, [traceId]);
+
+/** The session-level results of a session (Agent Traces session view). */
+export const useSessionEvaluations = (sessionId: string | undefined): ResultsState =>
+  useEvalResults(sessionId, buildSessionResultsQuery);
+
+/**
+ * The results of one trace (head 200), from the start of the global range to now: results
+ * land after the trace they judge. Only runs when Agent Evaluations is on (an index is set).
+ */
+export const useTraceEvaluations = (
+  traceId: string | undefined,
+  rootSpanId?: string
+): TraceEvaluations => {
+  const state = useEvalResults(traceId, traceResultsQuery);
   return useMemo(
     () => ({ ...state, bySpanId: groupBySpan(state.results, rootSpanId) }),
     [state, rootSpanId]

@@ -10,8 +10,6 @@ import {
   EuiButton,
   EuiButtonEmpty,
   EuiButtonIcon,
-  EuiContextMenuItem,
-  EuiContextMenuPanel,
   EuiFilterButton,
   EuiFilterGroup,
   EuiFlexGroup,
@@ -55,6 +53,7 @@ import {
   MetaItem,
   OUTPUT_LABEL,
   QueryErrorCallout,
+  RunSelectList,
   RUN_A,
   RUN_B,
   VerdictBadge,
@@ -292,21 +291,14 @@ const RunPicker: React.FC<{
       {loading && !runs.length ? (
         <EuiLoadingContent lines={2} />
       ) : (
-        <EuiContextMenuPanel
-          size="s"
-          items={runs.map((r) => (
-            <EuiContextMenuItem
-              key={r.runId}
-              onClick={() => {
-                setOpen(false);
-                onPick(r.runId);
-              }}
-            >
-              <span className="agtEvlMono">{shortId(r.runId)}</span>{' '}
-              <VersionBadge version={r.version} />{' '}
-              <span className="agtEvlDim">{formatTime(r.started)}</span>
-            </EuiContextMenuItem>
-          ))}
+        <RunSelectList
+          runs={runs}
+          loading={loading}
+          testId={`agtEvlPickRunList-${side}`}
+          onPick={(picked) => {
+            setOpen(false);
+            onPick(picked);
+          }}
         />
       )}
     </EuiPopover>
@@ -487,7 +479,7 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
       align: 'right',
       sortable: (r: CompareEvalRow) => r.delta ?? Number.POSITIVE_INFINITY,
       render: (d: number | undefined, r: CompareEvalRow) => (
-        <DeltaCell delta={d} na={r.nA} nb={r.nB} />
+        <DeltaCell delta={d} na={r.nA} nb={r.nB} exact />
       ),
     },
   ];

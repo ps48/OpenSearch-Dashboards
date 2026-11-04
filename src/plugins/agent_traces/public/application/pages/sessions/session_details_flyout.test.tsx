@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import React from 'react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { recordToResult } from '../../evaluations/eval_model';
 import { SessionDetailsFlyout, errorSpanCount, turnRole } from './session_details_flyout';
 import { SessionTrace } from './hooks/use_session_detail';
 import { SessionRow } from './session_utils';
@@ -29,6 +31,25 @@ const mockOpenFlyout = jest.fn();
 const mockUpdateTree = jest.fn();
 jest.mock('../traces/flyout/trace_flyout_state', () => ({
   useTraceFlyout: () => ({ openFlyout: mockOpenFlyout, updateFlyoutFullTree: mockUpdateTree }),
+}));
+
+const mockSessionEvals = jest.fn(
+  (_sessionId?: string): { results: unknown[]; isLoading: boolean; error?: string } => ({
+    results: [],
+    isLoading: false,
+  })
+);
+jest.mock('../traces/flyout/use_trace_evaluations', () => ({
+  ...jest.requireActual('../traces/flyout/use_trace_evaluations'),
+  useSessionEvaluations: (sessionId?: string) => mockSessionEvals(sessionId),
+}));
+const mockResultFlyout = jest.fn();
+jest.mock('../traces/flyout/trace_evaluations', () => ({
+  ...jest.requireActual('../traces/flyout/trace_evaluations'),
+  TraceResultFlyout: (props: { result: { name: string } }) => {
+    mockResultFlyout(props);
+    return <div data-test-subj="resultFlyout">{props.result.name}</div>;
+  },
 }));
 
 const msgs = (...roles: string[]) =>
@@ -120,5 +141,59 @@ describe('SessionDetailsFlyout', () => {
       />
     );
     expect(screen.queryByTestId('agentTracesSessionViewAllTraces')).not.toBeInTheDocument();
+  });
+
+  describe('session evaluations', () => {
+    const sessionResult = (name: string, label: string, why: string) =>
+      recordToResult({
+        '@timestamp': '2026-10-28 07:00:01',
+        attributes: {
+          gen_ai: {
+            evaluation: { name, score: { label }, explanation: why },
+            conversation: { id: 'sess-1' },
+          },
+          opensearch: { gen_ai: { evaluation: { level: 'session' } } },
+        },
+      });
+    const renderFlyout = () =>
+      render(<SessionDetailsFlyout session={session} formatTs={(t) => t} onClose={jest.fn()} />);
+
+    afterEach(() => {
+      mockSessionEvals.mockReset();
+      mockSessionEvals.mockReturnValue({ results: [], isLoading: false });
+      mockResultFlyout.mockClear();
+    });
+
+    it('lists the session-level results of the session; a result opens its flyout', () => {
+      const results = [
+        sessionResult('goal_success', 'fail', 'Never booked'),
+        sessionResult('tone', 'pass', 'Polite'),
+      ];
+      mockSessionEvals.mockReturnValue({ results, isLoading: false });
+      renderFlyout();
+      expect(mockSessionEvals).toHaveBeenCalledWith('sess-1');
+      const section = screen.getByTestId('agentTracesSessionEvaluations');
+      expect(section).toHaveTextContent('Session evaluations (2)');
+      const rows = within(section).getByTestId('agentTracesSessionEvalRows');
+      expect(rows).toHaveTextContent('Never booked');
+      expect(within(rows).getByTestId('agtEvlVerdict-fail')).toBeInTheDocument();
+      expect(within(section).getByTestId('agtEvlTally')).toBeInTheDocument();
+      fireEvent.click(within(rows).getByText('goal_success'));
+      expect(screen.getByTestId('resultFlyout')).toHaveTextContent('goal_success');
+      expect(mockResultFlyout).toHaveBeenCalledWith(
+        expect.objectContaining({ result: results[0] })
+      );
+    });
+
+    it('shows nothing without session results', () => {
+      renderFlyout();
+      expect(screen.queryByTestId('agentTracesSessionEvaluations')).not.toBeInTheDocument();
+    });
+
+    it('shows the read error', () => {
+      mockSessionEvals.mockReturnValue({ results: [], isLoading: false, error: 'Boom' });
+      renderFlyout();
+      expect(screen.getByTestId('agentTracesSessionEvaluations')).toHaveTextContent('Boom');
+    });
   });
 });

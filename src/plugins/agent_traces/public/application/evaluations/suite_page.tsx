@@ -20,8 +20,8 @@ import {
   EuiCheckbox,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { RunRow, suiteRuns } from './eval_model';
-import { buildSuiteRunsQuery } from './eval_ppl';
+import { RunRow, runCases, suiteRuns } from './eval_model';
+import { buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { PassRateChart } from './pass_rate_chart';
@@ -75,6 +75,13 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
     timeRange,
     refreshKey
   );
+  const casesQuery = usePplRows(
+    dataset,
+    buildSuiteRunCasesQuery(index, suite),
+    timeRange,
+    refreshKey
+  );
+  const cases = useMemo(() => runCases(casesQuery.rows), [casesQuery.rows]);
   const runs = useMemo(() => suiteRuns(rows), [rows]);
   const [selected, setSelected] = useState<RunRow[]>([]);
   const agent = runs.map((r) => r.agent).find(Boolean);
@@ -135,6 +142,30 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
       render: (v?: string) => <VersionBadge version={v} />,
     },
     {
+      field: 'cases',
+      name: i18n.translate('agentTraces.evals.suite.casesPassed', {
+        defaultMessage: 'Cases passed',
+      }),
+      align: 'right',
+      sortable: (r: RunRow) => {
+        const c = cases.get(r.runId);
+        return c && c.cases ? c.passed / c.cases : -1;
+      },
+      render: (_: unknown, r: RunRow) => {
+        const c = cases.get(r.runId);
+        return c ? (
+          <span className="agtEvlNoWrap" data-test-subj={`agtEvlRunCases-${r.runId}`}>
+            <strong>
+              {c.passed} / {c.cases}
+            </strong>{' '}
+            <PassRateCell rate={c.cases ? c.passed / c.cases : undefined} bare />
+          </span>
+        ) : (
+          <span className="agtEvlDim">{DASH}</span>
+        );
+      },
+    },
+    {
       field: 'tally',
       name: i18n.translate('agentTraces.evals.suite.results', { defaultMessage: 'Results' }),
       align: 'right',
@@ -143,7 +174,9 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
     },
     {
       field: 'rate',
-      name: i18n.translate('agentTraces.evals.suite.passRate', { defaultMessage: 'Pass rate' }),
+      name: i18n.translate('agentTraces.evals.suite.passRate', {
+        defaultMessage: 'Result pass rate',
+      }),
       align: 'right',
       sortable: (r: RunRow) => r.rate ?? -1,
       render: (rate?: number) => <PassRateCell rate={rate} />,

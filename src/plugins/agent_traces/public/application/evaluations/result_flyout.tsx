@@ -4,7 +4,6 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import moment from 'moment-timezone';
 import {
   EuiAccordion,
   EuiBadge,
@@ -47,6 +46,7 @@ import { usePplRows } from './use_ppl_rows';
 import { useRootSpans, useSessionTurns, useSpan } from './eval_spans';
 import { useRunBefore } from './run_page';
 import { SpanIOView } from './span_io_view';
+import { getEvalTimezone } from './eval_time';
 import { SpanList, TraceCompareFlyout, flattenSpans } from './trace_compare_flyout';
 import {
   DASH,
@@ -95,6 +95,22 @@ const SectionLabel: React.FC = ({ children }) => (
   </EuiText>
 );
 
+/** "New tab": the judged session, trace or span in Agent Traces, in a new tab. */
+const NewTabLink: React.FC<{ r: EvalResult; after?: boolean }> = ({ r, after }) => {
+  const { hrefOf } = useEvalContext();
+  const href = hrefOf?.(r);
+  if (!href) return null;
+  return (
+    <>
+      {!after && ' · '}
+      <EuiLink href={href} target="_blank" external data-test-subj="agtEvlFlyoutNewTab">
+        {i18n.translate('agentTraces.evals.flyout.newTab', { defaultMessage: 'New tab' })}
+      </EuiLink>
+      {after && ' · '}
+    </>
+  );
+};
+
 /**
  * What a session-level judge saw: the conversation (`gen_ai.conversation.id`), its first
  * input and last output from its turns' root spans (one query, when the flyout opens).
@@ -132,6 +148,7 @@ const SessionJudgedSection: React.FC<{
         {r.conversationId && openSession && (
           <EuiFlexItem grow={false}>
             <EuiText size="xs">
+              <NewTabLink r={r} after />
               <EuiLink
                 onClick={() => r.conversationId && openSession(r.conversationId, r.time)}
                 data-test-subj="agtEvlFlyoutViewSession"
@@ -241,6 +258,7 @@ const JudgedSection: React.FC<{
             {r.traceId && !openTrace && (
               <span className="agtEvlMono agtEvlDim">{shortId(r.traceId)}</span>
             )}
+            <NewTabLink r={r} />
             {r.judgeTraceId && (
               <>
                 {' · '}
@@ -427,7 +445,7 @@ export const JudgeTraceView: React.FC<{ traceId: string; result: EvalResult }> =
     refreshKey
   );
   const view = useMemo(() => {
-    const timezone = moment.tz.guess();
+    const timezone = getEvalTimezone();
     const tree = buildFullSpanTree(hitsToAgentSpans(recordsToHits(rows)), (ts) =>
       formatTimestamp(ts, timezone)
     );

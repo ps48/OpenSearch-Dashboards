@@ -29,9 +29,15 @@ import { JudgeMark } from '../../../evaluations/judge_mark';
 import { ResultFlyout } from '../../../evaluations/result_flyout';
 import { EvalContext, defaultEvalContext } from '../../../evaluations/eval_context';
 import { useEvalsIndexPattern, useSpansIndexPattern } from '../../../evaluations/eval_dataset';
-import { openInEvaluations, openSessionInAgentTraces } from '../../../evaluations/eval_links';
+import {
+  openInEvaluations,
+  openSessionInAgentTraces,
+  targetHref,
+  targetOf,
+} from '../../../evaluations/eval_links';
 import { TraceEvaluations } from './use_trace_evaluations';
 import { TraceFlyoutContext } from './trace_flyout_state';
+import { useEvalTimezone } from '../../../evaluations/eval_time';
 
 /** A span's results in the trace tree: the judge mark and a small tally. */
 export const SpanEvalMark: React.FC<{ results?: EvalResult[] }> = ({ results }) => {
@@ -115,6 +121,7 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
   const application = services.application;
   const index = useEvalsIndexPattern();
   const spansIndex = useSpansIndexPattern();
+  useEvalTimezone(services.uiSettings);
   const traceFlyout = useContext(TraceFlyoutContext);
   const [shown, setShown] = useState(result);
   useEffect(() => setShown(result), [result]);
@@ -124,10 +131,16 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
     const ctx = defaultEvalContext(index ?? 'otel-v1-genai-evaluation-*', spansIndex);
     const timefilter = services.data?.query.timefilter.timefilter;
     const from = timefilter?.calculateBounds(timefilter.getTime()).min?.toISOString();
-    if (!from) return ctx;
+    const hrefOf = (r: EvalResult) => {
+      const target = targetOf(r);
+      return target && application?.getUrlForApp
+        ? targetHref(application, target, r.time)
+        : undefined;
+    };
+    if (!from) return { ...ctx, hrefOf };
     const range = { from, to: new Date().toISOString() };
-    return { ...ctx, timeRange: range, browseRange: range };
-  }, [index, spansIndex, services.data]);
+    return { ...ctx, timeRange: range, browseRange: range, hrefOf };
+  }, [index, spansIndex, services.data, application]);
   return (
     <EvalContext.Provider value={context}>
       <ResultFlyout

@@ -70,6 +70,12 @@
     padding-right: $euiSizeM;
   }
 
+  &__evaluations {
+    margin-top: $euiSizeM;
+    padding-top: $euiSizeS;
+    border-top: $euiBorderThin;
+  }
+
   &__conversation {
     height: 100%;
     min-width: 0;

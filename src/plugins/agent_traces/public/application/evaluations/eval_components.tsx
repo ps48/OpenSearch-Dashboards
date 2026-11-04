@@ -6,19 +6,22 @@
 import './eval_components.scss';
 
 import React from 'react';
-import moment from 'moment';
 import {
   EuiBadge,
   EuiButtonGroup,
   EuiLink,
+  EuiSelectable,
+  EuiSelectableOption,
   EuiCallOut,
   EuiIconTip,
   EuiText,
   EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { CaseStatus, EvalResult, MIN_N, Tally, Verdict } from './eval_model';
+import { CaseStatus, EvalResult, MIN_N, RunRow, Tally, Verdict } from './eval_model';
 import { EvalSource, NO_AGENT } from './eval_ppl';
+import { formatInZone } from './eval_time';
+import { ResultTarget, targetOf } from './eval_links';
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
   pass: i18n.translate('agentTraces.evals.verdict.pass', { defaultMessage: 'Pass' }),
@@ -54,7 +57,7 @@ export const DASH = '—';
 export const pct = (x?: number) => (x === undefined ? DASH : `${Math.round(x * 100)}%`);
 
 export const formatTime = (ms: number, format = 'MMM D, HH:mm') =>
-  Number.isFinite(ms) ? moment(ms).format(format) : DASH;
+  Number.isFinite(ms) ? formatInZone(ms, format) : DASH;
 
 export const formatDay = (ms: number) => formatTime(ms, 'MMM D');
 
@@ -153,13 +156,13 @@ export const VersionBadge: React.FC<{ version?: string }> = ({ version }) =>
     <span className="agtEvlDim">{DASH}</span>
   );
 
-/** A pass rate with a small bar. */
-export const PassRateCell: React.FC<{ rate?: number }> = ({ rate }) =>
+/** A pass rate with a small bar; `bare`: the bar only. */
+export const PassRateCell: React.FC<{ rate?: number; bare?: boolean }> = ({ rate, bare }) =>
   rate === undefined ? (
     <span className="agtEvlDim">{DASH}</span>
   ) : (
     <span className="agtEvlRate">
-      <strong>{pct(rate)}</strong>
+      {!bare && <strong>{pct(rate)}</strong>}
       <span className="agtEvlRate__bar">
         <span className="agtEvlRate__fill" style={{ width: `${Math.round(rate * 100)}%` }} />
       </span>
@@ -189,10 +192,12 @@ export const DeltaCell: React.FC<{
   na?: number;
   nb?: number;
   score?: { direction?: string };
-}> = ({ delta, na, nb, score }) => {
+  /** A fixed set (a suite run's cases): no minimum sample size, never greyed for n. */
+  exact?: boolean;
+}> = ({ delta, na, nb, score, exact }) => {
   if (delta === undefined) return <span className="agtEvlDim">{DASH}</span>;
   const hasN = na !== undefined && nb !== undefined;
-  const low = hasN && ((na as number) < MIN_N || (nb as number) < MIN_N);
+  const low = !exact && hasN && ((na as number) < MIN_N || (nb as number) < MIN_N);
   let text: string;
   let tone: 'bad' | 'good' | 'flat';
   if (score) {
@@ -367,6 +372,111 @@ export const ResultRows: React.FC<{
     ))}
   </div>
 );
+
+/**
+ * A searchable list of runs (by run id, version or start time) to pick one from: Compare
+ * with and the compare page's Change. `marked`: a run labelled "Run before".
+ */
+export const RunSelectList: React.FC<{
+  runs: RunRow[];
+  loading: boolean;
+  onPick: (runId: string) => void;
+  marked?: string;
+  testId?: string;
+}> = ({ runs, loading, onPick, marked, testId }) => {
+  const options: Array<EuiSelectableOption<{ run: RunRow }>> = runs.map((r) => ({
+    key: r.runId,
+    label: `${r.runId} ${r.version ?? ''} ${formatTime(r.started)}`,
+    run: r,
+    'data-test-subj': `agtEvlRunOption-${r.runId}`,
+  }));
+  return (
+    <div className="agtEvlRunSelect" data-test-subj={testId}>
+      <EuiSelectable<{ run: RunRow }>
+        searchable
+        singleSelection
+        isLoading={loading}
+        options={options}
+        searchProps={{
+          compressed: true,
+          placeholder: i18n.translate('agentTraces.evals.runSelect.search', {
+            defaultMessage: 'Search run id, version or date',
+          }),
+          'data-test-subj': 'agtEvlRunSearch',
+        }}
+        listProps={{ bordered: false, rowHeight: 32 }}
+        renderOption={(o) => (
+          <span>
+            {o.run.runId === marked && (
+              <strong>
+                {i18n.translate('agentTraces.evals.run.runBefore', {
+                  defaultMessage: 'Run before',
+                })}
+                {' · '}
+              </strong>
+            )}
+            <span className="agtEvlMono">{shortId(o.run.runId)}</span>{' '}
+            <VersionBadge version={o.run.version} />{' '}
+            <span className="agtEvlDim">{formatTime(o.run.started)}</span>
+          </span>
+        )}
+        onChange={(next) => {
+          const picked = next.find((o) => o.checked === 'on');
+          if (picked?.key) onPick(String(picked.key));
+        }}
+      >
+        {(list, search) => (
+          <>
+            <div className="agtEvlFacet__search">{search}</div>
+            {list}
+          </>
+        )}
+      </EuiSelectable>
+    </div>
+  );
+};
+
+const TARGET_LABEL: Record<ResultTarget['kind'], string> = {
+  session: i18n.translate('agentTraces.evals.target.session', { defaultMessage: 'Session' }),
+  trace: i18n.translate('agentTraces.evals.target.trace', { defaultMessage: 'Trace' }),
+  span: i18n.translate('agentTraces.evals.target.span', { defaultMessage: 'Span' }),
+};
+
+/**
+ * What a result judged (session, trace or span, with its short id) and a link that opens it in
+ * Agent Traces in a new tab. Clicks do not reach the row (which opens the result).
+ */
+export const TargetLink: React.FC<{ r: EvalResult; href?: string }> = ({ r, href }) => {
+  const target = targetOf(r);
+  if (!target) return <span className="agtEvlDim">{DASH}</span>;
+  const id =
+    target.kind === 'session' ? target.id : target.kind === 'span' ? target.spanId : target.traceId;
+  const label = (
+    <>
+      <span className="agtEvlDim">{TARGET_LABEL[target.kind]}</span>{' '}
+      <span className="agtEvlMono">{shortId(id)}</span>
+    </>
+  );
+  if (!href) return <span data-test-subj={`agtEvlTarget-${target.kind}`}>{label}</span>;
+  return (
+    <EuiToolTip
+      content={i18n.translate('agentTraces.evals.target.openTip', {
+        defaultMessage: 'Open the {kind} in Agent Traces in a new tab',
+        values: { kind: TARGET_LABEL[target.kind].toLowerCase() },
+      })}
+    >
+      <EuiLink
+        href={href}
+        target="_blank"
+        external
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        data-test-subj={`agtEvlTarget-${target.kind}`}
+      >
+        {label}
+      </EuiLink>
+    </EuiToolTip>
+  );
+};
 
 /** A labelled block of text (input, output, expected output). */
 export const IOBlock: React.FC<{

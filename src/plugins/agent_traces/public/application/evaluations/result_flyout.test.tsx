@@ -7,7 +7,7 @@ import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { ResultFlyout, scalePosition } from './result_flyout';
 import { recordToResult } from './eval_model';
-import { TEST_INDEX, fakePpl, renderWithContext } from './eval_test_utils';
+import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
   buildCaseResultsQuery,
   buildOneTraceSpansQuery,
@@ -253,6 +253,32 @@ describe('ResultFlyout', () => {
     expect(links.openRun).toHaveBeenCalledWith(RUN);
   });
 
+  it('has a New tab link to the judged span when the context gives a URL', () => {
+    const hrefOf = jest.fn(() => 'https://osd/app/agentTraces#/?openTraceId=trace1');
+    renderWithContext(
+      <ResultFlyout
+        result={offline}
+        onClose={jest.fn()}
+        links={{ openTrace: jest.fn() }}
+        onOpenResult={jest.fn()}
+      />,
+      testContext({ hrefOf })
+    );
+    const link = screen.getByTestId('agtEvlFlyoutNewTab');
+    expect(link).toHaveAttribute('href', 'https://osd/app/agentTraces#/?openTraceId=trace1');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(hrefOf).toHaveBeenCalledWith(offline);
+    expect(screen.getByTestId('agtEvlFlyoutViewTrace')).toBeInTheDocument();
+  });
+
+  it('has no New tab link without a URL', () => {
+    renderWithContext(
+      <ResultFlyout result={offline} onClose={jest.fn()} links={{}} onOpenResult={jest.fn()} />,
+      testContext({ hrefOf: () => undefined })
+    );
+    expect(screen.queryByTestId('agtEvlFlyoutNewTab')).not.toBeInTheDocument();
+  });
+
   it('online results without an agent name judge the whole trace', () => {
     renderFlyout(
       recordToResult({
@@ -346,6 +372,24 @@ describe('ResultFlyout', () => {
       expect(output).not.toHaveTextContent('Which dates?');
       fireEvent.click(within(saw).getByTestId('agtEvlFlyoutViewSession'));
       expect(links.openSession).toHaveBeenCalledWith(CONV, session(CONV).time);
+    });
+
+    it('has a New tab link next to View session when the context gives a URL', () => {
+      renderWithContext(
+        <ResultFlyout
+          result={session(CONV)}
+          onClose={jest.fn()}
+          links={{ openSession: jest.fn() }}
+          onOpenResult={jest.fn()}
+        />,
+        testContext({ hrefOf: () => 'https://osd/app/agentTraces#/?openSessionId=conv' })
+      );
+      const saw = screen.getByTestId('agtEvlJudgeSawSession');
+      expect(within(saw).getByTestId('agtEvlFlyoutNewTab')).toHaveAttribute(
+        'href',
+        'https://osd/app/agentTraces#/?openSessionId=conv'
+      );
+      expect(within(saw).getByTestId('agtEvlFlyoutViewSession')).toBeInTheDocument();
     });
 
     it('has no View session link without an openSession link', () => {

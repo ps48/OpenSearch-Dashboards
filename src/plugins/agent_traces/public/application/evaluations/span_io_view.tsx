@@ -70,9 +70,13 @@ export const SpanIOView: React.FC<{
               />
             </EuiFlexItem>
             {i === 0 && !fixedMode && (
-              <EuiFlexItem grow={false} className="agtEvlSpanIO__toggle">
-                <MessageViewModeToggle mode={mode} onChange={setMode} idPrefix={idPrefix} />
-              </EuiFlexItem>
+              <>
+                {/* Pushes the switch to the right, as in the Agent Traces span detail. */}
+                <EuiFlexItem />
+                <EuiFlexItem grow={false} className="agtEvlSpanIO__toggle">
+                  <MessageViewModeToggle mode={mode} onChange={setMode} idPrefix={idPrefix} />
+                </EuiFlexItem>
+              </>
             )}
           </EuiFlexGroup>
           <EuiSpacer size="xs" />

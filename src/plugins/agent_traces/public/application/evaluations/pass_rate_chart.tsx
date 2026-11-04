@@ -14,13 +14,13 @@ import {
   ScaleType,
   Settings,
   XYChartElementEvent,
-  niceTimeFormatter,
 } from '@elastic/charts';
 import { i18n } from '@osd/i18n';
 import { euiThemeVars } from '@osd/ui-shared-deps/theme';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import type { EvaluationsServices } from '.';
 import { formatTime } from './eval_components';
+import { axisTimeFormat, getEvalTimezone } from './eval_time';
 
 export interface ChartPoint {
   t: number;
@@ -112,7 +112,7 @@ export const PassRateChart: React.FC<{
         <Axis
           id={`${id}-x`}
           position={Position.Bottom}
-          tickFormat={niceTimeFormatter([min, max])}
+          tickFormat={(v: number) => formatTime(v, axisTimeFormat(max - min))}
         />
         <Axis
           id={`${id}-y`}
@@ -129,6 +129,7 @@ export const PassRateChart: React.FC<{
             name={line.name}
             xScaleType={ScaleType.Time}
             yScaleType={ScaleType.Linear}
+            timeZone={getEvalTimezone()}
             xAccessor="x"
             yAccessors={['y']}
             data={toData(line.points)}

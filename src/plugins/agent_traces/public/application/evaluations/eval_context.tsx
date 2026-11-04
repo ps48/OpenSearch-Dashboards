@@ -33,6 +33,8 @@ export interface EvalScreenContext {
   navigate: (route: EvalRoute, patch?: Partial<EvalAppState>) => void;
   openResult: (result: EvalResult) => void;
   openTrace: (traceId: string, aroundMs: number) => void;
+  /** A URL to the session, trace or span a result judged (opened in a new tab). */
+  hrefOf?: (result: EvalResult) => string | undefined;
 }
 
 const noop = () => undefined;

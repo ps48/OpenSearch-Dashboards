@@ -34,6 +34,7 @@ import {
   defaultVersionPair,
   evaluationRows,
   isLive,
+  latestRunPerVersion,
   rateDelta,
   trendSeries,
   versionKey,
@@ -144,7 +145,10 @@ const ScoreText: React.FC<{ stat?: EvalStat }> = ({ stat }) => {
 };
 
 /** Change, B against A: pass rate points, average score (direction-aware) or top label share. */
-const ChangeCell: React.FC<{ row: EvaluationRow }> = ({ row: { a, b, hasPassRule } }) => {
+const ChangeCell: React.FC<{ row: EvaluationRow; exact?: boolean }> = ({
+  row: { a, b, hasPassRule },
+  exact,
+}) => {
   if (!a || !b) return <span className="agtEvlDim">{DASH}</span>;
   if (hasPassRule)
     return (
@@ -152,6 +156,7 @@ const ChangeCell: React.FC<{ row: EvaluationRow }> = ({ row: { a, b, hasPassRule
         delta={rateDelta(a.rate, b.rate)}
         na={a.tally.pass + a.tally.fail}
         nb={b.tally.pass + b.tally.fail}
+        exact={exact}
       />
     );
   if (a.avg !== undefined && b.avg !== undefined)
@@ -264,7 +269,11 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
     timeRange,
     refreshKey
   );
-  const data = useMemo(() => agentEvaluations(agent, table.rows), [agent, table.rows]);
+  const offline = source === 'offline';
+  const data = useMemo(
+    () => agentEvaluations(agent, offline ? latestRunPerVersion(table.rows) : table.rows),
+    [agent, table.rows, offline]
+  );
   const series = useMemo(() => trendSeries(trend.rows), [trend.rows]);
   const picked = state.versionPick?.[agent];
   const { b, a } = defaultVersionPair(data.versions, picked);
@@ -279,8 +288,9 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
   const pick = (next: { b?: string; a?: string }) =>
     setState({ versionPick: { ...state.versionPick, [agent]: next } });
 
+  // Results open on the same source as this tab (offline: suite runs only).
   const resultsPatch = (patch: Partial<EvalAppState['results']>, slice?: TimeSlice) => ({
-    results: { ...state.results, names: [], versions: [], verdicts: [], ...patch },
+    results: { ...state.results, names: [], versions: [], verdicts: [], source, ...patch },
     slice,
   });
 
@@ -294,6 +304,34 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
           <EuiLink>
             <strong>{name}</strong>
           </EuiLink>
+          {(r.b?.tally.error ?? 0) > 0 && (
+            <>
+              {' '}
+              <EuiBadge
+                color="warning"
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  navigate(
+                    { page: 'agent', agent, tab: 'results' },
+                    resultsPatch({
+                      names: [r.name],
+                      versions: b === undefined ? [] : [b || NO_VERSION],
+                      verdicts: ['error'],
+                    })
+                  );
+                }}
+                onClickAriaLabel={i18n.translate('agentTraces.evals.agent.errorsAria', {
+                  defaultMessage: 'Show the evaluator errors',
+                })}
+                data-test-subj={`agtEvlEvalErrors-${r.name}`}
+              >
+                {i18n.translate('agentTraces.evals.agent.errors', {
+                  defaultMessage: '{n} {n, plural, one {error} other {errors}}',
+                  values: { n: r.b?.tally.error ?? 0 },
+                })}
+              </EuiBadge>
+            </>
+          )}
           {!r.hasPassRule && (
             <>
               {' '}
@@ -339,7 +377,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
       name: i18n.translate('agentTraces.evals.agent.change', { defaultMessage: 'Change' }),
       align: 'right',
       sortable: (r: EvaluationRow) => r.delta ?? Number.POSITIVE_INFINITY,
-      render: (_: unknown, r: EvaluationRow) => <ChangeCell row={r} />,
+      render: (_: unknown, r: EvaluationRow) => <ChangeCell row={r} exact={offline} />,
     },
     {
       field: 'n',
@@ -366,7 +404,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
   const onPoint = (t: number) =>
     navigate(
       { page: 'agent', agent, tab: 'results' },
-      resultsPatch({ verdicts: ['fail'] }, { from: t, to: t + stepMs })
+      resultsPatch({}, { from: t, to: t + stepMs })
     );
 
   return (
@@ -420,13 +458,19 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
                 single
                   ? i18n.translate('agentTraces.evals.agent.evalsSubSingle', {
                       defaultMessage:
-                        'Click an evaluation to see its failing results. Evaluations without a pass rule show their average score or most common label.',
+                        'Click an evaluation to see its results. Evaluations without a pass rule show their average score or most common label.',
                     })
-                  : i18n.translate('agentTraces.evals.agent.evalsSub', {
-                      defaultMessage:
-                        'Sorted by change, worst first. Click an evaluation to see its failing results for {version}. Evaluations without a pass rule show their average score or most common label.',
-                      values: { version: labelB },
-                    })
+                  : offline
+                    ? i18n.translate('agentTraces.evals.agent.evalsSubOffline', {
+                        defaultMessage:
+                          'Offline: each version at its latest suite run. Sorted by change, worst first. Click an evaluation to see its results for {version}.',
+                        values: { version: labelB },
+                      })
+                    : i18n.translate('agentTraces.evals.agent.evalsSub', {
+                        defaultMessage:
+                          'Sorted by change, worst first. Click an evaluation to see its results for {version}. Evaluations without a pass rule show their average score or most common label.',
+                        values: { version: labelB },
+                      })
               }
             />
           </EuiFlexItem>
@@ -454,7 +498,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
                   resultsPatch({
                     names: [r.name],
                     versions: b === undefined ? [] : [b || NO_VERSION],
-                    verdicts: r.hasPassRule ? ['fail'] : [],
+                    verdicts: [],
                   })
                 ),
               'data-test-subj': `agtEvlEvalRow-${r.name}`,

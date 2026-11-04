@@ -156,6 +156,10 @@
 .agtEvlFacet {
   width: $euiSizeXL * 10;
 
+  &__search {
+    padding: $euiSizeS;
+  }
+
   &__error {
     padding: $euiSizeS;
   }
@@ -351,6 +355,6 @@
   display: inline-block;
 }
 
-.agtEvlSpanIO__toggle {
-  margin-left: auto;
+.agtEvlRunSelect {
+  width: $euiSizeXL * 12;
 }

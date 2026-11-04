@@ -362,16 +362,19 @@ export const TracesDataTable: React.FC = () => {
     if (openedFromLinkRef.current || !isInitialized || isQueryLoading) return;
     const linkedTraceId = takeHashParam('openTraceId');
     if (!linkedTraceId) return;
+    // `openSpanId`: open the trace with that span selected.
+    const linkedSpanId = takeHashParam('openSpanId');
     openedFromLinkRef.current = true;
     const hit = hits.find(
       (h) => (h._source as Record<string, unknown> | undefined)?.traceId === linkedTraceId
     );
-    if (hit) {
+    if (hit && !linkedSpanId) {
       handleRowClick(getHitId(hit));
       return;
     }
     const row: TraceRow = {
-      id: linkedTraceId,
+      // The flyout selects the node whose id is the row's id once the full tree loads.
+      id: linkedSpanId ?? linkedTraceId,
       spanId: '',
       traceId: linkedTraceId,
       parentSpanId: null,

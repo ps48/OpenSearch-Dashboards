@@ -14,6 +14,13 @@ import {
   buildSuiteRunsQuery,
 } from './eval_ppl';
 
+// jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
+jest.mock('react-virtualized-auto-sizer', () => ({
+  __esModule: true,
+  default: ({ children }: { children: (size: { width: number; height: number }) => unknown }) =>
+    children({ width: 400, height: 400 }),
+}));
+
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
   ...jest.requireActual('./use_ppl_rows'),
@@ -213,7 +220,8 @@ describe('CompareRuns', () => {
     expect(ctx.navigate).toHaveBeenCalledWith({ page: 'compare', runA: B, runB: A });
     fireEvent.click(screen.getByTestId('agtEvlPickRun-a'));
     expect(mockPpl.queries).toContain(buildSuiteRunsQuery(TEST_INDEX, 'golden'));
-    fireEvent.click(screen.getByText('zzzz9999'));
+    const list = screen.getByTestId('agtEvlPickRunList-a');
+    fireEvent.click(within(list).getByTestId('agtEvlRunOption-run_x_zzzz9999'));
     expect(ctx.navigate).toHaveBeenCalledWith({ page: 'compare', runA: 'run_x_zzzz9999', runB: B });
   });
 

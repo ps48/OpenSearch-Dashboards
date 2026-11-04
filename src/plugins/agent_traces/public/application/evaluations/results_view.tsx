@@ -11,7 +11,7 @@ import {
   EuiBasicTable,
   EuiBasicTableColumn,
   EuiButtonEmpty,
-  EuiFieldSearch,
+  EuiCompressedFieldSearch,
   EuiFilterButton,
   EuiFilterGroup,
   EuiFlexGroup,
@@ -54,6 +54,7 @@ import {
   agentLabel,
   formatTime,
   ScoreBricks,
+  TargetLink,
   shortId,
   sliceLabel,
   versionLabel,
@@ -133,6 +134,15 @@ const FacetFilter: React.FC<{
           </EuiText>
         ) : (
           <EuiSelectable
+            searchable
+            searchProps={{
+              compressed: true,
+              placeholder: i18n.translate('agentTraces.evals.results.facetSearch', {
+                defaultMessage: 'Search {facet}',
+                values: { facet: FACET_LABEL[facet].toLowerCase() },
+              }),
+              'data-test-subj': `agtEvlFacetSearch-${facet}`,
+            }}
             options={options}
             isLoading={loading}
             onChange={(next) =>
@@ -140,7 +150,12 @@ const FacetFilter: React.FC<{
             }
             listProps={{ bordered: false }}
           >
-            {(list) => list}
+            {(list, search) => (
+              <>
+                <div className="agtEvlFacet__search">{search}</div>
+                {list}
+              </>
+            )}
           </EuiSelectable>
         )}
       </div>
@@ -198,6 +213,7 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
     setState,
     navigate,
     openResult,
+    hrefOf,
   } = useSliceContext();
   const stored = state.results;
   const [search, setSearch] = useState(stored.q);
@@ -275,11 +291,22 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
         defaultMessage: 'Explanation',
       }),
       width: '32%',
-      render: (e?: string) => (
-        <span className="agtEvlDim agtEvlTrunc" title={e}>
-          {e ?? DASH}
-        </span>
-      ),
+      render: (e: string | undefined, r: EvalResult) =>
+        r.errorType && !e ? (
+          // An evaluator error: its error.type is the reason.
+          <span className="agtEvlTrunc" title={r.errorType}>
+            <code>{r.errorType}</code>
+          </span>
+        ) : (
+          <span className="agtEvlDim agtEvlTrunc" title={e}>
+            {e ?? DASH}
+          </span>
+        ),
+    },
+    {
+      field: 'level',
+      name: i18n.translate('agentTraces.evals.results.judged', { defaultMessage: 'Judged' }),
+      render: (_: unknown, r: EvalResult) => <TargetLink r={r} href={hrefOf?.(r)} />,
     },
     {
       field: 'runId',
@@ -336,9 +363,8 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
           <SourceFilter value={filters.source} onChange={(source) => update({ source })} />
         </EuiFlexItem>
         <EuiFlexItem>
-          <EuiFieldSearch
+          <EuiCompressedFieldSearch
             fullWidth
-            compressed
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onBlur={() => update({ q: search })}
@@ -442,11 +468,29 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
               onClick: () => openResult(r),
             })}
             noItemsMessage={
-              page.loaded && !page.loading
-                ? i18n.translate('agentTraces.evals.results.empty', {
+              page.loaded && !page.loading ? (
+                <span data-test-subj="agtEvlResultsEmpty">
+                  {i18n.translate('agentTraces.evals.results.empty', {
                     defaultMessage: 'No results match these filters in the range.',
-                  })
-                : undefined
+                  })}
+                  {(chips.length > 0 || !!filters.q) && (
+                    <>
+                      {' '}
+                      <EuiLink
+                        onClick={() => {
+                          setSearch('');
+                          update({ agents: [], names: [], versions: [], verdicts: [], q: '' });
+                        }}
+                        data-test-subj="agtEvlResultsEmptyClear"
+                      >
+                        {i18n.translate('agentTraces.evals.results.clearFilters', {
+                          defaultMessage: 'Clear filters',
+                        })}
+                      </EuiLink>
+                    </>
+                  )}
+                </span>
+              ) : undefined
             }
             data-test-subj="agtEvlResultsTable"
           />

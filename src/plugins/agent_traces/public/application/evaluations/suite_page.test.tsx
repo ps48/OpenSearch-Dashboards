@@ -7,7 +7,7 @@ import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { SuitePage, ciLabel, compareOrder, runVersionMarkers } from './suite_page';
 import { TEST_INDEX, fakePpl, renderWithContext } from './eval_test_utils';
-import { buildSuiteRunsQuery } from './eval_ppl';
+import { buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './eval_ppl';
 import { RunRow, emptyTally } from './eval_model';
 
 const mockPpl = fakePpl();
@@ -37,18 +37,44 @@ const run = (
 describe('SuitePage', () => {
   beforeEach(() => {
     mockPpl.reset();
-    mockPpl.answer(() => [
-      run('run_20261026_aaaa1111', 26, 'v1', 'pass', 8),
-      run('run_20261027_bbbb2222', 27, 'v1', 'pass', 6),
-      run('run_20261027_bbbb2222', 27, 'v1', 'error', 2),
-      run('run_20261028_cccc3333', 28, 'v2', 'fail', 4, 'https://github.com/o/r/actions/runs/1793'),
-      run('run_20261028_cccc3333', 28, 'v2', 'pass', 4, 'https://github.com/o/r/actions/runs/1793'),
-    ]);
+    mockPpl.answer((q) =>
+      q.includes('as cases')
+        ? [
+            { 'attributes.test.suite.run.id': 'run_20261028_cccc3333', cases: 12, passed: 7 },
+            { 'attributes.test.suite.run.id': 'run_20261027_bbbb2222', cases: 4, passed: 4 },
+          ]
+        : [
+            run('run_20261026_aaaa1111', 26, 'v1', 'pass', 8),
+            run('run_20261027_bbbb2222', 27, 'v1', 'pass', 6),
+            run('run_20261027_bbbb2222', 27, 'v1', 'error', 2),
+            run(
+              'run_20261028_cccc3333',
+              28,
+              'v2',
+              'fail',
+              4,
+              'https://github.com/o/r/actions/runs/1793'
+            ),
+            run(
+              'run_20261028_cccc3333',
+              28,
+              'v2',
+              'pass',
+              4,
+              'https://github.com/o/r/actions/runs/1793'
+            ),
+          ]
+    );
   });
 
-  it('runs one query and lists runs with errors and CI links', () => {
+  it('runs two queries and lists runs with errors and CI links', () => {
     renderWithContext(<SuitePage suite="golden" />);
-    expect(new Set(mockPpl.queries)).toEqual(new Set([buildSuiteRunsQuery(TEST_INDEX, 'golden')]));
+    expect(new Set(mockPpl.queries)).toEqual(
+      new Set([
+        buildSuiteRunsQuery(TEST_INDEX, 'golden'),
+        buildSuiteRunCasesQuery(TEST_INDEX, 'golden'),
+      ])
+    );
     expect(screen.getByTestId('agtEvlSuiteMeta')).toHaveTextContent('tp');
     const c = screen.getByTestId('agtEvlRunRow-run_20261028_cccc3333');
     expect(within(c).getByText('cccc3333')).toBeInTheDocument();
@@ -56,6 +82,22 @@ describe('SuitePage', () => {
     expect(within(c).getByText('#1793')).toBeInTheDocument();
     const b = screen.getByTestId('agtEvlRunRow-run_20261027_bbbb2222');
     expect(within(b).getByText('2')).toBeInTheDocument();
+  });
+
+  it('shows cases passed per run next to the result pass rate', () => {
+    renderWithContext(<SuitePage suite="golden" />);
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent ?? '');
+    expect(headers.some((h) => h.includes('Cases passed'))).toBe(true);
+    expect(headers.some((h) => h.includes('Result pass rate'))).toBe(true);
+    const c = screen.getByTestId('agtEvlRunCases-run_20261028_cccc3333');
+    expect(c).toHaveTextContent('7 / 12');
+    // The bar only: the number is the count.
+    expect(c).not.toHaveTextContent('%');
+    expect(c.querySelector('.agtEvlRate__fill')).toHaveStyle('width: 58%');
+    expect(screen.getByTestId('agtEvlRunCases-run_20261027_bbbb2222')).toHaveTextContent('4 / 4');
+    // No cases row for the run: a dash.
+    const a = screen.getByTestId('agtEvlRunRow-run_20261026_aaaa1111');
+    expect(within(a).queryByTestId(/^agtEvlRunCases-/)).not.toBeInTheDocument();
   });
 
   it('compares two selected runs, older as Run A', () => {

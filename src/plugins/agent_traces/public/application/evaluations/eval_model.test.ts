@@ -16,12 +16,14 @@ import {
   addToTally,
   evaluationRows,
   isLive,
+  latestRunPerVersion,
   meanPassRate,
   otherRunsOfSuite,
   parseTime,
   passRate,
   recordToResult,
   runBefore,
+  runCases,
   runDetail,
   suiteRuns,
   trendSeries,
@@ -187,6 +189,38 @@ describe('agents', () => {
     expect(evaluationRows(versions, 'v2', undefined)[0].a).toBeUndefined();
   });
 
+  it('offline: keeps each version at its latest run only', () => {
+    const r = (version: string | null, run: string | null, first: string, name = 'acc') => ({
+      n: 1,
+      first,
+      last: first,
+      [V]: version,
+      [RUN]: run,
+      [N]: name,
+      verdict: 'pass',
+    });
+    const offlineRows = [
+      r('v1', 'r1', '2026-10-25 10:00:00'),
+      r('v1', 'r1', '2026-10-25 10:05:00', 'tone'),
+      // r2 started later than r1: v1 is read at r2, even though r1 has a later result.
+      r('v1', 'r2', '2026-10-26 10:00:00'),
+      r('v1', 'r1', '2026-10-27 10:00:00', 'late'),
+      r('v2', 'r3', '2026-10-28 10:00:00'),
+      r(null, 'r4', '2026-10-20 10:00:00'),
+      r(null, 'r5', '2026-10-21 10:00:00'),
+      // No run id (should not happen offline): kept.
+      r('v1', null, '2026-10-29 10:00:00'),
+    ];
+    const kept = latestRunPerVersion(offlineRows);
+    expect(kept.map((x) => [x[V], x[RUN], x[N]])).toEqual([
+      ['v1', 'r2', 'acc'],
+      ['v2', 'r3', 'acc'],
+      [null, 'r5', 'acc'],
+      ['v1', null, 'acc'],
+    ]);
+    expect(latestRunPerVersion([])).toEqual([]);
+  });
+
   it('turns trend buckets into one series per version, top 5 by results', () => {
     const T = 'attributes.gen_ai.agent.version';
     const series = trendSeries([
@@ -337,6 +371,18 @@ describe('suites and runs', () => {
     expect(runBefore(lookup, 'r2')?.runId).toBe('r1');
     expect(runBefore(lookup, 'r0')).toBeUndefined();
     expect(runBefore(lookup, 'missing')).toBeUndefined();
+  });
+
+  it('reads cases and cases passed per run', () => {
+    const m = runCases([
+      { [RUN]: 'r1', cases: 12, passed: 7 },
+      { [RUN]: 'r2', cases: '3', passed: null },
+      { cases: 1, passed: 1 },
+    ]);
+    expect([...m.entries()]).toEqual([
+      ['r1', { cases: 12, passed: 7 }],
+      ['r2', { cases: 3, passed: 0 }],
+    ]);
   });
 
   it('counts the other runs of a run suite', () => {

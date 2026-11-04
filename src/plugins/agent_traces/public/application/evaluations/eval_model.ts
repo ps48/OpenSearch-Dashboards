@@ -315,6 +315,34 @@ export interface AgentEvaluations {
   versions: VersionStat[];
 }
 
+/**
+ * Offline rows (grouped by run too): each version's latest run only, so versions compare run
+ * against run rather than one run against the average of many.
+ */
+export const latestRunPerVersion = (rows: PplRecord[]): PplRecord[] => {
+  const versionOf = (row: PplRecord) => str(get(row, F.agentVersion)) ?? '';
+  // A run's start: its earliest result; per version, the run that started last.
+  const starts = new Map<string, { version: string; started: number }>();
+  rows.forEach((row) => {
+    const runId = str(get(row, F.runId));
+    if (!runId) return;
+    const cur = starts.get(runId);
+    starts.set(runId, {
+      version: versionOf(row),
+      started: minT(cur?.started ?? NaN, parseTime(row.first)),
+    });
+  });
+  const latest = new Map<string, { runId: string; started: number }>();
+  starts.forEach(({ version, started }, runId) => {
+    const cur = latest.get(version);
+    if (!cur || started > cur.started) latest.set(version, { runId, started });
+  });
+  return rows.filter((row) => {
+    const runId = str(get(row, F.runId));
+    return !runId || latest.get(versionOf(row))?.runId === runId;
+  });
+};
+
 /** From `buildAgentEvaluationsQuery`: every version of the agent with its evaluations. */
 export const agentEvaluations = (agent: string, rows: PplRecord[]): AgentEvaluations =>
   rows.length
@@ -420,6 +448,17 @@ const runsOf = (rows: PplRecord[]): RunRow[] => {
 
 /** Suite page runs (oldest first) from `buildSuiteRunsQuery`. */
 export const suiteRuns = (rows: PplRecord[]): RunRow[] => runsOf(rows);
+
+/** Cases (and cases passed) per run, from `buildSuiteRunCasesQuery`. */
+export const runCases = (rows: PplRecord[]): Map<string, { cases: number; passed: number }> =>
+  new Map(
+    rows
+      .map((row): [string | undefined, { cases: number; passed: number }] => [
+        str(get(row, F.runId)),
+        { cases: num(row.cases) ?? 0, passed: num(row.passed) ?? 0 },
+      ])
+      .filter((e): e is [string, { cases: number; passed: number }] => !!e[0])
+  );
 
 export interface SuiteRow {
   suite: string;

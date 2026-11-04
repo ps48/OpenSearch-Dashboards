@@ -131,6 +131,24 @@ describe('TracesDataTable deep link', () => {
     expect(mockFetchTraceSpans).toHaveBeenCalledTimes(2);
   });
 
+  it('opens the linked span of the trace (openSpanId), even when the trace is listed', async () => {
+    const traceId = '0b5599adba151ad2227c9bdb91e548a2';
+    window.location.hash = `#/?openTraceId=${traceId}&openSpanId=abcd1234`;
+    mockFetchTraceSpans.mockResolvedValue(spansResponse(traceId));
+    mockCore = core([hit(traceId)]);
+    render(<TracesDataTable />);
+    // Not the row click (which selects the root): the flyout opens on the span id.
+    expect(mockOpenFlyout).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'abcd1234', traceId })
+    );
+    expect(mockFetchTraceSpans).toHaveBeenCalledTimes(1);
+    // Both parameters leave the URL.
+    expect(window.location.hash).toBe('#/');
+    await waitFor(() =>
+      expect(mockUpdateFullTree).toHaveBeenCalledWith(traceId, expect.any(Array), false)
+    );
+  });
+
   it('does not fetch a trace again when no fetch was interrupted', async () => {
     window.location.hash = '#/';
     mockFetchTraceSpans.mockResolvedValue(spansResponse('t1'));

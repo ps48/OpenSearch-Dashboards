@@ -6,6 +6,7 @@
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { ResultsView } from './results_view';
+import { shortId } from './eval_components';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
   DEFAULT_RESULTS_SORT,
@@ -170,5 +171,110 @@ describe('ResultsView', () => {
     expect(ctx.openResult).toHaveBeenCalledWith(
       expect.objectContaining({ traceId: 't2', verdict: 'pass' })
     );
+  });
+
+  it('searches a filter menu', () => {
+    mockPpl.answer((q) =>
+      q.includes('sort - n')
+        ? [
+            { n: 40, 'attributes.gen_ai.evaluation.name': 'accuracy' },
+            { n: 9, 'attributes.gen_ai.evaluation.name': 'tone' },
+          ]
+        : []
+    );
+    renderWithContext(<ResultsView />);
+    fireEvent.click(screen.getByTestId('agtEvlFacet-names'));
+    const list = screen.getByTestId('agtEvlFacetList-names');
+    expect(within(list).getByText('tone')).toBeInTheDocument();
+    fireEvent.change(within(list).getByTestId('agtEvlFacetSearch-names'), {
+      target: { value: 'acc' },
+    });
+    // The match is highlighted inside the option: compare the options' text.
+    expect(
+      within(list)
+        .getAllByRole('option')
+        .map((o) => o.textContent)
+    ).toEqual([expect.stringContaining('accuracy')]);
+  });
+
+  it('shows what each result judged, linked in a new tab when the context gives a URL', () => {
+    mockPpl.answer((q) =>
+      q.endsWith('stats count() as total')
+        ? [{ total: 3 }]
+        : [
+            doc(1),
+            doc(2, { opensearch: { gen_ai: { evaluation: { level: 'span' } } } }),
+            doc(3, {
+              opensearch: { gen_ai: { evaluation: { level: 'session' } } },
+              gen_ai: {
+                evaluation: { name: 'goal', score: { label: 'pass' } },
+                conversation: { id: 'conv-0123456789' },
+              },
+            }),
+          ].map((d, i) => (i === 1 ? { ...d, spanId: 'span-abcdef12' } : d))
+    );
+    const hrefOf = jest.fn((r: { traceId?: string }) =>
+      r.traceId === 't1' ? 'https://osd/app/agentTraces#t1' : undefined
+    );
+    const ctx = testContext({ hrefOf });
+    renderWithContext(<ResultsView />, ctx);
+    const table = screen.getByTestId('agtEvlResultsTable');
+    const headers = within(table)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent ?? '');
+    expect(headers.some((h) => h.includes('Judged'))).toBe(true);
+    const trace = within(table).getByTestId('agtEvlTarget-trace');
+    expect(trace).toHaveTextContent('Trace t1');
+    expect(trace).toHaveAttribute('href', 'https://osd/app/agentTraces#t1');
+    expect(trace).toHaveAttribute('target', '_blank');
+    // The link opens the target, not the result.
+    fireEvent.click(trace);
+    expect(ctx.openResult).not.toHaveBeenCalled();
+    // No URL: the target as text.
+    const span = within(table).getByTestId('agtEvlTarget-span');
+    expect(span.tagName).toBe('SPAN');
+    expect(span).toHaveTextContent(`Span ${shortId('span-abcdef12')}`);
+    expect(within(table).getByTestId('agtEvlTarget-session')).toHaveTextContent('Session');
+  });
+
+  it('shows the error type when an evaluator error has no explanation', () => {
+    mockPpl.answer((q) =>
+      q.endsWith('stats count() as total')
+        ? [{ total: 1 }]
+        : [
+            {
+              '@timestamp': '2026-10-28 07:00:01',
+              traceId: 't9',
+              attributes: {
+                gen_ai: { evaluation: { name: 'accuracy' }, agent: { name: 'tp' } },
+                error: { type: 'ThrottlingException' },
+              },
+            },
+          ]
+    );
+    renderWithContext(<ResultsView />);
+    const code = within(screen.getByTestId('agtEvlResultsTable')).getByText('ThrottlingException');
+    expect(code.tagName).toBe('CODE');
+  });
+
+  it('offers Clear filters on an empty table when filters are set', () => {
+    mockPpl.answer(() => []);
+    const results = { ...EMPTY_RESULTS_FILTERS, verdicts: ['fail'], names: ['tone'] };
+    const ctx = testContext({ state: { ...testContext().state, results } });
+    renderWithContext(<ResultsView />, ctx);
+    expect(screen.getByTestId('agtEvlResultsEmpty')).toHaveTextContent(
+      'No results match these filters in the range.'
+    );
+    fireEvent.click(screen.getByTestId('agtEvlResultsEmptyClear'));
+    expect(ctx.setState).toHaveBeenCalledWith({
+      results: { ...results, agents: [], names: [], versions: [], verdicts: [] },
+    });
+  });
+
+  it('has no Clear filters link on an empty table without filters', () => {
+    mockPpl.answer(() => []);
+    renderWithContext(<ResultsView />);
+    expect(screen.getByTestId('agtEvlResultsEmpty')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlResultsEmptyClear')).not.toBeInTheDocument();
   });
 });

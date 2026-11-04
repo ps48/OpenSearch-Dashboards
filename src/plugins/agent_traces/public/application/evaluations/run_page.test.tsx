@@ -18,6 +18,13 @@ import { CaseRow, emptyTally } from './eval_model';
 
 const SUITE = 'attributes.test.suite.name';
 const RUN_ID = 'attributes.test.suite.run.id';
+// jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
+jest.mock('react-virtualized-auto-sizer', () => ({
+  __esModule: true,
+  default: ({ children }: { children: (size: { width: number; height: number }) => unknown }) =>
+    children({ width: 400, height: 400 }),
+}));
+
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
   ...jest.requireActual('./use_ppl_rows'),
@@ -265,8 +272,14 @@ describe('RunPage', () => {
     const { ctx } = renderWithContext(<RunPage runId={RUN} />);
     fireEvent.click(screen.getByTestId('agtEvlCompareWith'));
     expect(mockPpl.queries).toContain(buildSuiteRunsQuery(TEST_INDEX, 'golden'));
-    const item = screen.getByTestId('agtEvlCompareWith-run_20261027_bbbb2222');
+    const list = screen.getByTestId('agtEvlCompareWithList');
+    // The other runs of the suite only, searchable; the run before is marked.
+    expect(within(list).queryByTestId(`agtEvlRunOption-${RUN}`)).not.toBeInTheDocument();
+    const item = within(list).getByTestId('agtEvlRunOption-run_20261027_bbbb2222');
     expect(item).toHaveTextContent('Run before');
+    expect(item).toHaveTextContent('bbbb2222');
+    expect(item).toHaveTextContent('v1');
+    expect(within(list).getByTestId('agtEvlRunSearch')).toBeInTheDocument();
     fireEvent.click(item);
     expect(ctx.navigate).toHaveBeenCalledWith({
       page: 'compare',

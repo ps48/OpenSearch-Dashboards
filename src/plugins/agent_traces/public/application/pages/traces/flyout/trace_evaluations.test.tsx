@@ -152,4 +152,41 @@ describe('Agent Traces evaluation marks', () => {
     expect(lookup?.[1]).toEqual({ from: FROM, to: expect.any(String) });
     delete mockServices.data;
   });
+
+  it('the result flyout links the judged span in a new tab when the app gives URLs', () => {
+    const getUrlForApp = jest.fn(
+      (appId: string, { path }: { path?: string } = {}) => `/app/${appId}${path}`
+    );
+    mockServices.application = { navigateToApp: mockNavigate, getUrlForApp };
+    try {
+      const r = result('accuracy', 'fail', 's1', {
+        opensearch: { gen_ai: { evaluation: { level: 'span' } } },
+      });
+      wrap(
+        <TraceEvaluationsTab
+          evals={{ results: [r], bySpanId: { s1: [r] }, isLoading: false }}
+          spanLabelOf={() => 'search_flights'}
+        />
+      );
+      fireEvent.click(screen.getByTestId('agentTracesEvalRow-accuracy'));
+      const link = screen.getByTestId('agtEvlFlyoutNewTab');
+      expect(link.getAttribute('href')).toContain('openTraceId=t1&openSpanId=s1');
+      expect(getUrlForApp).toHaveBeenCalledWith('agentTraces/traces', expect.anything());
+    } finally {
+      mockServices.application = { navigateToApp: mockNavigate };
+    }
+  });
+
+  it('the result flyout has no New tab link when the app gives no URLs', () => {
+    const r = result('accuracy', 'fail', 's1');
+    wrap(
+      <TraceEvaluationsTab
+        evals={{ results: [r], bySpanId: { s1: [r] }, isLoading: false }}
+        spanLabelOf={() => 'search_flights'}
+      />
+    );
+    fireEvent.click(screen.getByTestId('agentTracesEvalRow-accuracy'));
+    expect(screen.getByTestId('agtEvlResultFlyout')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlFlyoutNewTab')).not.toBeInTheDocument();
+  });
 });

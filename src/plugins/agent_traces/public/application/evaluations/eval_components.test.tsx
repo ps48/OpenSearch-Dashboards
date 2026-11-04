@@ -7,14 +7,25 @@ import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import {
+  DeltaCell,
+  PassRateCell,
   ResultRows,
+  RunSelectList,
+  TargetLink,
   ScoreBricks,
   SourceFilter,
   brickCount,
   bricksFilled,
   scoreScale,
 } from './eval_components';
-import { EvalResult, Verdict } from './eval_model';
+import { EvalResult, RunRow, Verdict, emptyTally } from './eval_model';
+
+// jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
+jest.mock('react-virtualized-auto-sizer', () => ({
+  __esModule: true,
+  default: ({ children }: { children: (size: { width: number; height: number }) => unknown }) =>
+    children({ width: 400, height: 400 }),
+}));
 
 const wrap = (ui: React.ReactElement) => render(<I18nProvider>{ui}</I18nProvider>);
 
@@ -168,5 +179,116 @@ describe('SourceFilter', () => {
     expect(radio('all')).not.toBeChecked();
     fireEvent.click(radio('offline'));
     expect(onChange).toHaveBeenCalledWith('offline');
+  });
+});
+
+describe('DeltaCell', () => {
+  it('greys a change under the minimum sample size, unless the set is exact', () => {
+    const { unmount } = wrap(<DeltaCell delta={-0.3} na={10} nb={10} />);
+    expect(screen.getByTestId('agtEvlDeltaLow')).toHaveTextContent('-30 pts');
+    unmount();
+    wrap(<DeltaCell delta={-0.3} na={10} nb={10} exact />);
+    expect(screen.queryByTestId('agtEvlDeltaLow')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlDelta')).toHaveTextContent('-30 pts');
+  });
+});
+
+describe('PassRateCell', () => {
+  it('shows the rate and a bar, or the bar only when bare', () => {
+    const { container, unmount } = wrap(<PassRateCell rate={0.58} />);
+    expect(container).toHaveTextContent('58%');
+    unmount();
+    const bare = wrap(<PassRateCell rate={0.58} bare />);
+    expect(bare.container).not.toHaveTextContent('58%');
+    expect(bare.container.querySelector('.agtEvlRate__fill')).toHaveStyle('width: 58%');
+  });
+});
+
+describe('RunSelectList', () => {
+  const run = (runId: string, version: string, day: number): RunRow => ({
+    runId,
+    version,
+    started: Date.UTC(2026, 9, day, 7),
+    tally: emptyTally(),
+  });
+  const runs = [run('run_20261027_bbbb2222', 'v1', 27), run('run_20261026_aaaa1111', 'v0', 26)];
+
+  it('lists runs, marks the run before and picks one', () => {
+    const onPick = jest.fn();
+    wrap(
+      <RunSelectList
+        runs={runs}
+        loading={false}
+        onPick={onPick}
+        marked="run_20261027_bbbb2222"
+        testId="list"
+      />
+    );
+    const list = screen.getByTestId('list');
+    const before = within(list).getByTestId('agtEvlRunOption-run_20261027_bbbb2222');
+    expect(before).toHaveTextContent('Run before');
+    expect(before).toHaveTextContent('bbbb2222');
+    expect(before).toHaveTextContent('v1');
+    expect(within(list).getByTestId('agtEvlRunOption-run_20261026_aaaa1111')).not.toHaveTextContent(
+      'Run before'
+    );
+    fireEvent.click(within(list).getByTestId('agtEvlRunOption-run_20261026_aaaa1111'));
+    expect(onPick).toHaveBeenCalledWith('run_20261026_aaaa1111');
+  });
+
+  it('searches by run id or version', () => {
+    wrap(<RunSelectList runs={runs} loading={false} onPick={jest.fn()} testId="list" />);
+    const list = screen.getByTestId('list');
+    fireEvent.change(within(list).getByTestId('agtEvlRunSearch'), { target: { value: 'v0' } });
+    expect(within(list).getByTestId('agtEvlRunOption-run_20261026_aaaa1111')).toBeInTheDocument();
+    expect(
+      within(list).queryByTestId('agtEvlRunOption-run_20261027_bbbb2222')
+    ).not.toBeInTheDocument();
+    fireEvent.change(within(list).getByTestId('agtEvlRunSearch'), {
+      target: { value: 'bbbb2222' },
+    });
+    expect(within(list).getByTestId('agtEvlRunOption-run_20261027_bbbb2222')).toBeInTheDocument();
+    expect(
+      within(list).queryByTestId('agtEvlRunOption-run_20261026_aaaa1111')
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('TargetLink', () => {
+  const r = (p: Partial<EvalResult>) =>
+    ({
+      id: '1',
+      name: 'x',
+      verdict: 'pass',
+      time: 0,
+      level: 'trace',
+      expectedTruncated: false,
+      raw: {},
+      ...p,
+    }) as EvalResult;
+
+  it('links the judged trace in a new tab without reaching the row', () => {
+    const onRow = jest.fn();
+    wrap(
+      <div onClick={onRow} role="presentation">
+        <TargetLink r={r({ traceId: 'abcdef0123456789' })} href="https://osd/x" />
+      </div>
+    );
+    const link = screen.getByTestId('agtEvlTarget-trace');
+    expect(link).toHaveAttribute('href', 'https://osd/x');
+    expect(link).toHaveAttribute('target', '_blank');
+    fireEvent.click(link);
+    expect(onRow).not.toHaveBeenCalled();
+  });
+
+  it('shows the target as text without a URL, and a dash without a target', () => {
+    const { unmount } = wrap(<TargetLink r={r({ level: 'session', conversationId: 'conv-1' })} />);
+    const el = screen.getByTestId('agtEvlTarget-session');
+    expect(el.tagName).toBe('SPAN');
+    expect(el).toHaveTextContent('Session');
+    unmount();
+    wrap(<TargetLink r={r({ level: 'trace' })} />);
+    expect(screen.queryByTestId(/^agtEvlTarget-/)).not.toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 });

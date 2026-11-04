@@ -153,7 +153,10 @@ export const buildAgentEvaluationsQuery = (
       F.value
     )}) as avg_score, min(${fld(F.time)}) as first, max(${fld(F.time)}) as last by ${fld(
       F.name
-    )}, ${fld(F.agentVersion)}, verdict, ${fld(F.label)}, ${fld(F.scoreDirection)}`,
+    )}, ${fld(F.agentVersion)}, verdict, ${fld(F.label)}, ${fld(F.scoreDirection)}${
+      // Offline: by run too, so each version can be read at its latest run.
+      source === 'offline' ? `, ${fld(F.runId)}` : ''
+    }`,
     head,
   ]);
 
@@ -197,6 +200,21 @@ export const buildSuiteRunsQuery = (index: string, suite: string): string =>
     `stats count() as n, min(${fld(F.time)}) as started by ${fld(F.runId)}, ${fld(
       F.agentName
     )}, ${fld(F.agentVersion)}, ${fld(F.ciUrl)}, verdict`,
+    head,
+  ]);
+
+/**
+ * Cases passed per run of a suite: a case passes when none of its results failed or errored.
+ * Two aggregations (per case, then per run): one row per run.
+ */
+export const buildSuiteRunCasesQuery = (index: string, suite: string): string =>
+  join([
+    ...base(index),
+    `where ${fld(F.suiteName)} = ${quote(suite)}`,
+    `eval bad = if(isnotnull(${fld(F.errorType)}) or ${fld(F.label)} = 'fail', 1, 0)`,
+    `stats sum(bad) as bad by ${fld(F.runId)}, ${fld(F.caseId)}`,
+    'eval ok = if(bad = 0, 1, 0)',
+    `stats count() as cases, sum(ok) as passed by ${fld(F.runId)}`,
     head,
   ]);
 
@@ -331,6 +349,14 @@ export const buildTraceSpansQuery = (spansIndex: string, traceIds: string[]): st
 /** Result documents of one or two traces (trace flyout, Compare traces). */
 export const buildTraceResultsQuery = (index: string, traceIds: string[]): string =>
   join([...base(index), `where ${anyOf(F.traceId, traceIds)}`, `head ${TRACE_RESULTS_LIMIT}`]);
+
+/** The session-level results of a session (`gen_ai.conversation.id`). */
+export const buildSessionResultsQuery = (index: string, conversationId: string): string =>
+  join([
+    ...base(index),
+    `where ${fld(F.conversationId)} = ${quote(conversationId)} and ${fld(F.level)} = 'session'`,
+    `head ${TRACE_RESULTS_LIMIT}`,
+  ]);
 
 /** Agent Traces table: a tally per trace (or per span) of the listed traces. */
 export const buildTracesTallyQuery = (index: string, traceIds: string[], bySpan = false): string =>

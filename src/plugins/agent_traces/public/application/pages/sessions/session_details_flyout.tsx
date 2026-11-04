@@ -40,6 +40,10 @@ import {
   copyTextFor,
 } from '../traces/flyout/message_content_view';
 import '../traces/flyout/message_content_view.scss';
+import { TraceResultFlyout } from '../traces/flyout/trace_evaluations';
+import { useSessionEvaluations } from '../traces/flyout/use_trace_evaluations';
+import { EvalResult, tallyOf } from '../../evaluations/eval_model';
+import { ResultRows, TallyCell } from '../../evaluations/eval_components';
 import {
   parseGenAiMessages,
   previewInputMessages,
@@ -206,6 +210,39 @@ const ConversationTurn: React.FC<{
     <EuiSpacer size="m" />
   </div>
 );
+
+/**
+ * The session's own evaluation results (`opensearch.gen_ai.evaluation.level` session, keyed by
+ * `gen_ai.conversation.id`); a result opens its flyout. Nothing shows without results.
+ */
+const SessionEvaluations: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+  const { results, error } = useSessionEvaluations(sessionId);
+  const [open, setOpen] = useState<EvalResult>();
+  if (!results.length && !error) return null;
+  return (
+    <div className="agtSessionFlyout__evaluations" data-test-subj="agentTracesSessionEvaluations">
+      <div className="agtSessionFlyout__panelHeader">
+        <EuiTitle size="xxs">
+          <h3>
+            {i18n.translate('agentTraces.sessions.flyout.evaluations', {
+              defaultMessage: 'Session evaluations ({count})',
+              values: { count: results.length },
+            })}
+          </h3>
+        </EuiTitle>
+        <TallyCell tally={tallyOf(results)} />
+      </div>
+      {error ? (
+        <EuiText size="xs" color="danger">
+          <p>{error}</p>
+        </EuiText>
+      ) : (
+        <ResultRows results={results} onOpen={setOpen} testId="agentTracesSessionEvalRows" />
+      )}
+      {open && <TraceResultFlyout result={open} onClose={() => setOpen(undefined)} />}
+    </div>
+  );
+};
 
 export const SessionDetailsFlyout: React.FC<SessionDetailsFlyoutProps> = ({
   session,
@@ -465,6 +502,7 @@ export const SessionDetailsFlyout: React.FC<SessionDetailsFlyoutProps> = ({
                   <LatencyAndTokens row={trace.root} />
                 </div>
               ))}
+              <SessionEvaluations sessionId={session.sessionId} />
             </EuiFlexItem>
 
             <EuiFlexItem grow={7} className="agtSessionFlyout__conversation">

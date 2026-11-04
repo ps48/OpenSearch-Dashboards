@@ -45,11 +45,17 @@ import { EvalContext, EvalScreenContext } from './eval_context';
 import { evalsDataset, evalsLookupDataset, spansDataset, usePplRows } from './use_ppl_rows';
 import { buildRunWindowQuery } from './eval_ppl';
 import { spansIndexOf, useEvalsDataset } from './eval_dataset';
-import { openSessionInAgentTraces, openTraceInAgentTraces } from './eval_links';
+import {
+  openSessionInAgentTraces,
+  openTraceInAgentTraces,
+  targetHref,
+  targetOf,
+} from './eval_links';
 import { EvalSettingsModal } from './eval_settings_modal';
 import { EvalHeader, EvalSettingsButton } from './eval_header';
 import { NoEvalsDatasetPrompt } from './eval_empty_states';
 import { QueryErrorCallout, agentLabel, shortId } from './eval_components';
+import { useEvalTimezone } from './eval_time';
 import { AgentsHome } from './agents_home';
 import { AgentPage } from './agent_page';
 import { SuitePage } from './suite_page';
@@ -297,6 +303,7 @@ const useRunWindow = (
 
 export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ params }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
+  useEvalTimezone(services.uiSettings);
   const { state, setState, navigate } = useAppState(params, services);
   const route = useEvalRoute(params.history);
   const time = useTimeRange(services);
@@ -321,6 +328,14 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     // Only a range change clears the slice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [time.time.from, time.time.to]);
+
+  const hrefOf = useCallback(
+    (r: EvalResult) => {
+      const target = targetOf(r);
+      return target ? targetHref(services.application, target, r.time) : undefined;
+    },
+    [services.application]
+  );
 
   const openTrace = useCallback(
     (traceId: string, aroundMs: number) =>
@@ -401,6 +416,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             navigate,
             openResult: setResult,
             openTrace,
+            hrefOf,
           }
         : undefined,
     [
@@ -416,6 +432,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
       setState,
       navigate,
       openTrace,
+      hrefOf,
     ]
   );
 
