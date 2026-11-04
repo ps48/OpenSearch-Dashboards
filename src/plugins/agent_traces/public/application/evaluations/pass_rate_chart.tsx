@@ -13,6 +13,7 @@ import {
   Position,
   ScaleType,
   Settings,
+  BrushEndListener,
   XYChartElementEvent,
 } from '@elastic/charts';
 import { i18n } from '@osd/i18n';
@@ -49,12 +50,26 @@ const useChartThemes = () => {
   return { chartsTheme: theme?.useChartsTheme(), baseTheme: theme?.useChartsBaseTheme() };
 };
 
+/** Drag across the chart to zoom: sets the global time range, as Discover's histogram does. */
+const useBrushToTime = (): BrushEndListener | undefined => {
+  const { services } = useOpenSearchDashboards<Partial<EvaluationsServices>>();
+  const timefilter = services?.data?.query.timefilter.timefilter;
+  if (!timefilter) return undefined;
+  return (event) => {
+    if (!('x' in event) || !event.x) return;
+    const [from, to] = event.x as [number, number];
+    if (!(to > from)) return;
+    timefilter.setTime({ from: new Date(from).toISOString(), to: new Date(to).toISOString() });
+  };
+};
+
 const toData = (points: ChartPoint[]) =>
   points.map((p) => ({ x: p.t, y: Math.round(p.rate * 100), label: p.label }));
 
 /**
  * Pass rate in percent over time: one line (or one per series, with a legend), optional dashed
  * markers, and points (one per run on a suite). `onPointClick`: a click on a point gives its x.
+ * Dragging across the chart sets the global time range to the selection.
  */
 export const PassRateChart: React.FC<{
   id: string;
@@ -82,6 +97,7 @@ export const PassRateChart: React.FC<{
   utc = false,
 }) => {
   const { chartsTheme, baseTheme } = useChartThemes();
+  const onBrushEnd = useBrushToTime();
   const lines: ChartSeries[] = series ?? [
     {
       id: 'rate',
@@ -113,6 +129,7 @@ export const PassRateChart: React.FC<{
                 }
               : undefined
           }
+          onBrushEnd={onBrushEnd}
           xDomain={Number.isFinite(min) && Number.isFinite(max) ? { min, max } : undefined}
         />
         <Axis
