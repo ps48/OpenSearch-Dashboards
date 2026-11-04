@@ -83,14 +83,14 @@ export const onlyIn = (spans: FlatSpan[], other: FlatSpan[]): Set<string> => {
 export const resultsOfSpan = (results: EvalResult[], span: FlatSpan, isRoot: boolean) =>
   results.filter((r) => (isSpanResult(r) ? r.spanId === span.spanId : isRoot));
 
-interface Side {
+export interface Side {
   traceId: string;
   spans: FlatSpan[];
   output?: string;
   results: EvalResult[];
 }
 
-const SpanList: React.FC<{ side: Side; only: Set<string> }> = ({ side, only }) => {
+export const SpanList: React.FC<{ side: Side; only: Set<string> }> = ({ side, only }) => {
   const root = side.spans[0];
   const t0 = root?.startMs ?? 0;
   const total = Math.max(1, root?.durationMs ?? 1);

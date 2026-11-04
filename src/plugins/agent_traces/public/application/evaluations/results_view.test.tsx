@@ -25,7 +25,7 @@ jest.mock('react-virtualized-auto-sizer', () => ({
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
   ...jest.requireActual('./use_ppl_rows'),
-  usePplRows: (...args: [unknown, string | undefined]) => mockPpl.hook(...args),
+  usePplRows: (...args: [unknown, string | undefined, unknown]) => mockPpl.hook(...args),
 }));
 
 const doc = (i: number, extra: Record<string, unknown> = {}) => ({
@@ -95,6 +95,51 @@ describe('ResultsView', () => {
     expect(screen.getByTestId('agtEvlChip-verdicts-fail')).toHaveTextContent('Verdict: Fail');
     fireEvent.click(screen.getByTestId('agtEvlClearChips'));
     expect(ctx.setState).toHaveBeenCalledWith({ results: { ...results, verdicts: [] } });
+  });
+
+  it('has a Version filter: values load on open, and it is pushed down', () => {
+    mockPpl.answer((q) =>
+      q.includes('sort - n') ? [{ n: 7, 'attributes.gen_ai.agent.version': 'v2' }, { n: 2 }] : []
+    );
+    const results = { ...EMPTY_RESULTS_FILTERS, versions: ['v1'] };
+    const ctx = testContext({ state: { ...testContext().state, results } });
+    renderWithContext(<ResultsView lockAgent="tp" />, ctx);
+    const filters = { ...results, lockAgent: 'tp' };
+    expect(mockPpl.queries).toContain(
+      buildResultsPageQuery(TEST_INDEX, filters, DEFAULT_RESULTS_SORT, 0)
+    );
+    expect(mockPpl.queries).toContain(buildResultsCountQuery(TEST_INDEX, filters));
+    expect(screen.getByTestId('agtEvlChip-versions-v1')).toHaveTextContent('Version: v1');
+    expect(mockPpl.queries).not.toContain(buildFacetQuery(TEST_INDEX, filters, 'versions'));
+    fireEvent.click(screen.getByTestId('agtEvlFacet-versions'));
+    expect(mockPpl.queries).toContain(buildFacetQuery(TEST_INDEX, filters, 'versions'));
+    const list = screen.getByTestId('agtEvlFacetList-versions');
+    expect(within(list).getByText('(no version)')).toBeInTheDocument();
+    fireEvent.click(within(list).getByText('v2'));
+    expect(ctx.setState).toHaveBeenCalledWith({ results: { ...results, versions: ['v2', 'v1'] } });
+  });
+
+  it('reads only a clicked chart slice, says so, and goes back to the range', () => {
+    const slice = { from: Date.UTC(2026, 9, 28, 3), to: Date.UTC(2026, 9, 28, 6) };
+    const results = { ...EMPTY_RESULTS_FILTERS, verdicts: ['fail'] };
+    const ctx = testContext({ state: { ...testContext().state, results, slice } });
+    renderWithContext(<ResultsView lockAgent="tp" />, ctx);
+    const page = buildResultsPageQuery(
+      TEST_INDEX,
+      { ...results, lockAgent: 'tp' },
+      DEFAULT_RESULTS_SORT,
+      0
+    );
+    expect(mockPpl.ranges.get(page)).toEqual({
+      from: '2026-10-28T03:00:00.000Z',
+      to: '2026-10-28T06:00:00.000Z',
+    });
+    expect(screen.getByTestId('agtEvlSliceCallout')).toHaveTextContent(
+      'Showing the slice you clicked on the chart:'
+    );
+    fireEvent.click(screen.getByTestId('agtEvlClearSlice'));
+    expect(screen.getByTestId('agtEvlClearSlice')).toHaveTextContent('Back to Last 7 days');
+    expect(ctx.setState).toHaveBeenCalledWith({ slice: undefined });
   });
 
   it('sorts and pages on the server', () => {

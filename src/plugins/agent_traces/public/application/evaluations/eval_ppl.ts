@@ -9,7 +9,11 @@
  * range is not part of the text: the PPL service adds the `@timestamp` bounds of the dataset.
  *
  * Aggregations end in `head 10000`; raw documents are read only for one page of results (25),
- * one expanded case (100) and one or two traces (200).
+ * one case (100), one or two root spans (1 / 2), one trace (200), the two traces of Compare
+ * traces (2000) and the failing trace ids of the Agent Traces filter (500).
+ *
+ * Attribute names follow OTel; OpenSearch gap fields mirror them under `opensearch.*`
+ * (`opensearch.gen_ai.evaluation.*`, `opensearch.test.case.*`).
  */
 
 export const EVAL_EVENT = 'gen_ai.evaluation.result';
@@ -34,11 +38,27 @@ export const F = {
   caseId: 'attributes.test.case.id',
   caseName: 'attributes.test.case.name',
   ciUrl: 'attributes.cicd.pipeline.run.url.full',
-  level: 'attributes.opensearch.evaluation.level',
-  evaluatorName: 'attributes.opensearch.evaluation.evaluator.name',
-  evaluatorType: 'attributes.opensearch.evaluation.evaluator.type',
-  scoreMin: 'attributes.opensearch.evaluation.score.min',
-  scoreMax: 'attributes.opensearch.evaluation.score.max',
+  level: 'attributes.opensearch.gen_ai.evaluation.level',
+  evaluatorName: 'attributes.opensearch.gen_ai.evaluation.evaluator.name',
+  evaluatorType: 'attributes.opensearch.gen_ai.evaluation.evaluator.type',
+  evaluatorVersion: 'attributes.opensearch.gen_ai.evaluation.evaluator.version',
+  scoreMin: 'attributes.opensearch.gen_ai.evaluation.score.min',
+  scoreMax: 'attributes.opensearch.gen_ai.evaluation.score.max',
+  scoreThreshold: 'attributes.opensearch.gen_ai.evaluation.score.threshold',
+  scoreDirection: 'attributes.opensearch.gen_ai.evaluation.score.direction',
+  judgeTraceId: 'attributes.opensearch.gen_ai.evaluation.judge.trace_id',
+  /** Expected output of a case (offline results only). */
+  caseExpected: 'attributes.opensearch.test.case.expected',
+  caseExpectedTruncated: 'attributes.opensearch.test.case.expected_truncated',
+} as const;
+
+/** Span fields, as PPL names them (the span index). */
+export const SF = {
+  traceId: 'traceId',
+  spanId: 'spanId',
+  parentSpanId: 'parentSpanId',
+  input: 'attributes.gen_ai.input.messages',
+  output: 'attributes.gen_ai.output.messages',
 } as const;
 
 export const AGG_LIMIT = 10000;
@@ -47,9 +67,11 @@ export const FACET_LIMIT = 50;
 export const CASE_RESULTS_LIMIT = 100;
 export const TRACE_RESULTS_LIMIT = 200;
 export const COMPARE_SPANS_LIMIT = 2000;
+export const FAILING_TRACES_LIMIT = 500;
 
-/** The agent key of results without `gen_ai.agent.name` (routes, filters). */
+/** The key of results without `gen_ai.agent.name` (routes, filters), or without a version. */
 export const NO_AGENT = '~none';
+export const NO_VERSION = NO_AGENT;
 
 /** Online results have no `test.suite.run.id`; offline results (suite runs) have one. */
 export type EvalSource = 'all' | 'online' | 'offline';
@@ -74,8 +96,11 @@ const sourceWhere = (source: EvalSource = 'all'): string[] =>
       ? [`where isnotnull(${fld(F.runId)})`]
       : [];
 
-const agentCond = (agent: string) =>
-  agent === NO_AGENT ? `isnull(${fld(F.agentName)})` : `${fld(F.agentName)} = ${quote(agent)}`;
+/** `field = value`, or `isnull(field)` for the no-value key. */
+const valueCond = (f: string, v: string) =>
+  v === NO_AGENT ? `isnull(${fld(f)})` : `${fld(f)} = ${quote(v)}`;
+
+const agentCond = (agent: string) => valueCond(F.agentName, agent);
 
 const agentWhere = (agent: string) => `where ${agentCond(agent)}`;
 
@@ -95,15 +120,22 @@ export const buildAgentsQuery = (index: string, source: EvalSource, q = ''): str
     ...sourceWhere(source),
     ...(q.trim() ? [like(F.agentName, q.trim())] : []),
     VERDICT_EVAL,
-    `stats count() as n, min(${fld(F.time)}) as first, max(${fld(F.time)}) as last by ${fld(
-      F.agentName
-    )}, ${fld(F.agentVersion)}, verdict`,
+    `stats count() as n, min(${fld(F.time)}) as first, max(${fld(F.time)}) as last by ${[
+      F.agentName,
+      F.agentVersion,
+      F.name,
+    ]
+      .map(fld)
+      .join(', ')}, verdict`,
     head,
   ]);
 
 // ---------------------------------------------------------------------- Agent page
 
-/** Evaluations tab table (and the page's version line): evaluations x versions x verdicts. */
+/**
+ * Evaluations tab table (and the page's version line): evaluations x versions x labels (pass and
+ * fail are labels too), with the average score for evaluations without a pass rule.
+ */
 export const buildAgentEvaluationsQuery = (
   index: string,
   agent: string,
@@ -114,13 +146,15 @@ export const buildAgentEvaluationsQuery = (
     agentWhere(agent),
     ...sourceWhere(source),
     VERDICT_EVAL,
-    `stats count() as n, min(${fld(F.time)}) as first, max(${fld(F.time)}) as last by ${fld(
+    `stats count() as n, count(${fld(F.value)}) as nv, avg(${fld(
+      F.value
+    )}) as avg_score, min(${fld(F.time)}) as first, max(${fld(F.time)}) as last by ${fld(
       F.name
-    )}, ${fld(F.agentVersion)}, verdict`,
+    )}, ${fld(F.agentVersion)}, verdict, ${fld(F.label)}, ${fld(F.scoreDirection)}`,
     head,
   ]);
 
-/** Pass rate over time: pass and fail per time bucket. */
+/** Pass rate over time: pass and fail per time bucket and version. */
 export const buildAgentTrendQuery = (
   index: string,
   agent: string,
@@ -133,7 +167,7 @@ export const buildAgentTrendQuery = (
     ...sourceWhere(source),
     VERDICT_EVAL,
     `where verdict = 'pass' or verdict = 'fail'`,
-    `stats count() as n by span(${fld(F.time)}, ${step}) as t, verdict`,
+    `stats count() as n by span(${fld(F.time)}, ${step}) as t, ${fld(F.agentVersion)}, verdict`,
     head,
   ]);
 
@@ -165,12 +199,26 @@ export const buildSuiteRunsQuery = (index: string, suite: string): string =>
 
 // ---------------------------------------------------------------------- Run page
 
-export const buildRunCasesQuery = (index: string, runId: string): string =>
+/** Every run in the range with its suite and start: finds the run before a run. */
+export const buildRunsLookupQuery = (index: string): string =>
   join([
     ...base(index),
-    `where ${fld(F.runId)} = ${quote(runId)}`,
+    `where isnotnull(${fld(F.runId)})`,
+    `stats min(${fld(F.time)}) as started by ${fld(F.suiteName)}, ${fld(F.runId)}`,
+    head,
+  ]);
+
+const runsWhere = (runIds: string[]) =>
+  runIds.map((id) => `${fld(F.runId)} = ${quote(id)}`).join(' or ');
+
+/** The cases of a run and of the run before it (when there is one), in one query. */
+export const buildRunCasesQuery = (index: string, runId: string, beforeId?: string): string =>
+  join([
+    ...base(index),
+    `where ${runsWhere(beforeId ? [runId, beforeId] : [runId])}`,
     VERDICT_EVAL,
     `stats count() as n, min(${fld(F.time)}) as t0, max(${fld(F.time)}) as t1 by ${[
+      F.runId,
       F.suiteName,
       F.agentName,
       F.agentVersion,
@@ -184,13 +232,20 @@ export const buildRunCasesQuery = (index: string, runId: string): string =>
     head,
   ]);
 
-/** One expanded case: its result documents. */
-export const buildCaseResultsQuery = (index: string, runId: string, caseId: string): string =>
-  join([
+/** One case: its result documents in one run, or in two (Compare runs, the result flyout). */
+export const buildCaseResultsQuery = (
+  index: string,
+  runIds: string | string[],
+  caseId: string
+): string => {
+  const ids = typeof runIds === 'string' ? [runIds] : runIds;
+  const runs = ids.length > 1 ? `(${runsWhere(ids)})` : runsWhere(ids);
+  return join([
     ...base(index),
-    `where ${fld(F.runId)} = ${quote(runId)} and ${fld(F.caseId)} = ${quote(caseId)}`,
+    `where ${runs} and ${fld(F.caseId)} = ${quote(caseId)}`,
     `head ${CASE_RESULTS_LIMIT}`,
   ]);
+};
 
 // ---------------------------------------------------------------------- Compare runs
 
@@ -211,6 +266,34 @@ export const buildCompareRunsQuery = (index: string, runA: string, runB: string)
       .map(fld)
       .join(', ')}, verdict, ${fld(F.traceId)}`,
     head,
+  ]);
+
+/** The root spans of one or two traces: their input and output messages. */
+export const buildRootSpansQuery = (spansIndex: string, traceIds: string[]): string => {
+  const ids = anyOf(SF.traceId, traceIds);
+  return join([
+    `source = ${spansIndex}`,
+    `where ${traceIds.length > 1 ? `(${ids})` : ids} and ${fld(SF.parentSpanId)} = ''`,
+    `fields ${[SF.traceId, SF.input, SF.output].map(fld).join(', ')}`,
+    `head ${traceIds.length}`,
+  ]);
+};
+
+/** One span (a span-level result's judged span), the whole document (tool fields included). */
+export const buildSpanQuery = (spansIndex: string, traceId: string, spanId: string): string =>
+  join([
+    `source = ${spansIndex}`,
+    `where ${fld(SF.traceId)} = ${quote(traceId)} and ${fld(SF.spanId)} = ${quote(spanId)}`,
+    'head 1',
+  ]);
+
+/** The spans of one trace (a judge trace), oldest first. */
+export const buildOneTraceSpansQuery = (spansIndex: string, traceId: string): string =>
+  join([
+    `source = ${spansIndex}`,
+    `where ${fld(SF.traceId)} = ${quote(traceId)}`,
+    'sort startTime',
+    `head ${TRACE_RESULTS_LIMIT}`,
   ]);
 
 /** Spans of up to two traces (Compare traces), from the span index. */
@@ -238,6 +321,17 @@ export const buildTracesTallyQuery = (index: string, traceIds: string[], bySpan 
     head,
   ]);
 
+/** "Has a failing evaluation": the most recent failing traces in the range. */
+export const buildFailingTracesQuery = (index: string): string =>
+  join([
+    ...base(index),
+    VERDICT_EVAL,
+    `where verdict = 'fail'`,
+    `stats max(${fld(F.time)}) as last by ${fld(F.traceId)}`,
+    'sort - last',
+    `head ${FAILING_TRACES_LIMIT}`,
+  ]);
+
 // ---------------------------------------------------------------------- Results
 
 export type ResultsSortField = 'time' | 'agent' | 'evaluation' | 'score';
@@ -254,13 +348,15 @@ const SORT_FIELD: Record<ResultsSortField, string> = {
   score: F.value,
 };
 
-export type Facet = 'agents' | 'names' | 'verdicts';
+export type Facet = 'agents' | 'names' | 'versions' | 'verdicts';
+export const FACETS: Facet[] = ['agents', 'names', 'versions', 'verdicts'];
 
 export interface ResultsFilters {
   /** The agent page locks the view to one agent. */
   lockAgent?: string;
   agents: string[];
   names: string[];
+  versions: string[];
   verdicts: string[];
   source: EvalSource;
   /** Search in explanations. */
@@ -270,6 +366,7 @@ export interface ResultsFilters {
 export const EMPTY_RESULTS_FILTERS: ResultsFilters = {
   agents: [],
   names: [],
+  versions: [],
   verdicts: [],
   source: 'all',
   q: '',
@@ -282,6 +379,8 @@ const resultsWhere = (f: ResultsFilters, except?: Facet): string[] => {
   else if (f.agents.length && except !== 'agents')
     out.push(`where ${f.agents.map(agentCond).join(' or ')}`);
   if (f.names.length && except !== 'names') out.push(`where ${anyOf(F.name, f.names)}`);
+  if (f.versions.length && except !== 'versions')
+    out.push(`where ${f.versions.map((v) => valueCond(F.agentVersion, v)).join(' or ')}`);
   out.push(...sourceWhere(f.source));
   if (f.q.trim()) out.push(like(F.explanation, f.q.trim()));
   return out;
@@ -318,7 +417,14 @@ export const buildResultsCountQuery = (index: string, filters: ResultsFilters): 
 
 /** A filter menu's values (top 50 with counts), with the other filters applied. */
 export const buildFacetQuery = (index: string, filters: ResultsFilters, facet: Facet): string => {
-  const by = facet === 'agents' ? fld(F.agentName) : facet === 'names' ? fld(F.name) : 'verdict';
+  const by =
+    facet === 'agents'
+      ? fld(F.agentName)
+      : facet === 'names'
+        ? fld(F.name)
+        : facet === 'versions'
+          ? fld(F.agentVersion)
+          : 'verdict';
   return join([
     ...base(index),
     ...resultsWhere(filters, facet),

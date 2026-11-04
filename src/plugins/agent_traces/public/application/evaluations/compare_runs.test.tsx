@@ -5,9 +5,14 @@
 
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
-import { CompareRuns } from './compare_runs';
+import { CompareRuns, filterCompareCases } from './compare_runs';
 import { TEST_INDEX, fakePpl, renderWithContext } from './eval_test_utils';
-import { buildCompareRunsQuery, buildSuiteRunsQuery } from './eval_ppl';
+import {
+  buildCaseResultsQuery,
+  buildCompareRunsQuery,
+  buildRootSpansQuery,
+  buildSuiteRunsQuery,
+} from './eval_ppl';
 
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
@@ -38,44 +43,120 @@ const row = (run: string, caseId: string, name: string, verdict: string) => ({
   traceId: `${run}-${caseId}`,
 });
 
+const IN = 'attributes.gen_ai.input.messages';
+const OUT = 'attributes.gen_ai.output.messages';
+const msg = (role: string, content: string) =>
+  JSON.stringify([{ role, parts: [{ type: 'text', content }] }]);
+const doc = (run: string, caseId: string, name: string, label: string, why: string) => ({
+  '@timestamp': '2026-10-28 07:00:01',
+  traceId: `${run}-${caseId}`,
+  attributes: {
+    gen_ai: { evaluation: { name, score: { label }, explanation: why } },
+    test: { suite: { run: { id: run } }, case: { id: caseId } },
+    opensearch: { test: { case: { expected: 'Paris, with flights' } } },
+  },
+});
+
 describe('CompareRuns', () => {
   beforeEach(() => {
     mockPpl.reset();
     mockFlyout.mockClear();
-    mockPpl.answer((q) =>
-      q.includes(' or ')
-        ? [
-            row(A, 'c1', 'accuracy', 'pass'),
-            row(A, 'c2', 'accuracy', 'fail'),
-            row(A, 'c3', 'accuracy', 'pass'),
-            row(B, 'c1', 'accuracy', 'fail'),
-            row(B, 'c2', 'accuracy', 'pass'),
-            row(B, 'c3', 'accuracy', 'pass'),
-          ]
-        : [
-            {
-              n: 1,
-              started: '2026-10-25 07:00:00',
-              'attributes.test.suite.run.id': 'run_x_zzzz9999',
-              verdict: 'pass',
-            },
-          ]
-    );
+    mockPpl.answer((q) => {
+      if (q.includes('`parentSpanId`'))
+        return [
+          {
+            traceId: `${A}-c1`,
+            [IN]: msg('user', 'Capital of France?'),
+            [OUT]: msg('assistant', 'Paris'),
+          },
+          { traceId: `${B}-c1`, [OUT]: msg('assistant', 'Lyon') },
+        ];
+      if (q.endsWith('head 100'))
+        return [
+          doc(A, 'c1', 'accuracy', 'pass', 'Right city'),
+          doc(B, 'c1', 'accuracy', 'fail', 'Wrong city'),
+          doc(B, 'c1', 'tone', 'pass', 'Polite'),
+        ];
+      if (q.includes(' or '))
+        return [
+          row(A, 'c1', 'accuracy', 'pass'),
+          row(A, 'c2', 'accuracy', 'fail'),
+          row(A, 'c3', 'accuracy', 'pass'),
+          row(B, 'c1', 'accuracy', 'fail'),
+          row(B, 'c2', 'accuracy', 'pass'),
+          row(B, 'c3', 'accuracy', 'pass'),
+          row(B, 'c4', 'accuracy', 'pass'),
+        ];
+      return [
+        {
+          n: 1,
+          started: '2026-10-25 07:00:00',
+          'attributes.test.suite.run.id': 'run_x_zzzz9999',
+          verdict: 'pass',
+        },
+      ];
+    });
   });
 
   it('runs one aggregation over both runs and shows changed cases first', () => {
     renderWithContext(<CompareRuns runA={A} runB={B} />);
     expect(new Set(mockPpl.queries)).toEqual(new Set([buildCompareRunsQuery(TEST_INDEX, A, B)]));
     expect(screen.getByTestId('agtEvlRunCard-Run A')).toHaveTextContent('2 / 3 cases passed');
-    expect(screen.getByTestId('agtEvlRunCard-Run B')).toHaveTextContent('67% result pass rate');
+    expect(screen.getByTestId('agtEvlRunCard-Run B')).toHaveTextContent('75% result pass rate');
     const cases = screen.getByTestId('agtEvlCompareCases');
     expect(within(cases).getByText('Regressed')).toBeInTheDocument();
     expect(within(cases).getByText('Fixed')).toBeInTheDocument();
+    expect(within(cases).getByText('Only in B')).toBeInTheDocument();
+    expect(within(cases).getByText('Not in run')).toBeInTheDocument();
     expect(within(cases).queryByText('Case c3')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('agtEvlAllCases'));
+    fireEvent.click(screen.getByTestId('agtEvlCaseFilter-all'));
     expect(within(cases).getByText('Case c3')).toBeInTheDocument();
     expect(within(cases).getByText('Same')).toBeInTheDocument();
     expect(screen.getAllByText('Run A · v1').length).toBeGreaterThan(0);
+  });
+
+  it('filters Changed, Regressed, Fixed, Only in one run and All, with counts', () => {
+    renderWithContext(<CompareRuns runA={A} runB={B} />);
+    expect(screen.getByTestId('agtEvlCaseFilter-changed')).toHaveTextContent('3');
+    expect(screen.getByTestId('agtEvlCaseFilter-regressed')).toHaveTextContent('1');
+    expect(screen.getByTestId('agtEvlCaseFilter-fixed')).toHaveTextContent('1');
+    expect(screen.getByTestId('agtEvlCaseFilter-only')).toHaveTextContent('1');
+    expect(screen.getByTestId('agtEvlCaseFilter-all')).toHaveTextContent('4');
+    fireEvent.click(screen.getByTestId('agtEvlCaseFilter-regressed'));
+    const cases = screen.getByTestId('agtEvlCompareCases');
+    expect(within(cases).getByText('Case c1')).toBeInTheDocument();
+    expect(within(cases).queryByText('Case c2')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agtEvlCaseFilter-only'));
+    expect(within(cases).getByText('Case c4')).toBeInTheDocument();
+    expect(within(cases).queryByText('Case c1')).not.toBeInTheDocument();
+    // Only in one run is offered only when some case is.
+    expect(filterCompareCases([], 'only')).toEqual([]);
+  });
+
+  it('shows n with each evaluation change', () => {
+    renderWithContext(<CompareRuns runA={A} runB={B} />);
+    expect(screen.getByTestId('agtEvlCompareEvaluations')).toHaveTextContent('n 4/3');
+  });
+
+  it('expands a case: input, expected, both outputs with failing explanations', () => {
+    renderWithContext(<CompareRuns runA={A} runB={B} />);
+    fireEvent.click(screen.getByTestId('agtEvlCompareRow-c1'));
+    expect(mockPpl.queries).toContain(buildCaseResultsQuery(TEST_INDEX, [A, B], 'c1'));
+    expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', [`${A}-c1`, `${B}-c1`]));
+    const detail = screen.getByTestId('agtEvlCompareCase-c1');
+    expect(within(detail).getByTestId('agtEvlCompareInput')).toHaveTextContent(
+      'Capital of France?'
+    );
+    expect(within(detail).getByTestId('agtEvlCompareExpected')).toHaveTextContent(
+      'Paris, with flights'
+    );
+    expect(within(detail).getByTestId('agtEvlCompareOutputA')).toHaveTextContent('Paris');
+    expect(within(detail).getByTestId('agtEvlCompareOutputB')).toHaveTextContent('Lyon');
+    expect(detail).toHaveTextContent('No failing results');
+    expect(detail).toHaveTextContent('Wrong city');
+    expect(detail).not.toHaveTextContent('Polite');
+    fireEvent.click(within(detail).getByTestId('agtEvlCompareTracesDetail-c1'));
+    expect(mockFlyout).toHaveBeenCalledWith(expect.objectContaining({ caseId: 'c1' }));
   });
 
   it('opens Compare traces for a case', () => {

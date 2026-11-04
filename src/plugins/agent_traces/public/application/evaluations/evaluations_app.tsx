@@ -17,6 +17,7 @@ import {
   EuiTab,
   EuiTabs,
   OnTimeChangeProps,
+  prettyDuration,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
@@ -272,6 +273,18 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
   // A new screen closes the result flyout.
   useEffect(() => setResult(undefined), [route]);
 
+  // A new range drops the chart slice (the slice belongs to the range it was clicked in).
+  const firstTime = useRef(true);
+  useEffect(() => {
+    if (firstTime.current) {
+      firstTime.current = false;
+      return;
+    }
+    if (state.slice) setState({ slice: undefined });
+    // Only a range change clears the slice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [time.time.from, time.time.to]);
+
   const openTrace = useCallback(
     (traceId: string, aroundMs: number) =>
       openTraceInAgentTraces(services.application, traceId, aroundMs),
@@ -308,6 +321,17 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     [services.uiSettings]
   );
 
+  const rangeLabel = useMemo(
+    () =>
+      prettyDuration(
+        time.time.from,
+        time.time.to,
+        quickRanges,
+        services.uiSettings.get('dateFormat')
+      ),
+    [time.time.from, time.time.to, quickRanges, services.uiSettings]
+  );
+
   const context = useMemo<EvalScreenContext | undefined>(
     () =>
       config
@@ -317,6 +341,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             index: config.index,
             timeRange: time.timeRange,
             rangeMs: time.rangeMs,
+            rangeLabel,
             refreshKey: time.refreshKey,
             state,
             setState,
@@ -325,7 +350,17 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             openTrace,
           }
         : undefined,
-    [config, time.timeRange, time.rangeMs, time.refreshKey, state, setState, navigate, openTrace]
+    [
+      config,
+      time.timeRange,
+      time.rangeMs,
+      rangeLabel,
+      time.refreshKey,
+      state,
+      setState,
+      navigate,
+      openTrace,
+    ]
   );
 
   const settingsButton = (
@@ -357,8 +392,10 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
         <EvalScreen route={route} />
         {result && (
           <ResultFlyout
+            key={result.id}
             result={result}
             onClose={() => setResult(undefined)}
+            onOpenResult={setResult}
             links={{
               openTrace,
               openSuite: (suite) => navigate({ page: 'suite', suite }),

@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Criteria,
   EuiBadge,
+  EuiCallOut,
   EuiBasicTable,
   EuiBasicTableColumn,
   EuiButtonEmpty,
@@ -29,6 +30,7 @@ import { EvalResult, Verdict, facetValues, num, recordsToResults } from './eval_
 import {
   DEFAULT_RESULTS_SORT,
   F,
+  FACETS,
   Facet,
   RESULTS_PAGE_SIZE,
   ResultsFilters,
@@ -50,25 +52,33 @@ import {
   VerdictBadge,
   VersionBadge,
   agentLabel,
-  formatScore,
   formatTime,
+  scoreOrLabel,
   shortId,
+  sliceLabel,
+  versionLabel,
 } from './eval_components';
 
 const FACET_LABEL: Record<Facet, string> = {
   agents: i18n.translate('agentTraces.evals.results.agent', { defaultMessage: 'Agent' }),
   names: i18n.translate('agentTraces.evals.results.evaluation', { defaultMessage: 'Evaluation' }),
+  versions: i18n.translate('agentTraces.evals.results.version', { defaultMessage: 'Version' }),
   verdicts: i18n.translate('agentTraces.evals.results.verdict', { defaultMessage: 'Verdict' }),
 };
 
 const FACET_KEY: Record<Facet, string> = {
   agents: F.agentName,
   names: F.name,
+  versions: F.agentVersion,
   verdicts: 'verdict',
 };
 
 const valueLabel = (facet: Facet, value: string) =>
-  facet === 'verdicts' ? (VERDICT_LABEL[value as Verdict] ?? value) : agentLabel(value);
+  facet === 'verdicts'
+    ? (VERDICT_LABEL[value as Verdict] ?? value)
+    : facet === 'versions'
+      ? versionLabel(value)
+      : agentLabel(value);
 
 /** A filter menu: its values load only while it is open. */
 const FacetFilter: React.FC<{
@@ -77,7 +87,7 @@ const FacetFilter: React.FC<{
   selected: string[];
   onChange: (values: string[]) => void;
 }> = ({ facet, filters, selected, onChange }) => {
-  const { dataset, index, timeRange, refreshKey } = useEvalContext();
+  const { dataset, index, timeRange, refreshKey } = useSliceContext();
   const [open, setOpen] = useState(false);
   const query = open ? buildFacetQuery(index, filters, facet) : undefined;
   const { rows, loading, error } = usePplRows(dataset, query, timeRange, refreshKey);
@@ -139,11 +149,26 @@ const FacetFilter: React.FC<{
 };
 
 const facetPatch = (facet: Facet, values: string[]): Partial<ResultsFilters> =>
-  facet === 'agents'
-    ? { agents: values }
-    : facet === 'names'
-      ? { names: values }
-      : { verdicts: values };
+  ({ [facet]: values }) as Partial<ResultsFilters>;
+
+/** The screen's context, with the time range narrowed to a clicked chart slice when one is set. */
+const useSliceContext = () => {
+  const ctx = useEvalContext();
+  const { slice } = ctx.state;
+  return useMemo(
+    () =>
+      slice
+        ? {
+            ...ctx,
+            timeRange: {
+              from: new Date(slice.from).toISOString(),
+              to: new Date(slice.to).toISOString(),
+            },
+          }
+        : ctx,
+    [ctx, slice]
+  );
+};
 
 const SORT_OF_COLUMN: Record<string, ResultsSortField> = {
   time: 'time',
@@ -163,8 +188,17 @@ const COLUMN_OF_SORT: Record<ResultsSortField, keyof EvalResult> = {
  * total from `stats count()`. `lockAgent`: the agent page's Results tab.
  */
 export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => {
-  const { dataset, index, timeRange, refreshKey, state, setState, navigate, openResult } =
-    useEvalContext();
+  const {
+    dataset,
+    index,
+    timeRange,
+    rangeLabel,
+    refreshKey,
+    state,
+    setState,
+    navigate,
+    openResult,
+  } = useSliceContext();
   const stored = state.results;
   const [search, setSearch] = useState(stored.q);
   const q = useDebounced(search);
@@ -190,9 +224,9 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
   const results = useMemo(() => recordsToResults(page.rows), [page.rows]);
   const total = num(count.rows[0]?.total) ?? 0;
 
-  const chips: Array<{ facet: Facet; value: string }> = (['agents', 'names', 'verdicts'] as Facet[])
-    .filter((f) => !(lockAgent && f === 'agents'))
-    .flatMap((facet) => filters[facet].map((value) => ({ facet, value })));
+  const chips: Array<{ facet: Facet; value: string }> = FACETS.filter(
+    (f) => !(lockAgent && f === 'agents')
+  ).flatMap((facet) => filters[facet].map((value) => ({ facet, value })));
 
   const columns: Array<EuiBasicTableColumn<EvalResult>> = [
     {
@@ -233,7 +267,7 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
       name: i18n.translate('agentTraces.evals.results.score', { defaultMessage: 'Score' }),
       sortable: true,
       align: 'right',
-      render: (v?: number) => <span className="agtEvlMono">{formatScore(v)}</span>,
+      render: (_: unknown, r: EvalResult) => <span className="agtEvlMono">{scoreOrLabel(r)}</span>,
     },
     {
       field: 'explanation',
@@ -287,17 +321,15 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
       <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false} wrap>
         <EuiFlexItem grow={false}>
           <EuiFilterGroup>
-            {(['agents', 'names', 'verdicts'] as Facet[])
-              .filter((f) => !(lockAgent && f === 'agents'))
-              .map((facet) => (
-                <FacetFilter
-                  key={facet}
-                  facet={facet}
-                  filters={filters}
-                  selected={filters[facet]}
-                  onChange={(values) => update(facetPatch(facet, values))}
-                />
-              ))}
+            {FACETS.filter((f) => !(lockAgent && f === 'agents')).map((facet) => (
+              <FacetFilter
+                key={facet}
+                facet={facet}
+                filters={filters}
+                selected={filters[facet]}
+                onChange={(values) => update(facetPatch(facet, values))}
+              />
+            ))}
           </EuiFilterGroup>
         </EuiFlexItem>
         <EuiFlexItem grow={false}>
@@ -347,13 +379,41 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
             <EuiFlexItem grow={false}>
               <EuiButtonEmpty
                 size="xs"
-                onClick={() => update({ agents: [], names: [], verdicts: [] })}
+                onClick={() => update({ agents: [], names: [], versions: [], verdicts: [] })}
                 data-test-subj="agtEvlClearChips"
               >
                 {i18n.translate('agentTraces.evals.results.clear', { defaultMessage: 'Clear' })}
               </EuiButtonEmpty>
             </EuiFlexItem>
           </EuiFlexGroup>
+        </>
+      )}
+      {state.slice && (
+        <>
+          <EuiSpacer size="s" />
+          <EuiCallOut size="s" iconType="visLine" data-test-subj="agtEvlSliceCallout">
+            <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+              <EuiFlexItem>
+                <span>
+                  {i18n.translate('agentTraces.evals.results.slice', {
+                    defaultMessage: 'Showing the slice you clicked on the chart:',
+                  })}{' '}
+                  <strong>{sliceLabel(state.slice.from, state.slice.to)}</strong>
+                </span>
+              </EuiFlexItem>
+              <EuiFlexItem grow={false}>
+                <EuiLink
+                  onClick={() => setState({ slice: undefined })}
+                  data-test-subj="agtEvlClearSlice"
+                >
+                  {i18n.translate('agentTraces.evals.results.sliceBack', {
+                    defaultMessage: 'Back to {range}',
+                    values: { range: rangeLabel },
+                  })}
+                </EuiLink>
+              </EuiFlexItem>
+            </EuiFlexGroup>
+          </EuiCallOut>
         </>
       )}
       <EuiSpacer size="m" />

@@ -9,6 +9,7 @@ import {
   EuiButtonEmpty,
   EuiCallOut,
   EuiCode,
+  EuiCodeBlock,
   EuiEmptyPrompt,
   EuiFlexGroup,
   EuiFlexItem,
@@ -24,6 +25,64 @@ import { euiThemeVars } from '@osd/ui-shared-deps/theme';
 export const AGENT_EVALS_DOCS_URL = 'https://observability.opensearch.org/docs/agent-evals/';
 export const AI_OBSERVABILITY_DOCS_URL =
   'https://observability.opensearch.org/docs/ai-observability/';
+export const EVALS_QUICKSTART_URL = `${AGENT_EVALS_DOCS_URL}quickstart/`;
+export const EVALS_CI_URL = `${AGENT_EVALS_DOCS_URL}ci/`;
+export const EVALS_AGENTCORE_URL = `${AGENT_EVALS_DOCS_URL}agentcore/`;
+
+export const SDK_SNIPPET = `pip install opensearch-genai-observability-sdk-py
+
+from opensearch_genai_observability_sdk_py import register, score
+register(agent_name="travel_planner", agent_version="v3")
+score(name="answer_quality", value=4, score_min=1, score_max=5,
+      threshold=4, explanation="Used the tool results.")`;
+
+/** The Agents home with no results in the range: how to send them (SDK snippet, links). */
+export const AgentsEmptyState: React.FC<{ range: string }> = ({ range }) => (
+  <div className="agtEvlSnippet" data-test-subj="agtEvlAgentsEmpty">
+    <EuiText size="s" textAlign="left">
+      <h3>
+        {i18n.translate('agentTraces.evalsEmpty.agentsTitle', {
+          defaultMessage: 'No evaluation results in {range}',
+          values: { range: range.charAt(0).toLowerCase() + range.slice(1) },
+        })}
+      </h3>
+      <p className="agtEvlDim">
+        {i18n.translate('agentTraces.evalsEmpty.agentsBody', {
+          defaultMessage:
+            'Results appear here a few seconds after your code sends them. With the OpenSearch GenAI SDK:',
+        })}
+      </p>
+    </EuiText>
+    <EuiCodeBlock language="python" fontSize="s" paddingSize="s" isCopyable>
+      {SDK_SNIPPET}
+    </EuiCodeBlock>
+    <EuiSpacer size="s" />
+    <EuiText size="s" textAlign="left">
+      <p>
+        <FormattedMessage
+          id="agentTraces.evalsEmpty.agentsProducers"
+          defaultMessage="Any OpenTelemetry producer works: send {event} log events."
+          values={{ event: <EuiCode>gen_ai.evaluation.result</EuiCode> }}
+        />{' '}
+        <EuiLink href={EVALS_QUICKSTART_URL} target="_blank" data-test-subj="agtEvlQuickstart">
+          {i18n.translate('agentTraces.evalsEmpty.quickstart', { defaultMessage: 'Quickstart' })}
+        </EuiLink>
+        {' · '}
+        <EuiLink href={EVALS_CI_URL} target="_blank" data-test-subj="agtEvlSuiteInCi">
+          {i18n.translate('agentTraces.evalsEmpty.suiteInCi', {
+            defaultMessage: 'Run a suite in CI',
+          })}
+        </EuiLink>
+        {' · '}
+        <EuiLink href={EVALS_AGENTCORE_URL} target="_blank" data-test-subj="agtEvlImportAgentCore">
+          {i18n.translate('agentTraces.evalsEmpty.importAgentCore', {
+            defaultMessage: 'Import AgentCore evaluations',
+          })}
+        </EuiLink>
+      </p>
+    </EuiText>
+  </div>
+);
 
 /**
  * A small picture of what the page shows: a trace's steps, each with a pass or fail grade, and

@@ -101,6 +101,20 @@ export interface EvalAppState {
   agentSource: EvalSource;
   /** Results view filters (the agent page locks the agent itself). */
   results: Omit<ResultsFilters, 'lockAgent'>;
+  /** Agent page: the two versions compared (B against A), remembered per agent. */
+  versionPick?: Record<string, VersionPick>;
+  /** A chart point's time bucket (epoch ms): the Results view reads only this slice. */
+  slice?: TimeSlice;
+}
+
+export interface VersionPick {
+  b?: string;
+  a?: string;
+}
+
+export interface TimeSlice {
+  from: number;
+  to: number;
 }
 
 export const DEFAULT_APP_STATE: EvalAppState = {
@@ -114,6 +128,24 @@ const source = (v: unknown): EvalSource =>
   SOURCES.includes(v as EvalSource) ? (v as EvalSource) : 'all';
 const strings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
+const optString = (v: unknown) => (typeof v === 'string' ? v : undefined);
+
+const versionPicks = (v: unknown): Record<string, VersionPick> | undefined => {
+  if (!v || typeof v !== 'object') return undefined;
+  const out: Record<string, VersionPick> = {};
+  Object.entries(v as Record<string, unknown>).forEach(([agent, pick]) => {
+    if (!pick || typeof pick !== 'object') return;
+    const p = pick as Record<string, unknown>;
+    out[agent] = { b: optString(p.b), a: optString(p.a) };
+  });
+  return Object.keys(out).length ? out : undefined;
+};
+
+const timeSlice = (v: unknown): TimeSlice | undefined => {
+  if (!v || typeof v !== 'object') return undefined;
+  const { from, to } = v as Record<string, unknown>;
+  return typeof from === 'number' && typeof to === 'number' && to > from ? { from, to } : undefined;
+};
 
 export const normalizeAppState = (raw: unknown): EvalAppState => {
   if (!raw || typeof raw !== 'object') return DEFAULT_APP_STATE;
@@ -128,9 +160,12 @@ export const normalizeAppState = (raw: unknown): EvalAppState => {
     results: {
       agents: strings(res.agents),
       names: strings(res.names),
+      versions: strings(res.versions),
       verdicts: strings(res.verdicts),
       source: source(res.source),
       q: typeof res.q === 'string' ? res.q : '',
     },
+    versionPick: versionPicks(r.versionPick),
+    slice: timeSlice(r.slice),
   };
 };

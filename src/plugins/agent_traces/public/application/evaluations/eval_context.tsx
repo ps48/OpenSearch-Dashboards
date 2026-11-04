@@ -17,6 +17,8 @@ export interface EvalScreenContext {
   /** Absolute ISO bounds of the global range, resolved again on Refresh. */
   timeRange: TimeRange;
   rangeMs: number;
+  /** The global range in words ("Last 7 days"). */
+  rangeLabel: string;
   refreshKey: number;
   state: EvalAppState;
   setState: (patch: Partial<EvalAppState>) => void;
@@ -33,11 +35,12 @@ export const defaultEvalContext = (index: string, spansIndex: string): EvalScree
   index,
   timeRange: { from: 'now-7d', to: 'now' },
   rangeMs: 7 * 24 * 3600e3,
+  rangeLabel: 'Last 7 days',
   refreshKey: 0,
   state: {
     agentsSource: 'all',
     agentSource: 'all',
-    results: { agents: [], names: [], verdicts: [], source: 'all', q: '' },
+    results: { agents: [], names: [], versions: [], verdicts: [], source: 'all', q: '' },
   },
   setState: noop,
   navigate: noop,

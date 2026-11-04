@@ -52,7 +52,26 @@ describe('evaluation routes', () => {
     ).toEqual({
       agentsSource: 'online',
       agentSource: 'all',
-      results: { agents: [], names: ['a'], verdicts: ['fail'], source: 'offline', q: 'x' },
+      results: {
+        agents: [],
+        names: ['a'],
+        versions: [],
+        verdicts: ['fail'],
+        source: 'offline',
+        q: 'x',
+      },
     });
+  });
+
+  it('keeps the version pair per agent and a valid chart slice', () => {
+    const s = normalizeAppState({
+      results: { versions: ['v2', 7] },
+      versionPick: { tp: { b: 'v3', a: 'v2' }, bad: 'x' },
+      slice: { from: 10, to: 20 },
+    });
+    expect(s.results.versions).toEqual(['v2']);
+    expect(s.versionPick).toEqual({ tp: { b: 'v3', a: 'v2' } });
+    expect(s.slice).toEqual({ from: 10, to: 20 });
+    expect(normalizeAppState({ slice: { from: 20, to: 10 } }).slice).toBeUndefined();
   });
 });

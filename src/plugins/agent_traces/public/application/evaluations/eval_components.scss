@@ -71,6 +71,41 @@
   &--flat {
     color: $euiTextSubduedColor;
   }
+
+  &__n {
+    margin-left: $euiSizeXS;
+  }
+}
+
+.agtEvlLiveDot {
+  display: inline-block;
+  width: $euiSizeS;
+  height: $euiSizeS;
+  margin-right: $euiSizeXS;
+  border-radius: 50%;
+  background: $euiColorSuccess;
+  vertical-align: middle;
+}
+
+.agtEvlVersionBadge {
+  margin: 0 $euiSizeXS $euiSizeXS 0;
+
+  &--low {
+    opacity: 0.6;
+  }
+}
+
+.agtEvlIO {
+  &__label {
+    margin: $euiSizeS 0 $euiSizeXS;
+    font-weight: $euiFontWeightSemiBold;
+  }
+}
+
+.agtEvlSnippet {
+  max-width: $euiSizeXXL * 14;
+  margin: 0 auto;
+  padding: $euiSizeL $euiSize;
 }
 
 .agtEvlTally {

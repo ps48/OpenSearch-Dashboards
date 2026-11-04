@@ -50,7 +50,7 @@ describe('Agent Traces evaluation marks', () => {
       traceId: 't1',
       spanId: 's2',
       attributes: {
-        opensearch: { evaluation: { level: 'trace' } },
+        opensearch: { gen_ai: { evaluation: { level: 'trace' } } },
         gen_ai: { evaluation: { name: 'c' } },
       },
     });

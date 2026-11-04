@@ -7,6 +7,7 @@ import {
   DEFAULT_RESULTS_SORT,
   EMPTY_RESULTS_FILTERS,
   NO_AGENT,
+  NO_VERSION,
   buildAgentEvaluationsQuery,
   buildAgentSuitesQuery,
   buildAgentTrendQuery,
@@ -14,6 +15,11 @@ import {
   buildCaseResultsQuery,
   buildCompareRunsQuery,
   buildFacetQuery,
+  buildFailingTracesQuery,
+  buildOneTraceSpansQuery,
+  buildRootSpansQuery,
+  buildRunsLookupQuery,
+  buildSpanQuery,
   buildResultsCountQuery,
   buildResultsPageQuery,
   buildRunCasesQuery,
@@ -32,14 +38,19 @@ const VERD =
   "`attributes.gen_ai.evaluation.score.label` = 'pass', 'pass', " +
   "`attributes.gen_ai.evaluation.score.label` = 'fail', 'fail' else 'scored')";
 
+const EVALS_STATS =
+  'stats count() as n, count(`attributes.gen_ai.evaluation.score.value`) as nv, avg(`attributes.gen_ai.evaluation.score.value`) as avg_score, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict, `attributes.gen_ai.evaluation.score.label`, `attributes.opensearch.gen_ai.evaluation.score.direction`';
+const RUN_STATS =
+  'stats count() as n, min(`@timestamp`) as t0, max(`@timestamp`) as t1 by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.cicd.pipeline.run.url.full`, `attributes.test.case.id`, `attributes.test.case.name`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`';
+
 /** The exact PPL of every screen (each was run on a cluster with the P0 data contract). */
 describe('evaluation PPL', () => {
-  it('Agents: one aggregation by agent, version and verdict', () => {
+  it('Agents: one aggregation by agent, version, evaluation and verdict', () => {
     expect(buildAgentsQuery(I, 'all')).toBe(
       [
         ...BASE,
         VERD,
-        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict',
+        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.gen_ai.evaluation.name`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -52,19 +63,19 @@ describe('evaluation PPL', () => {
         'where isnull(`attributes.test.suite.run.id`)',
         "where like(`attributes.gen_ai.agent.name`, '%o\\'brien%')",
         VERD,
-        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict',
+        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.gen_ai.evaluation.name`, verdict',
         'head 10000',
       ].join(' | ')
     );
   });
 
-  it('Agent, Evaluations table: by evaluation, version and verdict', () => {
+  it('Agent, Evaluations table: by evaluation, version, verdict, label and direction', () => {
     expect(buildAgentEvaluationsQuery(I, 'travel_planner', 'all')).toBe(
       [
         ...BASE,
         "where `attributes.gen_ai.agent.name` = 'travel_planner'",
         VERD,
-        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict',
+        EVALS_STATS,
         'head 10000',
       ].join(' | ')
     );
@@ -77,13 +88,13 @@ describe('evaluation PPL', () => {
         'where isnull(`attributes.gen_ai.agent.name`)',
         'where isnotnull(`attributes.test.suite.run.id`)',
         VERD,
-        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict',
+        EVALS_STATS,
         'head 10000',
       ].join(' | ')
     );
   });
 
-  it('Agent, Pass rate over time: pass and fail per bucket', () => {
+  it('Agent, Pass rate over time: pass and fail per bucket and version', () => {
     expect(buildAgentTrendQuery(I, 'travel_planner', 'online', '3h')).toBe(
       [
         ...BASE,
@@ -91,7 +102,7 @@ describe('evaluation PPL', () => {
         'where isnull(`attributes.test.suite.run.id`)',
         VERD,
         "where verdict = 'pass' or verdict = 'fail'",
-        'stats count() as n by span(`@timestamp`, 3h) as t, verdict',
+        'stats count() as n by span(`@timestamp`, 3h) as t, `attributes.gen_ai.agent.version`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -122,14 +133,88 @@ describe('evaluation PPL', () => {
     );
   });
 
-  it('Run: by case, evaluation, verdict and trace', () => {
+  it('Run: by run, case, evaluation, verdict and trace (no run before)', () => {
     expect(buildRunCasesQuery(I, 'run_1')).toBe(
       [
         ...BASE,
         "where `attributes.test.suite.run.id` = 'run_1'",
         VERD,
-        'stats count() as n, min(`@timestamp`) as t0, max(`@timestamp`) as t1 by `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.cicd.pipeline.run.url.full`, `attributes.test.case.id`, `attributes.test.case.name`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`',
+        RUN_STATS,
         'head 10000',
+      ].join(' | ')
+    );
+  });
+
+  it('Run: one query reads the run and the run before', () => {
+    expect(buildRunCasesQuery(I, 'run_2', 'run_1')).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'run_2' or `attributes.test.suite.run.id` = 'run_1'",
+        VERD,
+        RUN_STATS,
+        'head 10000',
+      ].join(' | ')
+    );
+  });
+
+  it('Run: the runs in the range, to find the run before', () => {
+    expect(buildRunsLookupQuery(I)).toBe(
+      [
+        ...BASE,
+        'where isnotnull(`attributes.test.suite.run.id`)',
+        'stats min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.test.suite.run.id`',
+        'head 10000',
+      ].join(' | ')
+    );
+  });
+
+  it('Compare runs, result flyout: one case in two runs', () => {
+    expect(buildCaseResultsQuery(I, ['run_a', 'run_b'], 'c-1')).toBe(
+      [
+        ...BASE,
+        "where (`attributes.test.suite.run.id` = 'run_a' or `attributes.test.suite.run.id` = 'run_b') and `attributes.test.case.id` = 'c-1'",
+        'head 100',
+      ].join(' | ')
+    );
+  });
+
+  it('Root spans: input and output of one or two traces', () => {
+    expect(buildRootSpansQuery('spans-*', ['t1'])).toBe(
+      [
+        'source = spans-*',
+        "where `traceId` = 't1' and `parentSpanId` = ''",
+        'fields `traceId`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
+        'head 1',
+      ].join(' | ')
+    );
+    expect(buildRootSpansQuery('spans-*', ['t1', 't2'])).toBe(
+      [
+        'source = spans-*',
+        "where (`traceId` = 't1' or `traceId` = 't2') and `parentSpanId` = ''",
+        'fields `traceId`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
+        'head 2',
+      ].join(' | ')
+    );
+  });
+
+  it('Result flyout: the judged span, and the judge trace', () => {
+    expect(buildSpanQuery('spans-*', 't1', 's1')).toBe(
+      "source = spans-* | where `traceId` = 't1' and `spanId` = 's1' | head 1"
+    );
+    expect(buildOneTraceSpansQuery('spans-*', 'j1')).toBe(
+      "source = spans-* | where `traceId` = 'j1' | sort startTime | head 200"
+    );
+  });
+
+  it('Agent Traces filter: at most the 500 most recent failing traces', () => {
+    expect(buildFailingTracesQuery(I)).toBe(
+      [
+        ...BASE,
+        VERD,
+        "where verdict = 'fail'",
+        'stats max(`@timestamp`) as last by `traceId`',
+        'sort - last',
+        'head 500',
       ].join(' | ')
     );
   });
@@ -281,6 +366,44 @@ describe('evaluation PPL', () => {
         "where `attributes.gen_ai.evaluation.name` = 'x'",
         VERD,
         'stats count() as n by verdict',
+        'sort - n',
+        'head 50',
+      ].join(' | ')
+    );
+  });
+
+  it('Results: Version filter pushed down (no version: isnull)', () => {
+    expect(
+      buildResultsPageQuery(
+        I,
+        { ...NONE, lockAgent: 'a1', versions: ['v2', NO_VERSION], verdicts: ['fail'] },
+        DEFAULT_RESULTS_SORT,
+        0
+      )
+    ).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'a1'",
+        "where `attributes.gen_ai.agent.version` = 'v2' or isnull(`attributes.gen_ai.agent.version`)",
+        VERD,
+        "where verdict = 'fail'",
+        'sort - `@timestamp`',
+        'head 25 from 0',
+      ].join(' | ')
+    );
+    expect(buildResultsCountQuery(I, { ...NONE, versions: ['v2'] })).toBe(
+      [...BASE, "where `attributes.gen_ai.agent.version` = 'v2'", 'stats count() as total'].join(
+        ' | '
+      )
+    );
+  });
+
+  it('Results: Version menu values (own filter left out)', () => {
+    expect(buildFacetQuery(I, { ...NONE, lockAgent: 'a1', versions: ['v2'] }, 'versions')).toBe(
+      [
+        ...BASE,
+        "where `attributes.gen_ai.agent.name` = 'a1'",
+        'stats count() as n by `attributes.gen_ai.agent.version`',
         'sort - n',
         'head 50',
       ].join(' | ')

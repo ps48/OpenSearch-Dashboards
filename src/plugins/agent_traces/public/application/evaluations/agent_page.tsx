@@ -7,11 +7,14 @@ import React, { useMemo } from 'react';
 import {
   EuiBadge,
   EuiBasicTableColumn,
+  EuiFlexGroup,
+  EuiFlexItem,
   EuiInMemoryTable,
   EuiLink,
   EuiLoadingChart,
   EuiNotificationBadge,
   EuiPanel,
+  EuiSelect,
   EuiSpacer,
   EuiTab,
   EuiTabs,
@@ -22,14 +25,21 @@ import {
 import { i18n } from '@osd/i18n';
 import {
   AgentEvaluations,
+  EvalStat,
   EvaluationRow,
   SuiteRow,
+  VersionStat,
   agentEvaluations,
   agentSuites,
-  trendPoints,
-  versionMarkers,
+  defaultVersionPair,
+  evaluationRows,
+  isLive,
+  rateDelta,
+  trendSeries,
+  versionKey,
 } from './eval_model';
 import {
+  NO_VERSION,
   buildAgentEvaluationsQuery,
   buildAgentSuitesQuery,
   buildAgentTrendQuery,
@@ -37,20 +47,21 @@ import {
 } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
-import { AgentTab } from './eval_routes';
+import { AgentTab, EvalAppState, TimeSlice } from './eval_routes';
 import { ResultsView } from './results_view';
 import { PassRateChart } from './pass_rate_chart';
 import {
   DASH,
   DeltaCell,
+  LiveDot,
   MetaItem,
   PassRateCell,
   QueryErrorCallout,
   SourceFilter,
   VersionBadge,
-  formatDay,
   formatTime,
   pct,
+  versionLabel,
 } from './eval_components';
 
 const TAB_LABEL: Record<AgentTab, string> = {
@@ -61,27 +72,28 @@ const TAB_LABEL: Record<AgentTab, string> = {
   results: i18n.translate('agentTraces.evals.agent.tabResults', { defaultMessage: 'Results' }),
 };
 
-const AgentMeta: React.FC<{ data: AgentEvaluations }> = ({ data: { summary } }) =>
-  summary ? (
+const AgentMeta: React.FC<{ data: AgentEvaluations }> = ({ data: { summary } }) => {
+  if (!summary) return null;
+  const live = summary.versions.filter((v) => isLive(v));
+  return (
     <div className="agtEvlMeta" data-test-subj="agtEvlAgentMeta">
       <MetaItem
-        label={i18n.translate('agentTraces.evals.agent.latestVersion', {
-          defaultMessage: 'Latest version',
-        })}
+        label={i18n.translate('agentTraces.evals.agent.versions', { defaultMessage: 'Versions' })}
       >
-        <VersionBadge version={summary.latest.version} />{' '}
-        {i18n.translate('agentTraces.evals.agent.since', {
-          defaultMessage: 'since {day}',
-          values: { day: formatDay(summary.latest.first) },
-        })}
+        {summary.versions.map((v) => (
+          <EuiBadge key={v.version ?? ''} color="default">
+            {isLive(v) && <LiveDot />}
+            {versionLabel(v.version)}
+          </EuiBadge>
+        ))}
+        {live.length > 1 && (
+          <EuiBadge color="accent" data-test-subj="agtEvlRunningTogether">
+            {i18n.translate('agentTraces.evals.agent.runningTogether', {
+              defaultMessage: 'running together',
+            })}
+          </EuiBadge>
+        )}
       </MetaItem>
-      {summary.previous && (
-        <MetaItem
-          label={i18n.translate('agentTraces.evals.agent.previous', { defaultMessage: 'Previous' })}
-        >
-          <VersionBadge version={summary.previous.version} />
-        </MetaItem>
-      )}
       <MetaItem
         label={i18n.translate('agentTraces.evals.agent.results', { defaultMessage: 'Results' })}
       >
@@ -95,7 +107,122 @@ const AgentMeta: React.FC<{ data: AgentEvaluations }> = ({ data: { summary } }) 
         {formatTime(summary.last)}
       </MetaItem>
     </div>
-  ) : null;
+  );
+};
+
+/** A version's value for one evaluation: pass rate, else average score, else top label. */
+const ScoreText: React.FC<{ stat?: EvalStat }> = ({ stat }) => {
+  if (!stat) return <span className="agtEvlDim">{DASH}</span>;
+  if (stat.hasPassRule) return <PassRateCell rate={stat.rate} />;
+  if (stat.avg !== undefined)
+    return (
+      <EuiToolTip
+        content={i18n.translate('agentTraces.evals.agent.avgTip', {
+          defaultMessage: 'Average score of {n} results',
+          values: { n: stat.nv.toLocaleString() },
+        })}
+      >
+        <span>
+          {i18n.translate('agentTraces.evals.agent.avg', { defaultMessage: 'avg' })}{' '}
+          <strong>{stat.avg.toFixed(2)}</strong>
+        </span>
+      </EuiToolTip>
+    );
+  if (stat.top)
+    return (
+      <EuiToolTip
+        content={i18n.translate('agentTraces.evals.agent.topLabelTip', {
+          defaultMessage: 'Most common label',
+        })}
+      >
+        <span>
+          {stat.top.label} <strong>{pct(stat.top.share)}</strong>
+        </span>
+      </EuiToolTip>
+    );
+  return <span className="agtEvlDim">{DASH}</span>;
+};
+
+/** Change, B against A: pass rate points, average score (direction-aware) or top label share. */
+const ChangeCell: React.FC<{ row: EvaluationRow }> = ({ row: { a, b, hasPassRule } }) => {
+  if (!a || !b) return <span className="agtEvlDim">{DASH}</span>;
+  if (hasPassRule)
+    return (
+      <DeltaCell
+        delta={rateDelta(a.rate, b.rate)}
+        na={a.tally.pass + a.tally.fail}
+        nb={b.tally.pass + b.tally.fail}
+      />
+    );
+  if (a.avg !== undefined && b.avg !== undefined)
+    return <DeltaCell delta={b.avg - a.avg} score={{ direction: b.direction ?? a.direction }} />;
+  if (a.top && b.top && a.top.label === b.top.label) {
+    const d = Math.round((b.top.share - a.top.share) * 100);
+    return (
+      <span className="agtEvlDelta agtEvlDelta--flat">
+        {i18n.translate('agentTraces.evals.agent.labelChange', {
+          defaultMessage: '{sign}{points} pts {label}',
+          values: {
+            sign: d > 0 ? '+' : d < 0 ? '-' : '±',
+            points: Math.abs(d),
+            label: b.top.label,
+          },
+        })}
+      </span>
+    );
+  }
+  return <span className="agtEvlDim">{DASH}</span>;
+};
+
+/** "Compare <B> with <A>": any two versions of the agent. */
+const VersionPicker: React.FC<{
+  versions: VersionStat[];
+  b?: string;
+  a?: string;
+  onChange: (pick: { b?: string; a?: string }) => void;
+}> = ({ versions, b, a, onChange }) => {
+  const options = versions.map((v) => ({ value: versionKey(v), text: versionLabel(v.version) }));
+  return (
+    <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+      <EuiFlexItem grow={false}>
+        <EuiText size="xs" color="subdued">
+          {i18n.translate('agentTraces.evals.agent.compare', { defaultMessage: 'Compare' })}
+        </EuiText>
+      </EuiFlexItem>
+      <EuiFlexItem grow={false}>
+        <EuiSelect
+          compressed
+          options={options}
+          value={b ?? ''}
+          onChange={(e) => onChange({ b: e.target.value, a: a === e.target.value ? undefined : a })}
+          aria-label={i18n.translate('agentTraces.evals.agent.versionB', {
+            defaultMessage: 'Version B',
+          })}
+          data-test-subj="agtEvlVersionB"
+        />
+      </EuiFlexItem>
+      <EuiFlexItem grow={false}>
+        <EuiText size="xs" color="subdued">
+          {i18n.translate('agentTraces.evals.agent.with', { defaultMessage: 'with' })}
+        </EuiText>
+      </EuiFlexItem>
+      <EuiFlexItem grow={false}>
+        <EuiSelect
+          compressed
+          options={options.filter((o) => o.value !== b)}
+          value={a ?? ''}
+          hasNoInitialSelection={a === undefined}
+          disabled={options.length < 2}
+          onChange={(e) => onChange({ b, a: e.target.value })}
+          aria-label={i18n.translate('agentTraces.evals.agent.versionA', {
+            defaultMessage: 'Version A',
+          })}
+          data-test-subj="agtEvlVersionA"
+        />
+      </EuiFlexItem>
+    </EuiFlexGroup>
+  );
+};
 
 const SectionTitle: React.FC<{ title: string; count?: number; sub?: string }> = ({
   title,
@@ -130,7 +257,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
     timeRange,
     refreshKey
   );
-  const { step } = trendStep(rangeMs);
+  const { step, ms: stepMs } = trendStep(rangeMs);
   const trend = usePplRows(
     dataset,
     buildAgentTrendQuery(index, agent, source, step),
@@ -138,9 +265,22 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
     refreshKey
   );
   const data = useMemo(() => agentEvaluations(agent, table.rows), [agent, table.rows]);
-  const points = useMemo(() => trendPoints(trend.rows), [trend.rows]);
-  const latest = data.summary?.latest.version;
-  const previous = data.summary?.previous;
+  const series = useMemo(() => trendSeries(trend.rows), [trend.rows]);
+  const picked = state.versionPick?.[agent];
+  const { b, a } = defaultVersionPair(data.versions, picked);
+  const rows = useMemo(() => evaluationRows(data.versions, b, a), [data.versions, b, a]);
+  const vb = data.versions.find((v) => versionKey(v) === b);
+  const va = data.versions.find((v) => versionKey(v) === a);
+  const labelB = vb ? versionLabel(vb.version) : DASH;
+  const labelA = va ? versionLabel(va.version) : DASH;
+
+  const pick = (next: { b?: string; a?: string }) =>
+    setState({ versionPick: { ...state.versionPick, [agent]: next } });
+
+  const resultsPatch = (patch: Partial<EvalAppState['results']>, slice?: TimeSlice) => ({
+    results: { ...state.results, names: [], versions: [], verdicts: [], ...patch },
+    slice,
+  });
 
   const columns: Array<EuiBasicTableColumn<EvaluationRow>> = [
     {
@@ -157,13 +297,18 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
               {' '}
               <EuiToolTip
                 content={i18n.translate('agentTraces.evals.agent.noPassRuleTip', {
-                  defaultMessage: 'The producer sets no pass rule: results only carry a score.',
+                  defaultMessage:
+                    'The producer sets no pass rule: the table shows the average score or the most common label.',
                 })}
               >
                 <EuiBadge color="hollow" data-test-subj="agtEvlNoPassRule">
-                  {i18n.translate('agentTraces.evals.agent.noPassRule', {
-                    defaultMessage: 'No pass rule',
-                  })}
+                  {(r.b ?? r.a)?.top && (r.b ?? r.a)?.avg === undefined
+                    ? i18n.translate('agentTraces.evals.agent.labelOnly', {
+                        defaultMessage: 'Label',
+                      })
+                    : i18n.translate('agentTraces.evals.agent.scoreOnly', {
+                        defaultMessage: 'Score only',
+                      })}
                 </EuiBadge>
               </EuiToolTip>
             </>
@@ -172,42 +317,35 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
       ),
     },
     {
-      field: 'latestRate',
-      name: i18n.translate('agentTraces.evals.agent.passRateVersion', {
-        defaultMessage: 'Pass rate · {version}',
-        values: { version: latest ?? DASH },
-      }),
+      field: 'b',
+      name: labelB,
       align: 'right',
-      sortable: (r: EvaluationRow) => r.latestRate ?? -1,
-      render: (rate?: number) => <PassRateCell rate={rate} />,
+      sortable: (r: EvaluationRow) => (r.hasPassRule ? r.b?.rate : r.b?.avg) ?? -1,
+      render: (_: unknown, r: EvaluationRow) => <ScoreText stat={r.b} />,
     },
-    ...(previous
-      ? ([
-          {
-            field: 'previousRate',
-            name: i18n.translate('agentTraces.evals.agent.passRateVersion', {
-              defaultMessage: 'Pass rate · {version}',
-              values: { version: previous.version ?? DASH },
-            }),
-            align: 'right',
-            sortable: (r: EvaluationRow) => r.previousRate ?? -1,
-            render: (rate?: number) => <span>{pct(rate)}</span>,
-          },
-          {
-            field: 'delta',
-            name: i18n.translate('agentTraces.evals.agent.change', { defaultMessage: 'Change' }),
-            align: 'right',
-            sortable: (r: EvaluationRow) => r.delta ?? Number.POSITIVE_INFINITY,
-            render: (delta?: number) => <DeltaCell delta={delta} />,
-          },
-        ] as Array<EuiBasicTableColumn<EvaluationRow>>)
-      : []),
+    {
+      field: 'a',
+      name: labelA,
+      align: 'right',
+      sortable: (r: EvaluationRow) => (r.hasPassRule ? r.a?.rate : r.a?.avg) ?? -1,
+      render: (_: unknown, r: EvaluationRow) => <ScoreText stat={r.a} />,
+    },
+    {
+      field: 'delta',
+      name: i18n.translate('agentTraces.evals.agent.change', { defaultMessage: 'Change' }),
+      align: 'right',
+      sortable: (r: EvaluationRow) => r.delta ?? Number.POSITIVE_INFINITY,
+      render: (_: unknown, r: EvaluationRow) => <ChangeCell row={r} />,
+    },
     {
       field: 'n',
-      name: i18n.translate('agentTraces.evals.agent.resultsCol', { defaultMessage: 'Results' }),
+      name: i18n.translate('agentTraces.evals.agent.resultsB', {
+        defaultMessage: 'Results · {version}',
+        values: { version: labelB },
+      }),
       align: 'right',
-      sortable: true,
-      render: (n: number) => n.toLocaleString(),
+      sortable: (r: EvaluationRow) => r.b?.tally.n ?? 0,
+      render: (_: unknown, r: EvaluationRow) => (r.b?.tally.n ?? 0).toLocaleString(),
     },
   ];
 
@@ -217,6 +355,12 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
       : source === 'offline'
         ? i18n.translate('agentTraces.evals.agent.offline', { defaultMessage: 'Offline' })
         : i18n.translate('agentTraces.evals.agent.all', { defaultMessage: 'All' });
+
+  const onPoint = (t: number) =>
+    navigate(
+      { page: 'agent', agent, tab: 'results' },
+      resultsPatch({ verdicts: ['fail'] }, { from: t, to: t + stepMs })
+    );
 
   return (
     <>
@@ -230,19 +374,23 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
           })}
           sub={i18n.translate('agentTraces.evals.agent.trendSub', {
             defaultMessage:
-              '{source} results of every evaluation, per {step}. A dashed line marks the first result of a version.',
+              '{source} results with a pass rule, one line per version (top 5), per {step}. Click a point to see the results of that slice.',
             values: { source: sourceWord, step },
           })}
         />
         {trend.error ? (
           <QueryErrorCallout message={trend.error} />
-        ) : trend.loading && !points.length ? (
+        ) : trend.loading && !series.length ? (
           <EuiLoadingChart size="l" />
-        ) : points.length ? (
+        ) : series.length ? (
           <PassRateChart
             id="agentTrend"
-            points={points}
-            markers={versionMarkers(data.summary?.versions ?? [])}
+            series={series.map((s) => ({
+              id: s.version ?? NO_VERSION,
+              name: versionLabel(s.version),
+              points: s.points,
+            }))}
+            onPointClick={onPoint}
           />
         ) : (
           <EuiText size="s" color="subdued">
@@ -256,34 +404,44 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
       </EuiPanel>
       <EuiSpacer size="m" />
       <EuiPanel paddingSize="m" hasShadow={false} hasBorder>
-        <SectionTitle
-          title={TAB_LABEL.evaluations}
-          count={data.rows.length}
-          sub={i18n.translate('agentTraces.evals.agent.evalsSub', {
-            defaultMessage:
-              'Latest version against the one before it. Click an evaluation to see its results.',
-          })}
-        />
+        <EuiFlexGroup alignItems="flexStart" responsive={false}>
+          <EuiFlexItem>
+            <SectionTitle
+              title={TAB_LABEL.evaluations}
+              count={rows.length}
+              sub={i18n.translate('agentTraces.evals.agent.evalsSub', {
+                defaultMessage:
+                  'Sorted by change, worst first. Click an evaluation to see its failing results for {version}. Evaluations without a pass rule show their average score or most common label.',
+                values: { version: labelB },
+              })}
+            />
+          </EuiFlexItem>
+          {data.versions.length > 0 && (
+            <EuiFlexItem grow={false}>
+              <VersionPicker versions={data.versions} b={b} a={a} onChange={pick} />
+            </EuiFlexItem>
+          )}
+        </EuiFlexGroup>
         {table.error ? (
           <QueryErrorCallout message={table.error} />
         ) : (
           <EuiInMemoryTable<EvaluationRow>
-            items={data.rows}
+            items={rows}
             itemId="name"
             columns={columns}
             loading={table.loading}
-            sorting={{
-              sort: previous
-                ? { field: 'delta', direction: 'asc' }
-                : { field: 'name', direction: 'asc' },
-            }}
+            sorting={{ sort: { field: 'delta', direction: 'asc' } }}
             pagination={{ initialPageSize: 20, pageSizeOptions: [20, 50] }}
             rowProps={(r: EvaluationRow) => ({
               className: 'agtEvlClickRow',
               onClick: () =>
                 navigate(
                   { page: 'agent', agent, tab: 'results' },
-                  { results: { ...state.results, names: [r.name] } }
+                  resultsPatch({
+                    names: [r.name],
+                    versions: b === undefined ? [] : [b || NO_VERSION],
+                    verdicts: r.hasPassRule ? ['fail'] : [],
+                  })
                 ),
               'data-test-subj': `agtEvlEvalRow-${r.name}`,
             })}
@@ -421,7 +579,7 @@ export const AgentPage: React.FC<{ agent: string; tab: AgentTab }> = ({ agent, t
           <EuiTab
             key={t}
             isSelected={tab === t}
-            onClick={() => navigate({ page: 'agent', agent, tab: t })}
+            onClick={() => navigate({ page: 'agent', agent, tab: t }, { slice: undefined })}
             data-test-subj={`agtEvlAgentTab-${t}`}
           >
             {TAB_LABEL[t]}

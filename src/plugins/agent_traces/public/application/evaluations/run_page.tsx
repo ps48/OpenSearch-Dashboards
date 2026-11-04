@@ -7,6 +7,7 @@ import React, { useMemo, useState } from 'react';
 import {
   EuiBadge,
   EuiBasicTableColumn,
+  EuiButton,
   EuiButtonEmpty,
   EuiButtonIcon,
   EuiContextMenuItem,
@@ -29,30 +30,44 @@ import {
   EuiTitle,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { CaseRow, CaseStatus, recordsToResults, runDetail, suiteRuns } from './eval_model';
+import {
+  CaseRow,
+  CaseStatus,
+  recordsToResults,
+  runBefore,
+  runDetail,
+  suiteRuns,
+} from './eval_model';
 import {
   NO_AGENT,
   buildCaseResultsQuery,
   buildRunCasesQuery,
+  buildRunsLookupQuery,
   buildSuiteRunsQuery,
 } from './eval_ppl';
-import { useEvalContext } from './eval_context';
-import { usePplRows } from './use_ppl_rows';
-import { CiLink, compareOrder } from './suite_page';
+import { useRootSpans } from './eval_spans';
 import {
   DASH,
+  EXPECTED_LABEL,
+  INPUT_LABEL,
+  IOBlock,
   MetaItem,
+  OUTPUT_LABEL,
   QueryErrorCallout,
   TallyCell,
   VerdictBadge,
   VersionBadge,
   agentLabel,
+  expectedNote,
+  expectedOf,
   formatDuration,
-  formatScore,
   formatTime,
-  pct,
+  scoreOrLabel,
   shortId,
 } from './eval_components';
+import { useEvalContext } from './eval_context';
+import { usePplRows } from './use_ppl_rows';
+import { CiLink, compareOrder } from './suite_page';
 
 type StatusFilter = 'all' | CaseStatus;
 
@@ -68,35 +83,77 @@ export const filterCases = (cases: CaseRow[], status: StatusFilter, q: string): 
   );
 };
 
-/** An expanded case: its results, read when it opens. */
-const CaseResults: React.FC<{ runId: string; caseId: string }> = ({ runId, caseId }) => {
+/**
+ * An expanded case: its input, expected output and output (one root-span query), and its
+ * results (one query), read when it opens.
+ */
+const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, caseRow }) => {
   const { dataset, index, timeRange, refreshKey, openResult } = useEvalContext();
+  const { caseId } = caseRow;
   const { rows, loading, error } = usePplRows(
     dataset,
     buildCaseResultsQuery(index, runId, caseId),
     timeRange,
     refreshKey
   );
+  const root = useRootSpans([caseRow.traceId]);
   const results = useMemo(
     () => recordsToResults(rows).sort((a, b) => a.name.localeCompare(b.name)),
     [rows]
   );
+  const io = caseRow.traceId ? root.byTrace.get(caseRow.traceId) : undefined;
+  const expected = expectedOf(results);
   if (error) return <QueryErrorCallout message={error} />;
   if (loading && !results.length) return <EuiLoadingContent lines={2} />;
   return (
     <div className="agtEvlCaseResults" data-test-subj={`agtEvlCaseResults-${caseId}`}>
+      <EuiFlexGroup gutterSize="m" responsive={false}>
+        <EuiFlexItem>
+          <IOBlock label={INPUT_LABEL} text={io?.input} testId="agtEvlCaseInput" />
+          <IOBlock
+            label={EXPECTED_LABEL}
+            note={expectedNote(expected.truncated)}
+            text={expected.text}
+            testId="agtEvlCaseExpected"
+          />
+        </EuiFlexItem>
+        <EuiFlexItem>
+          <IOBlock label={OUTPUT_LABEL} text={io?.output} testId="agtEvlCaseOutput" />
+        </EuiFlexItem>
+      </EuiFlexGroup>
+      <EuiText size="xs" className="agtEvlIO__label">
+        <span>
+          {i18n.translate('agentTraces.evals.run.caseResults', { defaultMessage: 'Results' })}
+        </span>
+      </EuiText>
       {results.map((r) => (
         <div className="agtEvlCaseResults__row" key={r.id}>
           <EuiLink onClick={() => openResult(r)}>{r.name}</EuiLink>
           <span>
             <VerdictBadge verdict={r.verdict} />
           </span>
-          <span className="agtEvlMono">{formatScore(r.value)}</span>
+          <span className="agtEvlMono">{scoreOrLabel(r)}</span>
           <span className="agtEvlDim">{r.explanation ?? r.errorType ?? DASH}</span>
         </div>
       ))}
     </div>
   );
+};
+
+/** The run before a run (same suite, started last before it), from the runs in the range. */
+export const useRunBefore = (runId?: string) => {
+  const { dataset, index, timeRange, refreshKey } = useEvalContext();
+  const lookup = usePplRows(
+    dataset,
+    runId ? buildRunsLookupQuery(index) : undefined,
+    timeRange,
+    refreshKey
+  );
+  const before = useMemo(
+    () => (runId ? runBefore(lookup.rows, runId) : undefined),
+    [lookup.rows, runId]
+  );
+  return { before, loaded: lookup.loaded, error: lookup.error };
 };
 
 /** "Compare with…": the suite's other runs, read when the menu opens. */
@@ -177,21 +234,51 @@ const CompareWithMenu: React.FC<{ runId: string; suite?: string; started: number
   );
 };
 
-/** A run: its header, figures and cases (expand a case for its results). */
+/** A run figure, with the run before's value under it. */
+const RunStat: React.FC<{
+  title: string;
+  label: string;
+  was?: string;
+  line?: string;
+  testId: string;
+}> = ({ title, label, was, line, testId }) => (
+  <EuiFlexItem grow={false}>
+    <EuiPanel paddingSize="s" hasShadow={false} hasBorder data-test-subj={testId}>
+      <EuiStat titleSize="s" title={title} description={label} />
+      {(was !== undefined || line) && (
+        <EuiText size="xs" color="subdued">
+          <p>
+            {was !== undefined
+              ? i18n.translate('agentTraces.evals.run.was', {
+                  defaultMessage: 'was {value} in the run before',
+                  values: { value: was },
+                })
+              : line}
+          </p>
+        </EuiText>
+      )}
+    </EuiPanel>
+  </EuiFlexItem>
+);
+
+/** A run: its header, figures (against the run before) and cases (expand a case). */
 export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
   const { dataset, index, timeRange, refreshKey, navigate, openTrace } = useEvalContext();
+  const lookup = useRunBefore(runId);
+  const beforeId = lookup.before?.runId;
   const { rows, loading, loaded, error } = usePplRows(
     dataset,
-    buildRunCasesQuery(index, runId),
+    lookup.loaded ? buildRunCasesQuery(index, runId, beforeId) : undefined,
     timeRange,
     refreshKey
   );
   const run = useMemo(() => runDetail(runId, rows), [runId, rows]);
+  const prev = useMemo(() => (beforeId ? runDetail(beforeId, rows) : undefined), [beforeId, rows]);
   const [status, setStatus] = useState<StatusFilter>('all');
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  if (error) return <QueryErrorCallout message={error} />;
+  if (error || lookup.error) return <QueryErrorCallout message={error ?? lookup.error ?? ''} />;
   if (!run) {
     return loading || !loaded ? (
       <EuiLoadingContent lines={6} />
@@ -213,7 +300,7 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
   const expandedMap = Object.fromEntries(
     shown
       .filter((c) => expanded[c.caseId])
-      .map((c) => [c.caseId, <CaseResults runId={runId} caseId={c.caseId} />])
+      .map((c) => [c.caseId, <CaseDetail runId={runId} caseRow={c} />])
   );
 
   const columns: Array<EuiBasicTableColumn<CaseRow>> = [
@@ -363,55 +450,64 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
             </span>
           </div>
         </EuiFlexItem>
+        {beforeId && (
+          <EuiFlexItem grow={false}>
+            <EuiButton
+              size="s"
+              fill
+              onClick={() => navigate({ page: 'compare', runA: beforeId, runB: runId })}
+              data-test-subj="agtEvlCompareRunBefore"
+            >
+              {i18n.translate('agentTraces.evals.run.compareRunBefore', {
+                defaultMessage: 'Compare with run before',
+              })}
+            </EuiButton>
+          </EuiFlexItem>
+        )}
         <EuiFlexItem grow={false}>
           <CompareWithMenu runId={runId} suite={run.suite} started={run.started} />
         </EuiFlexItem>
       </EuiFlexGroup>
       <EuiFlexGroup gutterSize="m" responsive={false} wrap data-test-subj="agtEvlRunStats">
-        <EuiFlexItem grow={false}>
-          <EuiPanel paddingSize="s" hasShadow={false} hasBorder>
-            <EuiStat
-              titleSize="s"
-              title={`${passed} / ${cases.length}`}
-              description={i18n.translate('agentTraces.evals.run.casesPassed', {
-                defaultMessage: 'Cases passed',
-              })}
-            />
-          </EuiPanel>
-        </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiPanel paddingSize="s" hasShadow={false} hasBorder>
-            <EuiStat
-              titleSize="s"
-              title={pct(run.rate)}
-              description={i18n.translate('agentTraces.evals.run.resultPassRate', {
-                defaultMessage: 'Result pass rate',
-              })}
-            />
-          </EuiPanel>
-        </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiPanel paddingSize="s" hasShadow={false} hasBorder>
-            <EuiStat
-              titleSize="s"
-              title={String(run.tally.error)}
-              description={i18n.translate('agentTraces.evals.run.evaluatorErrors', {
-                defaultMessage: 'Evaluator errors',
-              })}
-            />
-          </EuiPanel>
-        </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <EuiPanel paddingSize="s" hasShadow={false} hasBorder>
-            <EuiStat
-              titleSize="s"
-              title={run.tally.n.toLocaleString()}
-              description={i18n.translate('agentTraces.evals.run.resultsStat', {
-                defaultMessage: 'Results',
-              })}
-            />
-          </EuiPanel>
-        </EuiFlexItem>
+        <RunStat
+          title={`${passed} / ${cases.length}`}
+          label={i18n.translate('agentTraces.evals.run.casesPassed', {
+            defaultMessage: 'Cases passed',
+          })}
+          was={prev ? `${prev.casesPassed} / ${prev.cases.length}` : undefined}
+          testId="agtEvlStatCases"
+        />
+        <RunStat
+          title={`${run.tally.pass} / ${run.tally.pass + run.tally.fail}`}
+          label={i18n.translate('agentTraces.evals.run.resultsPassed', {
+            defaultMessage: 'Results passed',
+          })}
+          was={prev ? `${prev.tally.pass} / ${prev.tally.pass + prev.tally.fail}` : undefined}
+          testId="agtEvlStatResults"
+        />
+        <RunStat
+          title={String(run.tally.error)}
+          label={i18n.translate('agentTraces.evals.run.evaluatorErrors', {
+            defaultMessage: 'Evaluator errors',
+          })}
+          was={prev ? String(prev.tally.error) : undefined}
+          testId="agtEvlStatErrors"
+        />
+        <RunStat
+          title={run.tally.n.toLocaleString()}
+          label={i18n.translate('agentTraces.evals.run.resultsStat', {
+            defaultMessage: 'Results',
+          })}
+          line={i18n.translate('agentTraces.evals.run.resultsLine', {
+            defaultMessage: '{cases} cases × {evals} evaluations: {names}',
+            values: {
+              cases: cases.length,
+              evals: run.evaluations.length,
+              names: run.evaluations.join(', '),
+            },
+          })}
+          testId="agtEvlStatTotal"
+        />
       </EuiFlexGroup>
       <EuiSpacer size="m" />
       <EuiPanel paddingSize="m" hasShadow={false} hasBorder>
@@ -425,7 +521,7 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
           <p>
             {i18n.translate('agentTraces.evals.run.casesSub', {
               defaultMessage:
-                'A case fails when any of its results fails, and errors when an evaluator errored or the task raised. Click a case for its results.',
+                'Each case has one result per evaluation. A case passes only when all its results pass; it fails when any fails, and errors when an evaluator errored or the task raised. Click a case for its input, output, expected output and results.',
             })}
           </p>
         </EuiText>

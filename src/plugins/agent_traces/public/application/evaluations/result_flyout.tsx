@@ -3,10 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
+import moment from 'moment-timezone';
 import {
   EuiAccordion,
   EuiBadge,
+  EuiButtonEmpty,
   EuiCodeBlock,
   EuiDescriptionList,
   EuiFlexGroup,
@@ -15,20 +17,52 @@ import {
   EuiFlyoutBody,
   EuiFlyoutHeader,
   EuiLink,
+  EuiLoadingContent,
   EuiPanel,
   EuiSpacer,
   EuiText,
   EuiTitle,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { EvalResult } from './eval_model';
+import {
+  BaseRow,
+  buildFullSpanTree,
+  formatTimestamp,
+  hitsToAgentSpans,
+} from '../pages/traces/hooks/tree_utils';
+import { readAttribute } from '../pages/traces/hooks/genai_message_preview';
+import { toDisplayMessages } from '../pages/traces/flyout/message_content_view';
+import { transformPPLDataToTraceHits } from '../pages/traces/trace_details/traces/ppl_to_trace_hits';
+import {
+  EvalResult,
+  PplRecord,
+  caseStatusOf,
+  num,
+  recordsToResults,
+  str,
+  tallyOf,
+} from './eval_model';
+import { buildCaseResultsQuery, buildOneTraceSpansQuery } from './eval_ppl';
+import { useEvalContext } from './eval_context';
+import { usePplRows } from './use_ppl_rows';
+import { useRootSpans, useSpan } from './eval_spans';
+import { useRunBefore } from './run_page';
+import { SpanList, TraceCompareFlyout, flattenSpans } from './trace_compare_flyout';
 import {
   DASH,
+  EXPECTED_LABEL,
+  INPUT_LABEL,
+  IOBlock,
   NO_AGENT_LABEL,
+  OUTPUT_LABEL,
+  QueryErrorCallout,
   VerdictBadge,
   VersionBadge,
+  expectedNote,
+  formatDuration,
   formatScore,
   formatTime,
+  scoreOrLabel,
   shortId,
 } from './eval_components';
 
@@ -39,7 +73,7 @@ export interface ResultLinks {
   openRun?: (runId: string) => void;
 }
 
-/** Where the score sits on its declared scale (`opensearch.evaluation.score.min|max`). */
+/** Where the score sits on its declared scale (`opensearch.gen_ai.evaluation.score.min|max`). */
 export const scalePosition = (r: Pick<EvalResult, 'value' | 'scoreMin' | 'scoreMax'>) =>
   r.value !== undefined &&
   r.scoreMin !== undefined &&
@@ -48,12 +82,360 @@ export const scalePosition = (r: Pick<EvalResult, 'value' | 'scoreMin' | 'scoreM
     ? Math.min(1, Math.max(0, (r.value - r.scoreMin) / (r.scoreMax - r.scoreMin)))
     : undefined;
 
-/** One result, from the row that listed it: no query. */
+/** The same result in another list (ids carry the list position). */
+const sameResult = (a: EvalResult, b: EvalResult) =>
+  a.name === b.name && a.time === b.time && a.spanId === b.spanId && a.traceId === b.traceId;
+
+const SectionLabel: React.FC = ({ children }) => (
+  <EuiText size="s">
+    <h4>{children}</h4>
+  </EuiText>
+);
+
+/**
+ * What the judge saw: the judged span's input and output (the root span for trace-level
+ * results; one lazy span query) and, offline, the case's expected output.
+ */
+const JudgedSection: React.FC<{
+  r: EvalResult;
+  openTrace?: (traceId: string, aroundMs: number) => void;
+  onJudgeTrace: () => void;
+}> = ({ r, openTrace, onJudgeTrace }) => {
+  const spanLevel = r.level === 'span' && !!r.spanId;
+  const root = useRootSpans(spanLevel ? [] : [r.traceId]);
+  const span = useSpan(spanLevel ? r.traceId : undefined, spanLevel ? r.spanId : undefined);
+  const io = spanLevel ? span.span : r.traceId ? root.byTrace.get(r.traceId) : undefined;
+  const loading = spanLevel ? span.loading : root.loading;
+  const loaded = spanLevel ? span.loaded : root.loaded;
+  const error = spanLevel ? span.error : root.error;
+  return (
+    <div data-test-subj="agtEvlJudgeSaw">
+      <EuiFlexGroup gutterSize="s" alignItems="baseline" responsive={false}>
+        <EuiFlexItem grow={false}>
+          <SectionLabel>
+            {i18n.translate('agentTraces.evals.flyout.judgeSaw', {
+              defaultMessage: 'What the judge saw',
+            })}
+          </SectionLabel>
+        </EuiFlexItem>
+        <EuiFlexItem>
+          <EuiText size="xs" color="subdued" data-test-subj="agtEvlFlyoutJudged">
+            {spanLevel ? (
+              <span>
+                {i18n.translate('agentTraces.evals.flyout.judgedSpan', {
+                  defaultMessage: 'span',
+                })}{' '}
+                <strong>{io?.name ?? r.spanId}</strong>
+              </span>
+            ) : (
+              i18n.translate('agentTraces.evals.flyout.wholeTrace', {
+                defaultMessage: 'the whole trace (root span)',
+              })
+            )}
+          </EuiText>
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <EuiText size="xs">
+            {r.traceId && openTrace && (
+              <EuiLink
+                onClick={() => r.traceId && openTrace(r.traceId, r.time)}
+                data-test-subj="agtEvlFlyoutViewTrace"
+              >
+                {i18n.translate('agentTraces.evals.flyout.viewTrace', {
+                  defaultMessage: 'View trace',
+                })}
+              </EuiLink>
+            )}
+            {r.traceId && !openTrace && (
+              <span className="agtEvlMono agtEvlDim">{shortId(r.traceId)}</span>
+            )}
+            {r.judgeTraceId && (
+              <>
+                {' · '}
+                <EuiLink onClick={onJudgeTrace} data-test-subj="agtEvlFlyoutJudgeTrace">
+                  {i18n.translate('agentTraces.evals.flyout.viewJudgeTrace', {
+                    defaultMessage: 'View judge trace',
+                  })}
+                </EuiLink>
+              </>
+            )}
+          </EuiText>
+        </EuiFlexItem>
+      </EuiFlexGroup>
+      {error ? (
+        <QueryErrorCallout message={error} />
+      ) : loading && !io ? (
+        <EuiLoadingContent lines={2} />
+      ) : loaded && !io ? (
+        <EuiText size="xs" color="subdued" data-test-subj="agtEvlJudgedMissing">
+          <p className="agtEvlBox">
+            {i18n.translate('agentTraces.evals.flyout.judgedMissing', {
+              defaultMessage:
+                'The judged trace is not in the span index (another producer, or outside retention).',
+            })}
+          </p>
+        </EuiText>
+      ) : (
+        <>
+          <IOBlock label={INPUT_LABEL} text={io?.input} testId="agtEvlJudgedInput" />
+          <IOBlock label={OUTPUT_LABEL} text={io?.output} testId="agtEvlJudgedOutput" />
+        </>
+      )}
+      {r.runId && (
+        <IOBlock
+          label={EXPECTED_LABEL}
+          note={expectedNote(r.expectedTruncated)}
+          text={r.expected}
+          testId="agtEvlJudgedExpected"
+        />
+      )}
+    </div>
+  );
+};
+
+/**
+ * Offline: the case's other results in this run, and the same case in the run before (one
+ * lookup of the runs in range, one query for the case's results in both runs).
+ */
+const CaseSection: React.FC<{
+  r: EvalResult;
+  openRun?: (runId: string) => void;
+  openResult?: (r: EvalResult) => void;
+  onCompareTraces: (traceA: string, traceB: string, versionA?: string) => void;
+}> = ({ r, openRun, openResult, onCompareTraces }) => {
+  const { dataset, index, timeRange, refreshKey } = useEvalContext();
+  const { runId, caseId } = r;
+  const lookup = useRunBefore(runId);
+  const beforeId = lookup.before?.runId;
+  const query =
+    runId && caseId && lookup.loaded
+      ? buildCaseResultsQuery(index, beforeId ? [runId, beforeId] : runId, caseId)
+      : undefined;
+  const { rows, loading, error } = usePplRows(dataset, query, timeRange, refreshKey);
+  const results = useMemo(() => recordsToResults(rows), [rows]);
+  if (error || lookup.error) return <QueryErrorCallout message={error ?? lookup.error ?? ''} />;
+  if ((loading || !lookup.loaded) && !results.length) return <EuiLoadingContent lines={2} />;
+  const siblings = results.filter((x) => x.runId === runId && !sameResult(x, r));
+  const prev = beforeId ? results.filter((x) => x.runId === beforeId) : [];
+  const status = caseStatusOf(tallyOf([r, ...siblings]));
+  const prevStatus = prev.length ? caseStatusOf(tallyOf(prev)) : undefined;
+  const prevTrace = prev.find((x) => x.traceId)?.traceId;
+  return (
+    <EuiPanel paddingSize="s" hasShadow={false} hasBorder data-test-subj="agtEvlFlyoutCase">
+      <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+        <EuiFlexItem>
+          <EuiTitle size="xxs">
+            <h4>
+              {i18n.translate('agentTraces.evals.flyout.caseTitle', { defaultMessage: 'Case' })}{' '}
+              <span className="agtEvlDim">
+                {r.caseName ?? caseId} · <span className="agtEvlMono">{caseId}</span>
+              </span>
+            </h4>
+          </EuiTitle>
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <VerdictBadge verdict={status} />
+        </EuiFlexItem>
+      </EuiFlexGroup>
+      <EuiSpacer size="xs" />
+      {siblings.length ? (
+        siblings.map((x) => (
+          <div className="agtEvlCaseResults__row agtEvlCaseResults__row--compact" key={x.id}>
+            {openResult ? (
+              <EuiLink onClick={() => openResult(x)}>{x.name}</EuiLink>
+            ) : (
+              <strong>{x.name}</strong>
+            )}
+            <span>
+              <VerdictBadge verdict={x.verdict} />
+            </span>
+            <span className="agtEvlDim">{x.explanation ?? x.errorType ?? scoreOrLabel(x)}</span>
+          </div>
+        ))
+      ) : (
+        <EuiText size="xs" color="subdued">
+          {i18n.translate('agentTraces.evals.flyout.noSiblings', {
+            defaultMessage: 'No other results for this case.',
+          })}
+        </EuiText>
+      )}
+      {beforeId && (
+        <EuiText size="xs" data-test-subj="agtEvlFlyoutRunBefore">
+          <p>
+            {i18n.translate('agentTraces.evals.flyout.runBefore', {
+              defaultMessage: 'In the run before',
+            })}{' '}
+            (
+            {openRun ? (
+              <EuiLink className="agtEvlMono" onClick={() => openRun(beforeId)}>
+                {shortId(beforeId)}
+              </EuiLink>
+            ) : (
+              <span className="agtEvlMono">{shortId(beforeId)}</span>
+            )}
+            {prev[0]?.agentVersion ? `, ${prev[0].agentVersion}` : ''}):{' '}
+            {prevStatus ? (
+              <>
+                <VerdictBadge verdict={prevStatus} /> → <VerdictBadge verdict={status} />
+              </>
+            ) : (
+              <span className="agtEvlDim">
+                {i18n.translate('agentTraces.evals.flyout.notInRunBefore', {
+                  defaultMessage: 'not in that run',
+                })}
+              </span>
+            )}
+            {prevTrace && r.traceId && (
+              <>
+                {' · '}
+                <EuiLink
+                  onClick={() =>
+                    r.traceId && onCompareTraces(prevTrace, r.traceId, prev[0]?.agentVersion)
+                  }
+                  data-test-subj="agtEvlFlyoutCompareTraces"
+                >
+                  {i18n.translate('agentTraces.evals.flyout.compareTraces', {
+                    defaultMessage: 'Compare traces',
+                  })}
+                </EuiLink>
+              </>
+            )}
+          </p>
+        </EuiText>
+      )}
+    </EuiPanel>
+  );
+};
+
+/** PPL records (column per field) as trace hits. */
+const recordsToHits = (records: PplRecord[]) => {
+  const names = [...new Set(records.flatMap((r) => Object.keys(r)))];
+  return transformPPLDataToTraceHits({
+    schema: names.map((name) => ({ name, type: '', values: [] })),
+    datarows: records.map((r) => names.map((n) => r[n])),
+  });
+};
+
+const messagesText = (value: unknown) =>
+  toDisplayMessages(value)
+    .map((m) => (m.role ? `${m.role}: ${m.text}` : m.text))
+    .join('\n\n') || undefined;
+
+/** The judge's own trace: spans, prompt and response. One query (head 200), when opened. */
+export const JudgeTraceView: React.FC<{ traceId: string; result: EvalResult }> = ({
+  traceId,
+  result,
+}) => {
+  const { spans, refreshKey } = useEvalContext();
+  const { rows, loading, loaded, error } = usePplRows(
+    spans,
+    buildOneTraceSpansQuery(spans.title, traceId),
+    undefined,
+    refreshKey
+  );
+  const view = useMemo(() => {
+    const timezone = moment.tz.guess();
+    const tree = buildFullSpanTree(hitsToAgentSpans(recordsToHits(rows)), (ts) =>
+      formatTimestamp(ts, timezone)
+    );
+    const flat = flattenSpans(tree);
+    const all: BaseRow[] = [];
+    const walk = (list: BaseRow[]) =>
+      list.forEach((x) => {
+        all.push(x);
+        if (x.children?.length) walk(x.children);
+      });
+    walk(tree);
+    const raw = (x: BaseRow) => x.rawDocument as Record<string, unknown> | undefined;
+    const llm =
+      all.find((x) => str(readAttribute(raw(x), 'gen_ai.operation.name')) === 'chat') ??
+      all.find((x) => readAttribute(raw(x), 'gen_ai.input.messages') !== undefined) ??
+      all[0];
+    const tokens = all.reduce(
+      (sum, x) =>
+        sum +
+        (num(readAttribute(raw(x), 'gen_ai.usage.input_tokens')) ?? 0) +
+        (num(readAttribute(raw(x), 'gen_ai.usage.output_tokens')) ?? 0),
+      0
+    );
+    return {
+      flat,
+      model: llm ? str(readAttribute(raw(llm), 'gen_ai.request.model')) : undefined,
+      tokens,
+      prompt: llm ? messagesText(readAttribute(raw(llm), 'gen_ai.input.messages')) : undefined,
+      response: llm ? messagesText(readAttribute(raw(llm), 'gen_ai.output.messages')) : undefined,
+    };
+  }, [rows]);
+  if (error) return <QueryErrorCallout message={error} />;
+  if (loading || !loaded) return <EuiLoadingContent lines={6} />;
+  if (!view.flat.length)
+    return (
+      <EuiText size="s" color="subdued" data-test-subj="agtEvlJudgeTraceMissing">
+        <p>
+          {i18n.translate('agentTraces.evals.judge.missing', {
+            defaultMessage: 'The judge trace is not in the span index.',
+          })}
+        </p>
+      </EuiText>
+    );
+  return (
+    <div data-test-subj="agtEvlJudgeTrace">
+      <EuiText size="xs" color="subdued">
+        <p>
+          {i18n.translate('agentTraces.evals.judge.sub', {
+            defaultMessage: "The evaluator's own LLM call for {name}",
+            values: { name: result.name },
+          })}
+          {view.model ? ` · ${view.model}` : ''} · {formatDuration(view.flat[0].durationMs)}
+          {view.tokens
+            ? ` · ${i18n.translate('agentTraces.evals.judge.tokens', {
+                defaultMessage: '{n} tokens',
+                values: { n: view.tokens.toLocaleString() },
+              })}`
+            : ''}
+        </p>
+      </EuiText>
+      <SpanList side={{ traceId, spans: view.flat, results: [] }} only={new Set()} />
+      <IOBlock
+        label={i18n.translate('agentTraces.evals.judge.prompt', {
+          defaultMessage: 'Prompt sent to the judge',
+        })}
+        text={view.prompt}
+        testId="agtEvlJudgePrompt"
+      />
+      <IOBlock
+        label={i18n.translate('agentTraces.evals.judge.response', {
+          defaultMessage: 'Judge response',
+        })}
+        text={view.response}
+        testId="agtEvlJudgeResponse"
+      />
+      <EuiSpacer size="s" />
+      <EuiText size="xs" color="subdued">
+        <p>
+          {i18n.translate('agentTraces.evals.judge.note', {
+            defaultMessage:
+              "Linked by opensearch.gen_ai.evaluation.judge.trace_id on the result. The judge's spans are ordinary spans in the span index; this view reads them only when opened.",
+          })}
+        </p>
+      </EuiText>
+    </div>
+  );
+};
+
+/**
+ * One result. The row that listed it holds the event; the flyout reads the judged span (one
+ * query), offline the case's results in this run and the run before, and the judge trace only
+ * when clicked.
+ */
 export const ResultFlyout: React.FC<{
   result: EvalResult;
   onClose: () => void;
   links?: ResultLinks;
-}> = ({ result: r, onClose, links = {} }) => {
+  onOpenResult?: (r: EvalResult) => void;
+}> = ({ result: r, onClose, links = {}, onOpenResult }) => {
+  const [judge, setJudge] = useState(false);
+  const [compare, setCompare] = useState<{ a: string; b: string; versionA?: string }>();
   const at = scalePosition(r);
   const online = !r.runId;
   const items = [
@@ -63,37 +445,6 @@ export const ResultFlyout: React.FC<{
         <span>
           {r.evaluatorName ?? r.scope ?? DASH}{' '}
           {r.evaluatorType && <EuiBadge color="hollow">{r.evaluatorType}</EuiBadge>}
-        </span>
-      ),
-    },
-    {
-      title: i18n.translate('agentTraces.evals.flyout.judged', { defaultMessage: 'Judged' }),
-      description: (
-        <span data-test-subj="agtEvlFlyoutJudged">
-          {r.level === 'span' && r.spanId
-            ? i18n.translate('agentTraces.evals.flyout.span', {
-                defaultMessage: 'Span {id}',
-                values: { id: r.spanId },
-              })
-            : i18n.translate('agentTraces.evals.flyout.wholeTrace', {
-                defaultMessage: 'Whole trace',
-              })}
-          {r.traceId && links.openTrace && (
-            <>
-              {' · '}
-              <EuiLink
-                onClick={() => r.traceId && links.openTrace?.(r.traceId, r.time)}
-                data-test-subj="agtEvlFlyoutViewTrace"
-              >
-                {i18n.translate('agentTraces.evals.flyout.viewTrace', {
-                  defaultMessage: 'View trace',
-                })}
-              </EuiLink>
-            </>
-          )}
-          {r.traceId && !links.openTrace && (
-            <span className="agtEvlMono agtEvlDim"> · {shortId(r.traceId)}</span>
-          )}
         </span>
       ),
     },
@@ -130,131 +481,188 @@ export const ResultFlyout: React.FC<{
               ) : (
                 <span className="agtEvlMono">{shortId(r.runId)}</span>
               )}
-              {r.caseId && (
-                <>
-                  {' · '}
-                  {i18n.translate('agentTraces.evals.flyout.case', {
-                    defaultMessage: 'case {name}',
-                    values: { name: r.caseName ? `${r.caseName} (${r.caseId})` : r.caseId },
-                  })}
-                </>
-              )}
             </span>
           ),
         },
   ];
 
-  return (
-    <EuiFlyout
-      onClose={onClose}
-      size="m"
-      ownFocus={false}
-      maxWidth={720}
-      aria-labelledby="agtEvlResultFlyoutTitle"
-      data-test-subj="agtEvlResultFlyout"
-    >
-      <EuiFlyoutHeader hasBorder>
-        <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
-          <EuiFlexItem grow={false}>
-            <EuiTitle size="s">
-              <h2 id="agtEvlResultFlyoutTitle">{r.name}</h2>
-            </EuiTitle>
-          </EuiFlexItem>
-          <EuiFlexItem grow={false}>
-            <VerdictBadge verdict={r.verdict} />
-          </EuiFlexItem>
-        </EuiFlexGroup>
-        <EuiText size="xs" color="subdued">
-          <p>
-            {r.agentName ?? NO_AGENT_LABEL}{' '}
-            {r.agentVersion && <VersionBadge version={r.agentVersion} />}
-            {' · '}
-            {formatTime(r.time, 'MMM D, HH:mm:ss')}
-            {' · '}
-            {online
-              ? i18n.translate('agentTraces.evals.flyout.online', { defaultMessage: 'Online' })
-              : i18n.translate('agentTraces.evals.flyout.offline', { defaultMessage: 'Offline' })}
-          </p>
-        </EuiText>
-      </EuiFlyoutHeader>
-      <EuiFlyoutBody>
-        <EuiPanel paddingSize="s" hasShadow={false} hasBorder className="agtEvlScore">
-          <EuiTitle size="m">
-            <span data-test-subj="agtEvlFlyoutScore">
-              {formatScore(r.value)}
-              {r.scoreMax !== undefined && at !== undefined && (
-                <span className="agtEvlDim agtEvlSmall"> / {r.scoreMax}</span>
-              )}
-            </span>
-          </EuiTitle>
-          <EuiText size="xs" color="subdued">
-            <span>
-              {i18n.translate('agentTraces.evals.flyout.score', { defaultMessage: 'Score' })}
-              {r.label && (
-                <>
-                  {' · '}
-                  {i18n.translate('agentTraces.evals.flyout.label', {
-                    defaultMessage: 'label',
-                  })}{' '}
-                  <code>{r.label}</code>
-                </>
-              )}
-              {r.errorType && (
-                <>
-                  {' · '}
-                  <code>{r.errorType}</code>
-                </>
-              )}
-            </span>
-          </EuiText>
-          {at !== undefined && (
-            <div className="agtEvlScale" data-test-subj="agtEvlFlyoutScale">
-              <div className="agtEvlScale__track">
-                <span className="agtEvlScale__mark" style={{ left: `${at * 100}%` }} />
-              </div>
-              <EuiFlexGroup justifyContent="spaceBetween" responsive={false}>
-                <EuiFlexItem grow={false}>
-                  <EuiText size="xs" color="subdued">
-                    {r.scoreMin}
-                  </EuiText>
-                </EuiFlexItem>
-                <EuiFlexItem grow={false}>
-                  <EuiText size="xs" color="subdued">
-                    {r.scoreMax}
-                  </EuiText>
-                </EuiFlexItem>
-              </EuiFlexGroup>
-            </div>
-          )}
-        </EuiPanel>
-        <EuiSpacer size="m" />
-        {r.explanation && (
-          <>
-            <EuiText size="s">
-              <h4>
-                {i18n.translate('agentTraces.evals.flyout.explanation', {
-                  defaultMessage: 'Explanation',
-                })}
-              </h4>
-              <p className="agtEvlProse">{r.explanation}</p>
-            </EuiText>
-            <EuiSpacer size="m" />
-          </>
-        )}
-        <EuiDescriptionList type="column" compressed listItems={items} />
-        <EuiSpacer size="m" />
-        <EuiAccordion
-          id="agtEvlRawEvent"
-          buttonContent={i18n.translate('agentTraces.evals.flyout.rawEvent', {
-            defaultMessage: 'Raw event',
-          })}
-          data-test-subj="agtEvlRawEvent"
+  const header = judge ? (
+    <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+      <EuiFlexItem grow={false}>
+        <EuiButtonEmpty
+          size="xs"
+          iconType="arrowLeft"
+          onClick={() => setJudge(false)}
+          data-test-subj="agtEvlJudgeBack"
         >
-          <EuiCodeBlock language="json" fontSize="s" paddingSize="s" isCopyable>
-            {JSON.stringify(r.raw, null, 2)}
-          </EuiCodeBlock>
-        </EuiAccordion>
-      </EuiFlyoutBody>
-    </EuiFlyout>
+          {i18n.translate('agentTraces.evals.flyout.back', { defaultMessage: 'Back' })}
+        </EuiButtonEmpty>
+      </EuiFlexItem>
+      <EuiFlexItem grow={false}>
+        <EuiTitle size="s">
+          <h2 id="agtEvlResultFlyoutTitle">
+            {i18n.translate('agentTraces.evals.judge.title', { defaultMessage: 'Judge trace' })}{' '}
+            <span className="agtEvlMono agtEvlDim agtEvlSmall">{shortId(r.judgeTraceId)}</span>
+          </h2>
+        </EuiTitle>
+      </EuiFlexItem>
+    </EuiFlexGroup>
+  ) : (
+    <>
+      <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+        <EuiFlexItem grow={false}>
+          <EuiTitle size="s">
+            <h2 id="agtEvlResultFlyoutTitle">{r.name}</h2>
+          </EuiTitle>
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <VerdictBadge verdict={r.verdict} />
+        </EuiFlexItem>
+      </EuiFlexGroup>
+      <EuiText size="xs" color="subdued">
+        <p>
+          {r.agentName ?? NO_AGENT_LABEL}{' '}
+          {r.agentVersion && <VersionBadge version={r.agentVersion} />}
+          {' · '}
+          {formatTime(r.time, 'MMM D, HH:mm:ss')}
+          {' · '}
+          {online
+            ? i18n.translate('agentTraces.evals.flyout.online', { defaultMessage: 'Online' })
+            : i18n.translate('agentTraces.evals.flyout.offline', { defaultMessage: 'Offline' })}
+        </p>
+      </EuiText>
+    </>
+  );
+
+  return (
+    <>
+      <EuiFlyout
+        onClose={onClose}
+        size="m"
+        ownFocus={false}
+        maxWidth={720}
+        aria-labelledby="agtEvlResultFlyoutTitle"
+        data-test-subj="agtEvlResultFlyout"
+      >
+        <EuiFlyoutHeader hasBorder>{header}</EuiFlyoutHeader>
+        <EuiFlyoutBody>
+          {judge && r.judgeTraceId ? (
+            <JudgeTraceView traceId={r.judgeTraceId} result={r} />
+          ) : (
+            <>
+              <EuiPanel paddingSize="s" hasShadow={false} hasBorder className="agtEvlScore">
+                <EuiTitle size="m">
+                  <span data-test-subj="agtEvlFlyoutScore">
+                    {r.value !== undefined ? formatScore(r.value) : scoreOrLabel(r)}
+                    {r.scoreMax !== undefined && at !== undefined && (
+                      <span className="agtEvlDim agtEvlSmall"> / {r.scoreMax}</span>
+                    )}
+                  </span>
+                </EuiTitle>
+                <EuiText size="xs" color="subdued">
+                  <span>
+                    {r.value !== undefined
+                      ? i18n.translate('agentTraces.evals.flyout.score', {
+                          defaultMessage: 'Score',
+                        })
+                      : i18n.translate('agentTraces.evals.flyout.labelTitle', {
+                          defaultMessage: 'Label',
+                        })}
+                    {r.label && r.value !== undefined && (
+                      <>
+                        {' · '}
+                        {i18n.translate('agentTraces.evals.flyout.label', {
+                          defaultMessage: 'label',
+                        })}{' '}
+                        <code>{r.label}</code>
+                      </>
+                    )}
+                    {r.errorType && (
+                      <>
+                        {' · '}
+                        <code>{r.errorType}</code>
+                      </>
+                    )}
+                  </span>
+                </EuiText>
+                {at !== undefined && (
+                  <div className="agtEvlScale" data-test-subj="agtEvlFlyoutScale">
+                    <div className="agtEvlScale__track">
+                      <span className="agtEvlScale__mark" style={{ left: `${at * 100}%` }} />
+                    </div>
+                    <EuiFlexGroup justifyContent="spaceBetween" responsive={false}>
+                      <EuiFlexItem grow={false}>
+                        <EuiText size="xs" color="subdued">
+                          {r.scoreMin}
+                        </EuiText>
+                      </EuiFlexItem>
+                      <EuiFlexItem grow={false}>
+                        <EuiText size="xs" color="subdued">
+                          {r.scoreMax}
+                        </EuiText>
+                      </EuiFlexItem>
+                    </EuiFlexGroup>
+                  </div>
+                )}
+              </EuiPanel>
+              <EuiSpacer size="m" />
+              {r.explanation && (
+                <>
+                  <EuiText size="s">
+                    <h4>
+                      {i18n.translate('agentTraces.evals.flyout.explanation', {
+                        defaultMessage: 'Explanation',
+                      })}
+                    </h4>
+                    <p className="agtEvlProse">{r.explanation}</p>
+                  </EuiText>
+                  <EuiSpacer size="m" />
+                </>
+              )}
+              <JudgedSection
+                r={r}
+                openTrace={links.openTrace}
+                onJudgeTrace={() => setJudge(true)}
+              />
+              <EuiSpacer size="m" />
+              {r.runId && r.caseId && (
+                <>
+                  <CaseSection
+                    r={r}
+                    openRun={links.openRun}
+                    openResult={onOpenResult}
+                    onCompareTraces={(a, b, versionA) => setCompare({ a, b, versionA })}
+                  />
+                  <EuiSpacer size="m" />
+                </>
+              )}
+              <EuiDescriptionList type="column" compressed listItems={items} />
+              <EuiSpacer size="m" />
+              <EuiAccordion
+                id="agtEvlRawEvent"
+                buttonContent={i18n.translate('agentTraces.evals.flyout.rawEvent', {
+                  defaultMessage: 'Raw event',
+                })}
+                data-test-subj="agtEvlRawEvent"
+              >
+                <EuiCodeBlock language="json" fontSize="s" paddingSize="s" isCopyable>
+                  {JSON.stringify(r.raw, null, 2)}
+                </EuiCodeBlock>
+              </EuiAccordion>
+            </>
+          )}
+        </EuiFlyoutBody>
+      </EuiFlyout>
+      {compare && r.caseId && (
+        <TraceCompareFlyout
+          caseId={r.caseId}
+          traceA={compare.a}
+          traceB={compare.b}
+          versionA={compare.versionA}
+          versionB={r.agentVersion}
+          onClose={() => setCompare(undefined)}
+        />
+      )}
+    </>
   );
 };

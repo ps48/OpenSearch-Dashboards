@@ -9,6 +9,7 @@ import {
   EuiBasicTableColumn,
   EuiButton,
   EuiButtonEmpty,
+  EuiButtonIcon,
   EuiContextMenuItem,
   EuiContextMenuPanel,
   EuiFilterButton,
@@ -32,29 +33,68 @@ import {
   CompareCaseRow,
   CompareEvalRow,
   CompareSide,
+  EvalResult,
   comparison,
+  recordsToResults,
   suiteRuns,
 } from './eval_model';
-import { NO_AGENT, buildCompareRunsQuery, buildSuiteRunsQuery } from './eval_ppl';
-import { useEvalContext } from './eval_context';
-import { usePplRows } from './use_ppl_rows';
-import { TraceCompareFlyout } from './trace_compare_flyout';
+import {
+  NO_AGENT,
+  buildCaseResultsQuery,
+  buildCompareRunsQuery,
+  buildSuiteRunsQuery,
+} from './eval_ppl';
+import { useRootSpans } from './eval_spans';
 import {
   DASH,
   DeltaCell,
+  EXPECTED_LABEL,
+  INPUT_LABEL,
+  IOBlock,
   MetaItem,
+  OUTPUT_LABEL,
   QueryErrorCallout,
   RUN_A,
   RUN_B,
   VerdictBadge,
   VersionBadge,
   agentLabel,
+  expectedNote,
+  expectedOf,
   formatTime,
   pct,
   shortId,
 } from './eval_components';
+import { useEvalContext } from './eval_context';
+import { usePplRows } from './use_ppl_rows';
+import { TraceCompareFlyout } from './trace_compare_flyout';
 
-const CHANGE_ORDER: Record<CaseChange, number> = { regressed: 0, changed: 1, fixed: 2, same: 3 };
+const CHANGE_ORDER: Record<CaseChange, number> = {
+  regressed: 0,
+  changed: 1,
+  onlyB: 2,
+  onlyA: 3,
+  fixed: 4,
+  same: 5,
+};
+
+export type CaseFilter = 'changed' | 'regressed' | 'fixed' | 'only' | 'all';
+
+/** Cases shown for a filter: Changed (any change), Regressed, Fixed, Only in one run, All. */
+export const filterCompareCases = (cases: CompareCaseRow[], f: CaseFilter) =>
+  cases.filter((c) =>
+    f === 'all'
+      ? true
+      : f === 'changed'
+        ? c.change !== 'same'
+        : f === 'only'
+          ? c.change === 'onlyA' || c.change === 'onlyB'
+          : c.change === f
+  );
+
+const NOT_IN_RUN = i18n.translate('agentTraces.evals.compare.notInRun', {
+  defaultMessage: 'Not in run',
+});
 
 const ChangeBadge: React.FC<{ change: CaseChange }> = ({ change }) =>
   change === 'regressed' ? (
@@ -69,6 +109,14 @@ const ChangeBadge: React.FC<{ change: CaseChange }> = ({ change }) =>
     <EuiBadge color="default">
       {i18n.translate('agentTraces.evals.compare.changed', { defaultMessage: 'Changed' })}
     </EuiBadge>
+  ) : change === 'onlyA' ? (
+    <EuiBadge color="hollow">
+      {i18n.translate('agentTraces.evals.compare.onlyA', { defaultMessage: 'Only in A' })}
+    </EuiBadge>
+  ) : change === 'onlyB' ? (
+    <EuiBadge color="hollow">
+      {i18n.translate('agentTraces.evals.compare.onlyB', { defaultMessage: 'Only in B' })}
+    </EuiBadge>
   ) : (
     <span className="agtEvlDim">
       {i18n.translate('agentTraces.evals.compare.same', { defaultMessage: 'Same' })}
@@ -76,7 +124,115 @@ const ChangeBadge: React.FC<{ change: CaseChange }> = ({ change }) =>
   );
 
 const statusCell = (s?: CaseStatus) =>
-  s ? <VerdictBadge verdict={s} /> : <span className="agtEvlDim">{DASH}</span>;
+  s ? <VerdictBadge verdict={s} /> : <span className="agtEvlDim">{NOT_IN_RUN}</span>;
+
+/** A side's failing results (fail and evaluator error) with their explanations. */
+const FailingResults: React.FC<{ results: EvalResult[]; inRun: boolean }> = ({
+  results,
+  inRun,
+}) => {
+  const { openResult } = useEvalContext();
+  if (!inRun)
+    return (
+      <EuiText size="xs" color="subdued">
+        {NOT_IN_RUN}
+      </EuiText>
+    );
+  const failing = results.filter((r) => r.verdict === 'fail' || r.verdict === 'error');
+  if (!failing.length)
+    return (
+      <EuiText size="xs" color="subdued">
+        {i18n.translate('agentTraces.evals.compare.noFailing', {
+          defaultMessage: 'No failing results',
+        })}
+      </EuiText>
+    );
+  return (
+    <>
+      {failing.map((r) => (
+        <div className="agtEvlCaseResults__row agtEvlCaseResults__row--compact" key={r.id}>
+          <EuiLink onClick={() => openResult(r)}>{r.name}</EuiLink>
+          <span>
+            <VerdictBadge verdict={r.verdict} />
+          </span>
+          <span className="agtEvlDim">{r.explanation ?? r.errorType ?? DASH}</span>
+        </div>
+      ))}
+    </>
+  );
+};
+
+/**
+ * An expanded case: input, expected output, and each run's output with its failing results
+ * side by side. One query for the case's results in both runs, one for both root spans.
+ */
+const CompareCaseDetail: React.FC<{
+  row: CompareCaseRow;
+  runA: string;
+  runB: string;
+  versionA?: string;
+  versionB?: string;
+  onCompareTraces: () => void;
+}> = ({ row, runA, runB, versionA, versionB, onCompareTraces }) => {
+  const { dataset, index, timeRange, refreshKey } = useEvalContext();
+  const { rows, loading, error } = usePplRows(
+    dataset,
+    buildCaseResultsQuery(index, [runA, runB], row.caseId),
+    timeRange,
+    refreshKey
+  );
+  const roots = useRootSpans([row.traceA, row.traceB]);
+  const results = useMemo(() => recordsToResults(rows), [rows]);
+  const ofRun = (runId: string) => results.filter((r) => r.runId === runId);
+  const ioA = row.traceA ? roots.byTrace.get(row.traceA) : undefined;
+  const ioB = row.traceB ? roots.byTrace.get(row.traceB) : undefined;
+  const expected = expectedOf(results);
+  if (error) return <QueryErrorCallout message={error} />;
+  if (loading && !results.length) return <EuiLoadingContent lines={3} />;
+  return (
+    <div className="agtEvlCaseResults" data-test-subj={`agtEvlCompareCase-${row.caseId}`}>
+      <IOBlock label={INPUT_LABEL} text={ioA?.input ?? ioB?.input} testId="agtEvlCompareInput" />
+      <IOBlock
+        label={EXPECTED_LABEL}
+        note={expectedNote(expected.truncated)}
+        text={expected.text}
+        testId="agtEvlCompareExpected"
+      />
+      <EuiFlexGroup gutterSize="m" responsive={false}>
+        <EuiFlexItem>
+          <IOBlock
+            label={`${OUTPUT_LABEL} · ${RUN_A} (${versionA ?? DASH})`}
+            text={ioA?.output}
+            testId="agtEvlCompareOutputA"
+          />
+          <FailingResults results={ofRun(runA)} inRun={!!row.a} />
+        </EuiFlexItem>
+        <EuiFlexItem>
+          <IOBlock
+            label={`${OUTPUT_LABEL} · ${RUN_B} (${versionB ?? DASH})`}
+            text={ioB?.output}
+            testId="agtEvlCompareOutputB"
+          />
+          <FailingResults results={ofRun(runB)} inRun={!!row.b} />
+        </EuiFlexItem>
+      </EuiFlexGroup>
+      {row.traceA && row.traceB && (
+        <>
+          <EuiSpacer size="s" />
+          <EuiButtonEmpty
+            size="xs"
+            onClick={onCompareTraces}
+            data-test-subj={`agtEvlCompareTracesDetail-${row.caseId}`}
+          >
+            {i18n.translate('agentTraces.evals.compare.compareTraces', {
+              defaultMessage: 'Compare traces',
+            })}
+          </EuiButtonEmpty>
+        </>
+      )}
+    </div>
+  );
+};
 
 /** "Change": pick another run of the suite for one side, read when the menu opens. */
 const RunPicker: React.FC<{
@@ -204,16 +360,66 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
     refreshKey
   );
   const cmp = useMemo(() => comparison(runA, runB, rows), [runA, runB, rows]);
-  const [onlyChanged, setOnlyChanged] = useState(true);
+  const [filter, setFilter] = useState<CaseFilter>('changed');
   const [traces, setTraces] = useState<CompareCaseRow>();
-  const changed = cmp.cases.filter((c) => c.change !== 'same');
-  const shown = onlyChanged ? changed : cmp.cases;
-  const regressed = changed.filter((c) => c.change === 'regressed').length;
-  const fixed = changed.filter((c) => c.change === 'fixed').length;
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const shown = filterCompareCases(cmp.cases, filter);
+  const count = (f: CaseFilter) => filterCompareCases(cmp.cases, f).length;
+  const toggle = (caseId: string) => setExpanded((e) => ({ ...e, [caseId]: !e[caseId] }));
+  const expandedMap = Object.fromEntries(
+    shown
+      .filter((c) => expanded[c.caseId])
+      .map((c) => [
+        c.caseId,
+        <CompareCaseDetail
+          row={c}
+          runA={runA}
+          runB={runB}
+          versionA={cmp.a.version}
+          versionB={cmp.b.version}
+          onCompareTraces={() => setTraces(c)}
+        />,
+      ])
+  );
+  const filters: Array<[CaseFilter, string]> = [
+    [
+      'changed',
+      i18n.translate('agentTraces.evals.compare.changedFilter', { defaultMessage: 'Changed' }),
+    ],
+    [
+      'regressed',
+      i18n.translate('agentTraces.evals.compare.regressed', { defaultMessage: 'Regressed' }),
+    ],
+    ['fixed', i18n.translate('agentTraces.evals.compare.fixed', { defaultMessage: 'Fixed' })],
+    ...(count('only')
+      ? ([
+          [
+            'only',
+            i18n.translate('agentTraces.evals.compare.onlyOne', {
+              defaultMessage: 'Only in one run',
+            }),
+          ],
+        ] as Array<[CaseFilter, string]>)
+      : []),
+    ['all', i18n.translate('agentTraces.evals.compare.all', { defaultMessage: 'All' })],
+  ];
   const colA = `${RUN_A} · ${cmp.a.version ?? DASH}`;
   const colB = `${RUN_B} · ${cmp.b.version ?? DASH}`;
 
   const caseColumns: Array<EuiBasicTableColumn<CompareCaseRow>> = [
+    {
+      width: '32px',
+      isExpander: true,
+      render: (c: CompareCaseRow) => (
+        <EuiButtonIcon
+          onClick={() => toggle(c.caseId)}
+          aria-label={i18n.translate('agentTraces.evals.compare.expand', {
+            defaultMessage: 'Show the case',
+          })}
+          iconType={expanded[c.caseId] ? 'arrowDown' : 'arrowRight'}
+        />
+      ),
+    },
     {
       field: 'caseName',
       name: i18n.translate('agentTraces.evals.compare.case', { defaultMessage: 'Case' }),
@@ -241,7 +447,10 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
         c.traceA && c.traceB ? (
           <EuiButtonEmpty
             size="xs"
-            onClick={() => setTraces(c)}
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              setTraces(c);
+            }}
             data-test-subj={`agtEvlCompareTraces-${c.caseId}`}
           >
             {i18n.translate('agentTraces.evals.compare.compareTraces', {
@@ -268,7 +477,9 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
       name: i18n.translate('agentTraces.evals.compare.changeCol', { defaultMessage: 'Change' }),
       align: 'right',
       sortable: (r: CompareEvalRow) => r.delta ?? Number.POSITIVE_INFINITY,
-      render: (d?: number) => <DeltaCell delta={d} />,
+      render: (d: number | undefined, r: CompareEvalRow) => (
+        <DeltaCell delta={d} na={r.nA} nb={r.nB} />
+      ),
     },
   ];
 
@@ -364,32 +575,24 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
               <p>
                 {i18n.translate('agentTraces.evals.compare.casesSub', {
                   defaultMessage:
-                    '{regressed} regressed (passed in A, not in B) · {fixed} fixed. Compare traces shows both runs of a case side by side.',
-                  values: { regressed, fixed },
+                    'Regressed: passed in A, not in B. Fixed: the reverse. Click a case for its expected output and both outputs side by side.',
                 })}
               </p>
             </EuiText>
           </EuiFlexItem>
           <EuiFlexItem grow={false}>
-            <EuiFilterGroup data-test-subj="agtEvlChangedToggle">
-              <EuiFilterButton
-                hasActiveFilters={onlyChanged}
-                numFilters={changed.length}
-                onClick={() => setOnlyChanged(true)}
-                data-test-subj="agtEvlOnlyChanged"
-              >
-                {i18n.translate('agentTraces.evals.compare.changedFilter', {
-                  defaultMessage: 'Changed',
-                })}
-              </EuiFilterButton>
-              <EuiFilterButton
-                hasActiveFilters={!onlyChanged}
-                numFilters={cmp.cases.length}
-                onClick={() => setOnlyChanged(false)}
-                data-test-subj="agtEvlAllCases"
-              >
-                {i18n.translate('agentTraces.evals.compare.all', { defaultMessage: 'All' })}
-              </EuiFilterButton>
+            <EuiFilterGroup data-test-subj="agtEvlCaseFilter">
+              {filters.map(([key, label]) => (
+                <EuiFilterButton
+                  key={key}
+                  hasActiveFilters={filter === key}
+                  numFilters={count(key)}
+                  onClick={() => setFilter(key)}
+                  data-test-subj={`agtEvlCaseFilter-${key}`}
+                >
+                  {label}
+                </EuiFilterButton>
+              ))}
             </EuiFilterGroup>
           </EuiFlexItem>
         </EuiFlexGroup>
@@ -398,10 +601,20 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
           items={shown}
           itemId="caseId"
           columns={caseColumns}
+          isExpandable
+          itemIdToExpandedRowMap={expandedMap}
           sorting={{ sort: { field: 'change', direction: 'asc' } }}
           pagination={{ initialPageSize: 20, pageSizeOptions: [20, 50] }}
-          message={i18n.translate('agentTraces.evals.compare.noChange', {
-            defaultMessage: 'No case changed between the two runs.',
+          rowProps={(c: CompareCaseRow) => ({
+            className: 'agtEvlClickRow',
+            onClick: (e: React.MouseEvent) => {
+              if ((e.target as HTMLElement).closest('a,button')) return;
+              toggle(c.caseId);
+            },
+            'data-test-subj': `agtEvlCompareRow-${c.caseId}`,
+          })}
+          message={i18n.translate('agentTraces.evals.compare.noMatch', {
+            defaultMessage: 'No case matches this filter.',
           })}
           data-test-subj="agtEvlCompareCases"
         />
@@ -418,7 +631,8 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
         <EuiText size="xs" color="subdued">
           <p>
             {i18n.translate('agentTraces.evals.compare.evaluationsSub', {
-              defaultMessage: 'Result pass rate per evaluation in each run.',
+              defaultMessage:
+                'Result pass rate per evaluation in each run. n = results with a pass rule.',
             })}
           </p>
         </EuiText>

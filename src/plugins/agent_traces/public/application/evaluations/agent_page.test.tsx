@@ -32,13 +32,23 @@ jest.mock('./pass_rate_chart', () => ({
 
 const N = 'attributes.gen_ai.evaluation.name';
 const V = 'attributes.gen_ai.agent.version';
-const evalRow = (name: string, version: string, verdict: string, n: number, day: number) => ({
+const DIR = 'attributes.opensearch.gen_ai.evaluation.score.direction';
+const L = 'attributes.gen_ai.evaluation.score.label';
+const evalRow = (
+  name: string,
+  version: string,
+  verdict: string,
+  n: number,
+  day: number,
+  extra: Record<string, unknown> = {}
+) => ({
   n,
   first: `2026-10-${day} 10:00:00`,
   last: `2026-10-${day} 11:00:00`,
   [N]: name,
   [V]: version,
   verdict,
+  ...extra,
 });
 
 describe('AgentPage', () => {
@@ -48,16 +58,26 @@ describe('AgentPage', () => {
     mockPpl.answer((q) => {
       if (q.includes('span(`@timestamp`'))
         return [
-          { n: 3, t: '2026-10-28 03:00:00', verdict: 'pass' },
-          { n: 1, t: '2026-10-28 03:00:00', verdict: 'fail' },
+          { n: 3, t: '2026-10-28 03:00:00', [V]: 'v2', verdict: 'pass' },
+          { n: 1, t: '2026-10-28 03:00:00', [V]: 'v2', verdict: 'fail' },
+          { n: 2, t: '2026-10-25 03:00:00', [V]: 'v1', verdict: 'pass' },
         ];
-      if (q.includes('stats count() as n, min(`@timestamp`) as first'))
+      if (q.includes('avg_score'))
         return [
-          evalRow('accuracy', 'v1', 'pass', 9, 25),
-          evalRow('accuracy', 'v1', 'fail', 1, 25),
-          evalRow('accuracy', 'v2', 'pass', 5, 28),
-          evalRow('accuracy', 'v2', 'fail', 5, 28),
-          evalRow('helpfulness', 'v2', 'scored', 4, 28),
+          evalRow('accuracy', 'v1', 'pass', 36, 25),
+          evalRow('accuracy', 'v1', 'fail', 4, 25),
+          evalRow('accuracy', 'v2', 'pass', 25, 28),
+          evalRow('accuracy', 'v2', 'fail', 25, 28),
+          evalRow('tone', 'v1', 'pass', 9, 25),
+          evalRow('tone', 'v1', 'fail', 1, 25),
+          evalRow('tone', 'v2', 'pass', 6, 28),
+          evalRow('tone', 'v2', 'fail', 4, 28),
+          evalRow('latency', 'v1', 'scored', 4, 25, { nv: 4, avg_score: 2.5, [DIR]: 'minimize' }),
+          evalRow('latency', 'v2', 'scored', 6, 28, { nv: 6, avg_score: 2.0, [DIR]: 'minimize' }),
+          evalRow('kind', 'v2', 'scored', 3, 28, { [L]: 'direct' }),
+          evalRow('kind', 'v2', 'scored', 1, 28, { [L]: 'refusal' }),
+          evalRow('kind', 'v1', 'scored', 1, 25, { [L]: 'direct' }),
+          evalRow('kind', 'v1', 'scored', 1, 25, { [L]: 'refusal' }),
         ];
       if (q.includes('as started'))
         return [
@@ -74,7 +94,7 @@ describe('AgentPage', () => {
     });
   });
 
-  it('Evaluations tab: the table and trend queries only, version against version', () => {
+  it('Evaluations tab: the table and trend queries only, B against A', () => {
     renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
     expect(new Set(mockPpl.queries)).toEqual(
       new Set([
@@ -83,27 +103,96 @@ describe('AgentPage', () => {
         buildAgentTrendQuery(TEST_INDEX, 'tp', 'all', '3h'),
       ])
     );
+    // Default pair: the two versions with the most recent results.
+    expect(screen.getByTestId('agtEvlVersionB')).toHaveValue('v2');
+    expect(screen.getByTestId('agtEvlVersionA')).toHaveValue('v1');
     const acc = screen.getByTestId('agtEvlEvalRow-accuracy');
     expect(within(acc).getByText('50%')).toBeInTheDocument();
     expect(within(acc).getByText('90%')).toBeInTheDocument();
-    expect(within(acc).getByText('-40 pts')).toBeInTheDocument();
-    expect(screen.getAllByText('Pass rate · v2').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Pass rate · v1').length).toBeGreaterThan(0);
+    expect(within(acc).getByTestId('agtEvlDelta')).toHaveTextContent('-40 pts');
+    expect(within(acc).getByText('n 50/40')).toBeInTheDocument();
+    expect(within(acc).getByText('50')).toBeInTheDocument();
+    // Fewer than 30 results with a pass rule: greyed.
     expect(
-      within(screen.getByTestId('agtEvlEvalRow-helpfulness')).getByTestId('agtEvlNoPassRule')
-    ).toBeInTheDocument();
-    expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Latest version');
-    const props = mockChart.mock.calls[0][0] as { points: unknown[]; markers: unknown[] };
-    expect(props.points).toEqual([{ t: Date.UTC(2026, 9, 28, 3), rate: 0.75 }]);
-    expect(props.markers).toEqual([{ t: Date.UTC(2026, 9, 28, 10), label: 'v2' }]);
+      within(screen.getByTestId('agtEvlEvalRow-tone')).getByTestId('agtEvlDeltaLow')
+    ).toHaveTextContent('-30 pts');
+    // No pass rule, numeric: average, lower is better.
+    const latency = screen.getByTestId('agtEvlEvalRow-latency');
+    expect(latency).toHaveTextContent('avg 2.00');
+    expect(latency).toHaveTextContent('avg 2.50');
+    expect(within(latency).getByTestId('agtEvlNoPassRule')).toHaveTextContent('Score only');
+    expect(within(latency).getByTestId('agtEvlDelta')).toHaveTextContent('-0.50');
+    expect(within(latency).getByTestId('agtEvlDelta')).toHaveClass('agtEvlDelta--good');
+    // Categorical: the top label and its share.
+    const kind = screen.getByTestId('agtEvlEvalRow-kind');
+    expect(kind).toHaveTextContent('direct 75%');
+    expect(within(kind).getByTestId('agtEvlNoPassRule')).toHaveTextContent('Label');
+    expect(kind).toHaveTextContent('+25 pts direct');
+    // Sorted by change, worst first.
+    const rows = screen.getAllByTestId(/^agtEvlEvalRow-/);
+    expect(rows[0]).toHaveAttribute('data-test-subj', 'agtEvlEvalRow-accuracy');
+    expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Versions');
+    const props = mockChart.mock.calls[0][0] as {
+      series: Array<{ id: string; points: unknown[] }>;
+    };
+    expect(props.series.map((x) => x.id)).toEqual(['v2', 'v1']);
+    expect(props.series[0].points).toEqual([{ t: Date.UTC(2026, 9, 28, 3), rate: 0.75, n: 4 }]);
   });
 
-  it('an evaluation row opens the Results tab filtered by it', () => {
+  it('remembers the version pair per agent', () => {
+    const { ctx } = renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
+    fireEvent.change(screen.getByTestId('agtEvlVersionB'), { target: { value: 'v1' } });
+    expect(ctx.setState).toHaveBeenCalledWith({ versionPick: { tp: { b: 'v1', a: undefined } } });
+  });
+
+  it('uses the remembered pair, and the B column follows it', () => {
+    const picked = testContext({
+      state: { ...testContext().state, versionPick: { tp: { b: 'v1', a: 'v2' } } },
+    });
+    renderWithContext(<AgentPage agent="tp" tab="evaluations" />, picked);
+    expect(screen.getByTestId('agtEvlVersionB')).toHaveValue('v1');
+    expect(screen.getByTestId('agtEvlVersionA')).toHaveValue('v2');
+    expect(
+      within(screen.getByTestId('agtEvlEvalRow-accuracy')).getByTestId('agtEvlDelta')
+    ).toHaveTextContent('+40 pts');
+  });
+
+  it('an evaluation row opens its failing results for version B', () => {
     const { ctx } = renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
     fireEvent.click(screen.getByTestId('agtEvlEvalRow-accuracy'));
     expect(ctx.navigate).toHaveBeenCalledWith(
       { page: 'agent', agent: 'tp', tab: 'results' },
-      { results: { ...ctx.state.results, names: ['accuracy'] } }
+      {
+        results: {
+          ...ctx.state.results,
+          names: ['accuracy'],
+          versions: ['v2'],
+          verdicts: ['fail'],
+        },
+        slice: undefined,
+      }
+    );
+    fireEvent.click(screen.getByTestId('agtEvlEvalRow-latency'));
+    expect(ctx.navigate).toHaveBeenLastCalledWith(
+      { page: 'agent', agent: 'tp', tab: 'results' },
+      {
+        results: { ...ctx.state.results, names: ['latency'], versions: ['v2'], verdicts: [] },
+        slice: undefined,
+      }
+    );
+  });
+
+  it('a chart point opens the Results tab for that slice, Fail only', () => {
+    const { ctx } = renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
+    const props = mockChart.mock.calls[0][0] as { onPointClick: (t: number) => void };
+    const t = Date.UTC(2026, 9, 28, 3);
+    props.onPointClick(t);
+    expect(ctx.navigate).toHaveBeenCalledWith(
+      { page: 'agent', agent: 'tp', tab: 'results' },
+      {
+        results: { ...ctx.state.results, names: [], versions: [], verdicts: ['fail'] },
+        slice: { from: t, to: t + 3 * 3600e3 },
+      }
     );
   });
 

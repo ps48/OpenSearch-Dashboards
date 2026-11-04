@@ -7,9 +7,17 @@ import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { RunPage, filterCases } from './run_page';
 import { TEST_INDEX, fakePpl, renderWithContext } from './eval_test_utils';
-import { buildCaseResultsQuery, buildRunCasesQuery, buildSuiteRunsQuery } from './eval_ppl';
+import {
+  buildCaseResultsQuery,
+  buildRootSpansQuery,
+  buildRunCasesQuery,
+  buildRunsLookupQuery,
+  buildSuiteRunsQuery,
+} from './eval_ppl';
 import { CaseRow, emptyTally } from './eval_model';
 
+const SUITE = 'attributes.test.suite.name';
+const RUN_ID = 'attributes.test.suite.run.id';
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
   ...jest.requireActual('./use_ppl_rows'),
@@ -17,14 +25,16 @@ jest.mock('./use_ppl_rows', () => ({
 }));
 
 const RUN = 'run_20261028_cccc3333';
+const BEFORE = 'run_20261027_bbbb2222';
 const base = {
   'attributes.test.suite.name': 'golden',
   'attributes.gen_ai.agent.name': 'tp',
   'attributes.gen_ai.agent.version': 'v2',
   'attributes.cicd.pipeline.run.url.full': 'https://ci/runs/77',
 };
-const caseRow = (id: string, name: string, verdict: string, t0: string, t1: string) => ({
+const caseRow = (id: string, name: string, verdict: string, t0: string, t1: string, run = RUN) => ({
   ...base,
+  'attributes.test.suite.run.id': run,
   n: 1,
   t0,
   t1,
@@ -39,12 +49,39 @@ describe('RunPage', () => {
   beforeEach(() => {
     mockPpl.reset();
     mockPpl.answer((q) => {
-      if (q.includes('stats count() as n, min(`@timestamp`) as t0'))
+      if (q.includes('stats min(`@timestamp`) as started'))
+        return [
+          { started: '2026-10-27 07:00:00', [SUITE]: 'golden', [RUN_ID]: BEFORE },
+          { started: '2026-10-28 07:00:00', [SUITE]: 'golden', [RUN_ID]: RUN },
+        ];
+      if (q.includes('stats count() as n, min(`@timestamp`) as t0')) {
+        const before = '2026-10-27 07:00:00';
         return [
           caseRow('c1', 'accuracy', 'fail', '2026-10-28 07:00:00', '2026-10-28 07:00:05'),
           caseRow('c1', 'tone', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05'),
           caseRow('c2', 'accuracy', 'error', '2026-10-28 07:00:10', '2026-10-28 07:00:20'),
           caseRow('c3', 'accuracy', 'pass', '2026-10-28 07:00:30', '2026-10-28 07:01:30'),
+          ...(q.includes(BEFORE)
+            ? [
+                caseRow('c1', 'accuracy', 'pass', before, before, BEFORE),
+                caseRow('c1', 'tone', 'pass', before, before, BEFORE),
+                caseRow('c2', 'accuracy', 'pass', before, before, BEFORE),
+                caseRow('c3', 'accuracy', 'fail', before, before, BEFORE),
+              ]
+            : []),
+        ];
+      }
+      if (q.includes('`parentSpanId`'))
+        return [
+          {
+            traceId: 'trace-c1',
+            'attributes.gen_ai.input.messages': JSON.stringify([
+              { role: 'user', parts: [{ type: 'text', content: 'Capital of France?' }] },
+            ]),
+            'attributes.gen_ai.output.messages': JSON.stringify([
+              { role: 'assistant', parts: [{ type: 'text', content: 'Lyon' }] },
+            ]),
+          },
         ];
       if (q.endsWith('| head 100'))
         return [
@@ -59,6 +96,7 @@ describe('RunPage', () => {
                   explanation: 'Wrong city',
                 },
               },
+              opensearch: { test: { case: { expected: 'Paris' } } },
             },
           },
         ];
@@ -67,7 +105,7 @@ describe('RunPage', () => {
           {
             n: 1,
             started: '2026-10-27 07:00:00',
-            'attributes.test.suite.run.id': 'run_20261027_bbbb2222',
+            'attributes.test.suite.run.id': BEFORE,
             'attributes.gen_ai.agent.version': 'v1',
             verdict: 'pass',
           },
@@ -83,17 +121,27 @@ describe('RunPage', () => {
     });
   });
 
-  it('reads the run with one aggregation: header, figures and cases', () => {
+  it('finds the run before, then reads both runs with one aggregation', () => {
     renderWithContext(<RunPage runId={RUN} />);
-    expect(new Set(mockPpl.queries)).toEqual(new Set([buildRunCasesQuery(TEST_INDEX, RUN)]));
+    expect(new Set(mockPpl.queries)).toEqual(
+      new Set([buildRunsLookupQuery(TEST_INDEX), buildRunCasesQuery(TEST_INDEX, RUN, BEFORE)])
+    );
     const meta = screen.getByTestId('agtEvlRunMeta');
     expect(meta).toHaveTextContent('golden');
     expect(meta).toHaveTextContent('tp');
     expect(meta).toHaveTextContent('1 min 30 s');
     expect(within(meta).getByText('#77')).toBeInTheDocument();
-    const stats = screen.getByTestId('agtEvlRunStats');
-    expect(stats).toHaveTextContent('1 / 3');
-    expect(stats).toHaveTextContent('67%');
+    const stat = (id: string, value: string, was: string) => {
+      const el = screen.getByTestId(id);
+      expect(el).toHaveTextContent(value);
+      expect(el).toHaveTextContent(`was ${was} in the run before`);
+    };
+    stat('agtEvlStatCases', 'Cases passed 1 / 3', '2 / 3');
+    stat('agtEvlStatResults', 'Results passed 2 / 3', '3 / 4');
+    stat('agtEvlStatErrors', 'Evaluator errors 1', '0');
+    expect(screen.getByTestId('agtEvlStatTotal')).toHaveTextContent(
+      '3 cases × 2 evaluations: accuracy, tone'
+    );
     const c1 = screen.getByTestId('agtEvlCaseRow-c1');
     expect(within(c1).getByText('Fail')).toBeInTheDocument();
     expect(within(c1).getByText('accuracy')).toBeInTheDocument();
@@ -102,12 +150,39 @@ describe('RunPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('expands a case and reads only its results', () => {
+  it('Compare with run before is the primary action', () => {
+    const { ctx } = renderWithContext(<RunPage runId={RUN} />);
+    fireEvent.click(screen.getByTestId('agtEvlCompareRunBefore'));
+    expect(ctx.navigate).toHaveBeenCalledWith({ page: 'compare', runA: BEFORE, runB: RUN });
+  });
+
+  it('a first run has no run before: one run, no comparison figures', () => {
+    mockPpl.answer((q) =>
+      q.includes('stats min(`@timestamp`) as started')
+        ? [{ started: '2026-10-28 07:00:00', [SUITE]: 'golden', [RUN_ID]: RUN }]
+        : q.includes('as t0')
+          ? [caseRow('c1', 'accuracy', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05')]
+          : []
+    );
+    renderWithContext(<RunPage runId={RUN} />);
+    expect(mockPpl.queries).toContain(buildRunCasesQuery(TEST_INDEX, RUN));
+    expect(screen.queryByTestId('agtEvlCompareRunBefore')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlStatCases')).not.toHaveTextContent('run before');
+  });
+
+  it('expands a case: input, expected, output (root span) and its results', () => {
     const { ctx } = renderWithContext(<RunPage runId={RUN} />);
     fireEvent.click(screen.getByTestId('agtEvlCaseRow-c1'));
     expect(mockPpl.queries).toContain(buildCaseResultsQuery(TEST_INDEX, RUN, 'c1'));
+    expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', ['trace-c1']));
     const results = screen.getByTestId('agtEvlCaseResults-c1');
     expect(results).toHaveTextContent('Wrong city');
+    expect(screen.getByTestId('agtEvlCaseInput')).toHaveTextContent('Capital of France?');
+    expect(screen.getByTestId('agtEvlCaseExpected')).toHaveTextContent('Paris');
+    expect(screen.getByTestId('agtEvlCaseExpected')).toHaveTextContent(
+      'opensearch.test.case.expected'
+    );
+    expect(screen.getByTestId('agtEvlCaseOutput')).toHaveTextContent('Lyon');
     fireEvent.click(within(results).getByText('accuracy'));
     expect(ctx.openResult).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'accuracy', verdict: 'fail' })
@@ -124,7 +199,9 @@ describe('RunPage', () => {
     expect(screen.getByTestId('agtEvlCaseRow-c3')).toBeInTheDocument();
     expect(screen.queryByTestId('agtEvlCaseRow-c2')).not.toBeInTheDocument();
     // Status and search run in the browser only.
-    expect(new Set(mockPpl.queries)).toEqual(new Set([buildRunCasesQuery(TEST_INDEX, RUN)]));
+    expect(new Set(mockPpl.queries)).toEqual(
+      new Set([buildRunsLookupQuery(TEST_INDEX), buildRunCasesQuery(TEST_INDEX, RUN, BEFORE)])
+    );
   });
 
   it('View trace opens the case trace', () => {

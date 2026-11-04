@@ -101,63 +101,155 @@ const maxT = (a: number, b: number) => (Number.isNaN(a) ? b : Number.isNaN(b) ? 
 
 // ---------------------------------------------------------------------- Agents and versions
 
+/** Under this many results with a pass rule on either side, a change is shown greyed. */
+export const MIN_N = 30;
+/** A version with results this recent is marked as live. */
+export const LIVE_MS = 6 * 3600e3;
+
+/** One evaluation within one version. */
+export interface EvalStat {
+  tally: Tally;
+  /** pass / (pass + fail). */
+  rate?: number;
+  /** Some result has a pass rule (pass or fail). */
+  hasPassRule: boolean;
+  /** Average score of the results that carry one (evaluator errors left out). */
+  avg?: number;
+  /** Results behind `avg`. */
+  nv: number;
+  /** Most common label of the scored results, and its share of all results. */
+  top?: { label: string; share: number };
+  /** `opensearch.gen_ai.evaluation.score.direction`: `minimize` means lower is better. */
+  direction?: string;
+}
+
 export interface VersionStat {
   /** Undefined: results without `gen_ai.agent.version`. */
   version?: string;
   first: number;
   last: number;
   tally: Tally;
-}
-
-export interface AgentRow {
-  agent: string;
-  latest: VersionStat;
-  previous?: VersionStat;
+  /** Mean of the version's evaluation pass rates (each evaluation counts the same). */
   rate?: number;
-  previousRate?: number;
-  delta?: number;
-  n: number;
-  last: number;
-  /** Every version, by first result. */
-  versions: VersionStat[];
+  /** Results with a pass rule (pass + fail). */
+  decided: number;
+  evaluations: Map<string, EvalStat>;
 }
 
-/** Versions of rows that carry `first`, `last`, a version and a verdict, by first result. */
-const versionsOf = (rows: PplRecord[]): VersionStat[] => {
-  const byVersion = new Map<string, VersionStat>();
+interface EvalAcc {
+  tally: Tally;
+  sum: number;
+  nv: number;
+  labels: Map<string, number>;
+  direction?: string;
+}
+
+const finishEval = (a: EvalAcc): EvalStat => {
+  const top = [...a.labels.entries()].sort((x, y) => y[1] - x[1])[0];
+  return {
+    tally: a.tally,
+    rate: passRate(a.tally),
+    hasPassRule: a.tally.pass + a.tally.fail > 0,
+    avg: a.nv ? a.sum / a.nv : undefined,
+    nv: a.nv,
+    top: top && a.tally.n ? { label: top[0], share: top[1] / a.tally.n } : undefined,
+    direction: a.direction,
+  };
+};
+
+/** Mean of the pass rates of the evaluations that have a pass rule. */
+export const meanPassRate = (evaluations: Iterable<EvalStat>): number | undefined => {
+  const rates = [...evaluations].filter((e) => e.hasPassRule && e.rate !== undefined);
+  return rates.length
+    ? rates.reduce((s, e) => s + (e.rate as number), 0) / rates.length
+    : undefined;
+};
+
+/**
+ * Versions of aggregated rows (a version, an evaluation name, a verdict, `n`, `first` and
+ * `last`; the Evaluations table adds a label, a direction, `nv` and `avg_score`), by first
+ * result.
+ */
+export const versionsOf = (rows: PplRecord[]): VersionStat[] => {
+  const byVersion = new Map<string, { v: VersionStat; evals: Map<string, EvalAcc> }>();
   rows.forEach((row) => {
     const version = str(get(row, F.agentVersion));
     const key = version ?? '';
-    const v = byVersion.get(key) ?? {
-      version,
-      first: NaN,
-      last: NaN,
-      tally: emptyTally(),
+    const entry = byVersion.get(key) ?? {
+      v: {
+        version,
+        first: NaN,
+        last: NaN,
+        tally: emptyTally(),
+        decided: 0,
+        evaluations: new Map(),
+      },
+      evals: new Map<string, EvalAcc>(),
     };
-    v.first = minT(v.first, parseTime(row.first));
-    v.last = maxT(v.last, parseTime(row.last ?? row.first));
-    addToTally(v.tally, row.verdict, num(row.n) ?? 0);
-    byVersion.set(key, v);
+    const n = num(row.n) ?? 0;
+    entry.v.first = minT(entry.v.first, parseTime(row.first));
+    entry.v.last = maxT(entry.v.last, parseTime(row.last ?? row.first));
+    addToTally(entry.v.tally, row.verdict, n);
+    const name = str(get(row, F.name)) ?? '';
+    const acc = entry.evals.get(name) ?? {
+      tally: emptyTally(),
+      sum: 0,
+      nv: 0,
+      labels: new Map<string, number>(),
+    };
+    addToTally(acc.tally, row.verdict, n);
+    const nv = num(row.nv) ?? 0;
+    const avg = num(row.avg_score);
+    if (row.verdict !== 'error' && nv > 0 && avg !== undefined) {
+      acc.sum += avg * nv;
+      acc.nv += nv;
+    }
+    const label = str(get(row, F.label));
+    if (label && row.verdict === 'scored') acc.labels.set(label, (acc.labels.get(label) ?? 0) + n);
+    acc.direction = acc.direction ?? str(get(row, F.scoreDirection));
+    entry.evals.set(name, acc);
+    byVersion.set(key, entry);
   });
-  return [...byVersion.values()].sort((a, b) => a.first - b.first);
+  return [...byVersion.values()]
+    .map(({ v, evals }) => {
+      const evaluations = new Map([...evals.entries()].map(([k, a]) => [k, finishEval(a)]));
+      return {
+        ...v,
+        evaluations,
+        rate: meanPassRate(evaluations.values()),
+        decided: v.tally.pass + v.tally.fail,
+      };
+    })
+    .sort((a, b) => a.first - b.first);
 };
 
+/** Versions with the most recent result first. */
+export const byRecent = (versions: VersionStat[]): VersionStat[] =>
+  [...versions].sort((a, b) => b.last - a.last);
+
+/** The version has results in the last 6 hours. */
+export const isLive = (v: VersionStat, now = Date.now()) =>
+  Number.isFinite(v.last) && v.last > now - LIVE_MS;
+
+export interface AgentRow {
+  agent: string;
+  /** Every version, most recent result first. */
+  versions: VersionStat[];
+  /** Over every version (agents without a version show one pass rate). */
+  rate?: number;
+  n: number;
+  last: number;
+}
+
 const agentRowOf = (agent: string, rows: PplRecord[]): AgentRow => {
-  const versions = versionsOf(rows);
-  const latest = versions[versions.length - 1];
-  const previous = versions.length > 1 ? versions[versions.length - 2] : undefined;
-  const rate = passRate(latest.tally);
-  const previousRate = previous ? passRate(previous.tally) : undefined;
+  const versions = byRecent(versionsOf(rows));
+  const all = versionsOf(rows.map((row) => ({ ...row, [F.agentVersion]: null })))[0];
   return {
     agent,
-    latest,
-    previous,
-    rate,
-    previousRate,
-    delta: rateDelta(previousRate, rate),
+    versions,
+    rate: all?.rate,
     n: versions.reduce((s, v) => s + v.tally.n, 0),
     last: versions.reduce((m, v) => maxT(m, v.last), NaN),
-    versions,
   };
 };
 
@@ -173,82 +265,95 @@ export const agentRows = (rows: PplRecord[]): AgentRow[] => {
 
 // ---------------------------------------------------------------------- Agent page
 
+/** The version key of a version stat ('' when the results carry none). */
+export const versionKey = (v?: VersionStat) => v?.version ?? '';
+
 export interface EvaluationRow {
   name: string;
-  latestRate?: number;
-  previousRate?: number;
-  delta?: number;
-  n: number;
-  /** Some result has a pass rule (pass or fail); otherwise the evaluation only scores. */
+  /** Version B (the one compared) and version A (the baseline). */
+  b?: EvalStat;
+  a?: EvalStat;
   hasPassRule: boolean;
+  /** b - a: pass rate, else average score (raw, see `direction`); undefined otherwise. */
+  delta?: number;
 }
 
 export interface AgentEvaluations {
   /** The agent across its evaluations (versions, totals) for the page's header. */
   summary?: AgentRow;
-  rows: EvaluationRow[];
+  versions: VersionStat[];
 }
 
-/** From `buildAgentEvaluationsQuery`: the latest version against the one before it. */
-export const agentEvaluations = (agent: string, rows: PplRecord[]): AgentEvaluations => {
-  if (!rows.length) return { rows: [] };
-  const summary = agentRowOf(agent, rows);
-  const latest = summary.latest.version ?? '';
-  const previous = summary.previous ? (summary.previous.version ?? '') : undefined;
-  const byName = new Map<string, { latest: Tally; previous: Tally; all: Tally }>();
-  rows.forEach((row) => {
-    const name = str(get(row, F.name)) ?? '';
-    const t = byName.get(name) ?? {
-      latest: emptyTally(),
-      previous: emptyTally(),
-      all: emptyTally(),
-    };
-    const version = str(get(row, F.agentVersion)) ?? '';
-    const n = num(row.n) ?? 0;
-    if (version === latest) addToTally(t.latest, row.verdict, n);
-    if (previous !== undefined && version === previous) addToTally(t.previous, row.verdict, n);
-    addToTally(t.all, row.verdict, n);
-    byName.set(name, t);
-  });
-  return {
-    summary,
-    rows: [...byName.entries()].map(([name, t]) => {
-      const latestRate = passRate(t.latest);
-      const previousRate = previous !== undefined ? passRate(t.previous) : undefined;
-      return {
-        name,
-        latestRate,
-        previousRate,
-        delta: rateDelta(previousRate, latestRate),
-        n: t.all.n,
-        hasPassRule: t.all.pass + t.all.fail > 0,
-      };
-    }),
-  };
+/** From `buildAgentEvaluationsQuery`: every version of the agent with its evaluations. */
+export const agentEvaluations = (agent: string, rows: PplRecord[]): AgentEvaluations =>
+  rows.length
+    ? { summary: agentRowOf(agent, rows), versions: byRecent(versionsOf(rows)) }
+    : { versions: [] };
+
+/** The default pair: the two versions with the most recent results (B the newer). */
+export const defaultVersionPair = (
+  versions: VersionStat[],
+  picked: { b?: string; a?: string } = {}
+): { b?: string; a?: string } => {
+  const keys = byRecent(versions).map(versionKey);
+  const b = picked.b !== undefined && keys.includes(picked.b) ? picked.b : keys[0];
+  const a =
+    picked.a !== undefined && keys.includes(picked.a) && picked.a !== b
+      ? picked.a
+      : keys.find((k) => k !== b);
+  return { b, a };
 };
 
-export interface TrendPoint {
-  t: number;
-  rate: number;
+/** The Evaluations table: every evaluation of the agent, version B against version A. */
+export const evaluationRows = (
+  versions: VersionStat[],
+  b?: string,
+  a?: string
+): EvaluationRow[] => {
+  const vb = versions.find((v) => versionKey(v) === b);
+  const va = a === undefined ? undefined : versions.find((v) => versionKey(v) === a);
+  const names = [...new Set(versions.flatMap((v) => [...v.evaluations.keys()]))];
+  return names.map((name) => {
+    const sb = vb?.evaluations.get(name);
+    const sa = va?.evaluations.get(name);
+    const hasPassRule = !!(sb ?? sa)?.hasPassRule;
+    const delta = !sa || !sb ? undefined : hasPassRule ? rateDelta(sa.rate, sb.rate) : undefined;
+    return { name, b: sb, a: sa, hasPassRule, delta };
+  });
+};
+
+export interface TrendSeries {
+  version?: string;
+  points: Array<{ t: number; rate: number; n: number }>;
+  /** Results with a pass rule in the range. */
+  n: number;
 }
 
-/** From `buildAgentTrendQuery`: pass rate per bucket. */
-export const trendPoints = (rows: PplRecord[]): TrendPoint[] => {
-  const byT = new Map<number, Tally>();
+export const TREND_VERSIONS = 5;
+
+/** From `buildAgentTrendQuery`: pass rate per bucket, one series per version (top 5 by results). */
+export const trendSeries = (rows: PplRecord[], limit = TREND_VERSIONS): TrendSeries[] => {
+  const byVersion = new Map<string, { version?: string; byT: Map<number, Tally> }>();
   rows.forEach((row) => {
     const t = parseTime(row.t);
     if (Number.isNaN(t)) return;
-    byT.set(t, addToTally(byT.get(t) ?? emptyTally(), row.verdict, num(row.n) ?? 0));
+    const version = str(get(row, F.agentVersion));
+    const entry = byVersion.get(version ?? '') ?? { version, byT: new Map<number, Tally>() };
+    entry.byT.set(t, addToTally(entry.byT.get(t) ?? emptyTally(), row.verdict, num(row.n) ?? 0));
+    byVersion.set(version ?? '', entry);
   });
-  return [...byT.entries()]
-    .map(([t, tally]) => ({ t, rate: passRate(tally) }))
-    .filter((p): p is TrendPoint => p.rate !== undefined)
-    .sort((a, b) => a.t - b.t);
+  return [...byVersion.values()]
+    .map(({ version, byT }) => {
+      const points = [...byT.entries()]
+        .map(([t, tally]) => ({ t, rate: passRate(tally), n: tally.pass + tally.fail }))
+        .filter((p): p is { t: number; rate: number; n: number } => p.rate !== undefined)
+        .sort((x, y) => x.t - y.t);
+      return { version, points, n: points.reduce((s, p) => s + p.n, 0) };
+    })
+    .filter((s) => s.points.length)
+    .sort((x, y) => y.n - x.n)
+    .slice(0, limit);
 };
-
-/** A dashed marker where each version after the first in range starts. */
-export const versionMarkers = (versions: VersionStat[]) =>
-  versions.slice(1).map((v) => ({ t: v.first, label: v.version ?? '' }));
 
 // ---------------------------------------------------------------------- Runs and suites
 
@@ -374,16 +479,28 @@ export interface RunDetail {
   tally: Tally;
   rate?: number;
   cases: CaseRow[];
+  /** Cases that passed. */
+  casesPassed: number;
+  /** Evaluation names, sorted. */
+  evaluations: string[];
 }
 
-/** Run page from `buildRunCasesQuery`. Undefined when the run has no results in range. */
-export const runDetail = (runId: string, rows: PplRecord[]): RunDetail | undefined => {
+/**
+ * Run page from `buildRunCasesQuery` (rows of this run and of the run before). Undefined when
+ * the run has no results in range.
+ */
+export const runDetail = (runId: string, allRows: PplRecord[]): RunDetail | undefined => {
+  const rows = allRows.filter((row) => {
+    const id = str(get(row, F.runId));
+    return id === undefined || id === runId;
+  });
   if (!rows.length) return undefined;
   let started = NaN;
   let ended = NaN;
   const tally = emptyTally();
   const first = (path: string) =>
     rows.map((row) => str(get(row, path))).find((v) => v !== undefined);
+  const cases = casesOf(rows);
   rows.forEach((row) => {
     started = minT(started, parseTime(row.t0));
     ended = maxT(ended, parseTime(row.t1 ?? row.t0));
@@ -399,13 +516,36 @@ export const runDetail = (runId: string, rows: PplRecord[]): RunDetail | undefin
     durationMs: Number.isNaN(ended - started) ? 0 : ended - started,
     tally,
     rate: passRate(tally),
-    cases: casesOf(rows),
+    cases,
+    casesPassed: cases.filter((c) => c.status === 'pass').length,
+    evaluations: [...new Set(rows.map((row) => str(get(row, F.name)) ?? ''))].sort(),
   };
+};
+
+export interface RunRef {
+  runId: string;
+  suite?: string;
+  started: number;
+}
+
+/** From `buildRunsLookupQuery`: the run of the same suite that started last before `runId`. */
+export const runBefore = (rows: PplRecord[], runId: string): RunRef | undefined => {
+  const runs: RunRef[] = rows.map((row) => ({
+    runId: str(get(row, F.runId)) ?? '',
+    suite: str(get(row, F.suiteName)),
+    started: parseTime(row.started),
+  }));
+  const self = runs.find((r) => r.runId === runId);
+  if (!self) return undefined;
+  return runs
+    .filter((r) => r.runId !== runId && r.suite === self.suite && r.started < self.started)
+    .sort((a, b) => b.started - a.started)[0];
 };
 
 // ---------------------------------------------------------------------- Compare runs
 
-export type CaseChange = 'regressed' | 'fixed' | 'changed' | 'same';
+/** `onlyA` / `onlyB`: the case has results in one run only. */
+export type CaseChange = 'regressed' | 'fixed' | 'changed' | 'onlyA' | 'onlyB' | 'same';
 
 export interface CompareSide {
   runId: string;
@@ -431,6 +571,9 @@ export interface CompareEvalRow {
   a?: number;
   b?: number;
   delta?: number;
+  /** Results with a pass rule in each run. */
+  nA: number;
+  nB: number;
 }
 
 export interface Comparison {
@@ -444,8 +587,10 @@ export interface Comparison {
 
 export const changeOf = (a?: CaseStatus, b?: CaseStatus): CaseChange => {
   if (a === b) return 'same';
-  if (a === 'pass' && b !== undefined) return 'regressed';
-  if (b === 'pass' && a !== undefined) return 'fixed';
+  if (a === undefined) return 'onlyB';
+  if (b === undefined) return 'onlyA';
+  if (a === 'pass') return 'regressed';
+  if (b === 'pass') return 'fixed';
   return 'changed';
 };
 
@@ -496,9 +641,11 @@ export const comparison = (runA: string, runB: string, rows: PplRecord[]): Compa
       };
     }),
     evaluations: names.map((name) => {
-      const a = passRate(evalTally(casesA, name));
-      const b = passRate(evalTally(casesB, name));
-      return { name, a, b, delta: rateDelta(a, b) };
+      const ta = evalTally(casesA, name);
+      const tb = evalTally(casesB, name);
+      const a = passRate(ta);
+      const b = passRate(tb);
+      return { name, a, b, delta: rateDelta(a, b), nA: ta.pass + ta.fail, nB: tb.pass + tb.fail };
     }),
   };
 };
@@ -519,12 +666,20 @@ export interface EvalResult {
   agentVersion?: string;
   traceId?: string;
   spanId?: string;
-  /** `opensearch.evaluation.level`, else span when there is a span id, else trace. */
+  /** `opensearch.gen_ai.evaluation.level`, else span when there is a span id, else trace. */
   level: string;
   evaluatorName?: string;
   evaluatorType?: string;
+  evaluatorVersion?: string;
   scoreMin?: number;
   scoreMax?: number;
+  scoreThreshold?: number;
+  scoreDirection?: string;
+  /** The judge's own trace (`opensearch.gen_ai.evaluation.judge.trace_id`). */
+  judgeTraceId?: string;
+  /** Expected output of the case (`opensearch.test.case.expected`), offline only. */
+  expected?: string;
+  expectedTruncated: boolean;
   suiteName?: string;
   runId?: string;
   caseId?: string;
@@ -562,8 +717,14 @@ export const recordToResult = (row: PplRecord, index = 0): EvalResult => {
     level: levelOf(s(F.level), spanId),
     evaluatorName: s(F.evaluatorName),
     evaluatorType: s(F.evaluatorType),
+    evaluatorVersion: s(F.evaluatorVersion),
     scoreMin: num(get(row, F.scoreMin)),
     scoreMax: num(get(row, F.scoreMax)),
+    scoreThreshold: num(get(row, F.scoreThreshold)),
+    scoreDirection: s(F.scoreDirection),
+    judgeTraceId: s(F.judgeTraceId),
+    expected: s(F.caseExpected),
+    expectedTruncated: String(get(row, F.caseExpectedTruncated)) === 'true',
     suiteName: s(F.suiteName),
     runId: s(F.runId),
     caseId: s(F.caseId),

@@ -8,6 +8,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { TracesDataTable } from './traces_data_table';
 
 jest.mock('../../../components/data_table/data_table', () => ({ DataTable: () => <div /> }));
+jest.mock('./failing_evaluation_filter', () => ({ FailingEvaluationFilter: () => null }));
 jest.mock('./row_evaluations_context', () => ({
   RowEvaluationsProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));

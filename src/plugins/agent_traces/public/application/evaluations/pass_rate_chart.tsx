@@ -13,6 +13,7 @@ import {
   Position,
   ScaleType,
   Settings,
+  XYChartElementEvent,
   niceTimeFormatter,
 } from '@elastic/charts';
 import { i18n } from '@osd/i18n';
@@ -29,6 +30,13 @@ export interface ChartPoint {
   label?: string;
 }
 
+/** One line (a version on the agent page). */
+export interface ChartSeries {
+  id: string;
+  name: string;
+  points: ChartPoint[];
+}
+
 export interface ChartMarker {
   t: number;
   label: string;
@@ -41,21 +49,41 @@ const useChartThemes = () => {
   return { chartsTheme: theme?.useChartsTheme(), baseTheme: theme?.useChartsBaseTheme() };
 };
 
+const toData = (points: ChartPoint[]) =>
+  points.map((p) => ({ x: p.t, y: Math.round(p.rate * 100), label: p.label }));
+
 /**
- * Pass rate in percent over time: one line, optional dashed markers (where a version starts),
- * and points (one per run on a suite).
+ * Pass rate in percent over time: one line (or one per series, with a legend), optional dashed
+ * markers, and points (one per run on a suite). `onPointClick`: a click on a point gives its x.
  */
 export const PassRateChart: React.FC<{
   id: string;
-  points: ChartPoint[];
+  points?: ChartPoint[];
+  series?: ChartSeries[];
   markers?: ChartMarker[];
   showPoints?: boolean;
   height?: number;
   domain?: { min: number; max: number };
-}> = ({ id, points, markers = [], showPoints = false, height = 200, domain }) => {
+  onPointClick?: (t: number) => void;
+}> = ({
+  id,
+  points = [],
+  series,
+  markers = [],
+  showPoints = false,
+  height = 200,
+  domain,
+  onPointClick,
+}) => {
   const { chartsTheme, baseTheme } = useChartThemes();
-  const data = points.map((p) => ({ x: p.t, y: Math.round(p.rate * 100), label: p.label }));
-  const xs = data.map((d) => d.x);
+  const lines: ChartSeries[] = series ?? [
+    {
+      id: 'rate',
+      name: i18n.translate('agentTraces.evals.chart.passRate', { defaultMessage: 'Pass rate' }),
+      points,
+    },
+  ];
+  const xs = lines.flatMap((l) => l.points.map((p) => p.t));
   const min = domain?.min ?? Math.min(...xs);
   const max = domain?.max ?? Math.max(...xs);
   return (
@@ -65,7 +93,16 @@ export const PassRateChart: React.FC<{
           // Room above the plot for the version labels.
           theme={[{ chartMargins: { top: 18 } }, ...(chartsTheme ? [chartsTheme] : [])]}
           baseTheme={baseTheme}
-          showLegend={false}
+          showLegend={!!series}
+          legendPosition={Position.Top}
+          onElementClick={
+            onPointClick
+              ? (elements) => {
+                  const [geometry] = (elements[0] ?? []) as XYChartElementEvent;
+                  if (geometry && typeof geometry.x === 'number') onPointClick(geometry.x);
+                }
+              : undefined
+          }
           xDomain={Number.isFinite(min) && Number.isFinite(max) ? { min, max } : undefined}
         />
         <Axis
@@ -81,18 +118,23 @@ export const PassRateChart: React.FC<{
           ticks={5}
           gridLine={{ visible: true }}
         />
-        <LineSeries
-          id={`${id}-rate`}
-          name={i18n.translate('agentTraces.evals.chart.passRate', { defaultMessage: 'Pass rate' })}
-          xScaleType={ScaleType.Time}
-          yScaleType={ScaleType.Linear}
-          xAccessor="x"
-          yAccessors={['y']}
-          data={data}
-          color={euiThemeVars.euiColorPrimary}
-          tickFormat={(v) => `${v}%`}
-          lineSeriesStyle={{ point: { visible: showPoints ? 'always' : 'never', radius: 4 } }}
-        />
+        {lines.map((line) => (
+          <LineSeries
+            key={line.id}
+            id={`${id}-${line.id}`}
+            name={line.name}
+            xScaleType={ScaleType.Time}
+            yScaleType={ScaleType.Linear}
+            xAccessor="x"
+            yAccessors={['y']}
+            data={toData(line.points)}
+            color={series ? undefined : euiThemeVars.euiColorPrimary}
+            tickFormat={(v) => `${v}%`}
+            lineSeriesStyle={{
+              point: { visible: showPoints || onPointClick ? 'always' : 'never', radius: 3 },
+            }}
+          />
+        ))}
         {markers.map((m, i) => (
           <LineAnnotation
             key={`${m.label}-${m.t}`}

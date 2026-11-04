@@ -22,6 +22,7 @@ import {
 } from '../../common';
 import { prepareAgentSpansQuery, prepareRootSpansQuery } from './tab_queries';
 import { prepareQueryForLanguage } from './utils/languages';
+import { withFailingFilter } from './evaluations/failing_traces_filter';
 
 /**
  * Registers built-in tabs with the tab registry
@@ -38,7 +39,7 @@ export const registerBuiltInTabs = (tabRegistry: TabRegistryService) => {
     order: 10,
     supportedLanguages: [AGENT_TRACES_DEFAULT_LANGUAGE],
 
-    prepareQuery: prepareRootSpansQuery,
+    prepareQuery: withFailingFilter(prepareRootSpansQuery),
 
     component: TracesTab,
   };

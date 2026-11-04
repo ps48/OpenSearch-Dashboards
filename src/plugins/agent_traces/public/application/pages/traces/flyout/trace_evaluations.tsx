@@ -5,7 +5,7 @@
 
 import './trace_evaluations.scss';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   EuiBasicTable,
   EuiBasicTableColumn,
@@ -18,9 +18,17 @@ import { i18n } from '@osd/i18n';
 import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
 import type { AgentTracesServices } from '../../../../types';
 import { EvalResult, Tally, Verdict, tallyOf } from '../../../evaluations/eval_model';
-import { DASH, TallyCell, VerdictBadge, formatScore } from '../../../evaluations/eval_components';
+import {
+  DASH,
+  TallyCell,
+  VerdictBadge,
+  formatScore,
+  scoreOrLabel,
+} from '../../../evaluations/eval_components';
 import { JudgeMark } from '../../../evaluations/judge_mark';
 import { ResultFlyout } from '../../../evaluations/result_flyout';
+import { EvalContext, defaultEvalContext } from '../../../evaluations/eval_context';
+import { useEvalsIndexPattern, useSpansIndexPattern } from '../../../evaluations/eval_dataset';
 import { openInEvaluations } from '../../../evaluations/eval_links';
 import { TraceEvaluations } from './use_trace_evaluations';
 
@@ -104,15 +112,31 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
 }) => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const application = services.application;
+  const index = useEvalsIndexPattern();
+  const spansIndex = useSpansIndexPattern();
+  const [shown, setShown] = useState(result);
+  useEffect(() => setShown(result), [result]);
+  // The flyout's lazy reads (judged span, case, judge trace) use the evaluations and span
+  // indices of Agent Traces, from the start of the range to now (results land after traces).
+  const context = useMemo(() => {
+    const ctx = defaultEvalContext(index ?? 'otel-v1-genai-evaluation-*', spansIndex);
+    const timefilter = services.data?.query.timefilter.timefilter;
+    const from = timefilter?.calculateBounds(timefilter.getTime()).min?.toISOString();
+    return from ? { ...ctx, timeRange: { from, to: new Date().toISOString() } } : ctx;
+  }, [index, spansIndex, services.data]);
   return (
-    <ResultFlyout
-      result={result}
-      onClose={onClose}
-      links={{
-        openSuite: (suite) => openInEvaluations(application, { page: 'suite', suite }),
-        openRun: (runId) => openInEvaluations(application, { page: 'run', runId }),
-      }}
-    />
+    <EvalContext.Provider value={context}>
+      <ResultFlyout
+        key={shown.id}
+        result={shown}
+        onClose={onClose}
+        onOpenResult={setShown}
+        links={{
+          openSuite: (suite) => openInEvaluations(application, { page: 'suite', suite }),
+          openRun: (runId) => openInEvaluations(application, { page: 'run', runId }),
+        }}
+      />
+    </EvalContext.Provider>
   );
 };
 
@@ -166,7 +190,7 @@ export const TraceEvaluationsTab: React.FC<{
       field: 'value',
       name: i18n.translate('agentTraces.flyout.evalScore', { defaultMessage: 'Score' }),
       align: 'right',
-      render: (v?: number) => <span className="agtEvlMono">{formatScore(v)}</span>,
+      render: (_: unknown, r: EvalResult) => <span className="agtEvlMono">{scoreOrLabel(r)}</span>,
     },
     {
       field: 'explanation',
