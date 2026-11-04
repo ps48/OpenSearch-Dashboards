@@ -2,7 +2,7 @@
  * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { i18n } from '@osd/i18n';
 import {
   EuiTitle,
@@ -65,6 +65,8 @@ export interface TraceDetailsProps {
   navigation?: FlyoutNavigation;
   /** Left tab to open on (`evaluations` from the Evaluations column). */
   initialTab?: string;
+  /** Changes when `initialTab` is asked for again while this flyout is open. */
+  tabRequest?: number;
 }
 
 /** The trace's session id: the first span carrying gen_ai.conversation.id. */
@@ -111,6 +113,7 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
   onOpenSession,
   navigation,
   initialTab,
+  tabRequest,
 }) => {
   // Header span: the agent the row represents (see headerSpanOf), so name, latency and tokens
   // are that agent's own, also for parallel agents behind one HTTP root.
@@ -139,9 +142,17 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
     fullTree?.[0]?.spanId ?? rootTrace.spanId
   );
   const evalsEnabled = useAgentEvalsEnabled();
-  const [leftTabId, setLeftTabId] = useState(
-    initialTab === 'evaluations' && !evalsEnabled ? 'trace-tree' : (initialTab ?? 'trace-tree')
-  );
+  const tabOf = (tab?: string) =>
+    tab === 'evaluations' && !evalsEnabled ? 'trace-tree' : (tab ?? 'trace-tree');
+  const [leftTabId, setLeftTabId] = useState(tabOf(initialTab));
+  // The tally of the trace already open: show the asked tab (the flyout is not remounted).
+  const lastTabRequest = useRef(tabRequest);
+  useEffect(() => {
+    if (tabRequest === lastTabRequest.current) return;
+    lastTabRequest.current = tabRequest;
+    if (initialTab) setLeftTabId(tabOf(initialTab));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabRequest]);
   const spanLabelOf = useCallback(
     (spanId: string) => flatNodes.find((node) => node.traceRow?.spanId === spanId)?.label,
     [flatNodes]

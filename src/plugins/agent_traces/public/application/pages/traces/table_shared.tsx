@@ -221,6 +221,44 @@ interface DataTableCoreOptions {
   defaultColumns: string[];
 }
 
+const EVALUATIONS_COLUMN = 'evaluations';
+
+/** The columns shown: Agent Evaluations off, no Evaluations column, whatever was saved. */
+export const shownColumns = (stored: string[], evalsEnabled: boolean): string[] =>
+  evalsEnabled ? stored : stored.filter((c) => c !== EVALUATIONS_COLUMN);
+
+/**
+ * The columns to set on mount, or undefined to keep them: the defaults when none of the agent
+ * traces columns are there (first visit, old column state), else the Evaluations column added
+ * after Total tokens to state saved before it existed (Agent Evaluations on only).
+ */
+export const initialColumns = (
+  columns: string[],
+  defaultColumns: string[],
+  evalsEnabled: boolean
+): string[] | undefined => {
+  const traceOnlyVirtualColumns = ['latency', 'totalTokens', 'status'];
+  const hasTraceVirtualColumns = columns.some((c) => traceOnlyVirtualColumns.includes(c));
+  if (
+    columns.length === 0 ||
+    (columns.length === 1 && columns[0] === '_source') ||
+    !hasTraceVirtualColumns
+  ) {
+    return shownColumns(defaultColumns, evalsEnabled);
+  }
+  if (
+    evalsEnabled &&
+    defaultColumns.includes(EVALUATIONS_COLUMN) &&
+    !columns.includes(EVALUATIONS_COLUMN)
+  ) {
+    const at = columns.indexOf('totalTokens');
+    const next = [...columns];
+    next.splice(at >= 0 ? at + 1 : next.length, 0, EVALUATIONS_COLUMN);
+    return next;
+  }
+  return undefined;
+};
+
 export const useDataTableCore = ({ defaultColumns }: DataTableCoreOptions) => {
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const { uiSettings } = services;
@@ -230,7 +268,7 @@ export const useDataTableCore = ({ defaultColumns }: DataTableCoreOptions) => {
   // Agent Evaluations off: no Evaluations column, whatever the saved column state says.
   const evalsEnabled = useAgentEvalsEnabled();
   const columns = useMemo(
-    () => (evalsEnabled ? storedColumns : storedColumns.filter((c) => c !== 'evaluations')),
+    () => shownColumns(storedColumns, evalsEnabled),
     [storedColumns, evalsEnabled]
   );
   const { dataset } = useDatasetContext();
@@ -284,29 +322,8 @@ export const useDataTableCore = ({ defaultColumns }: DataTableCoreOptions) => {
   // Initialize columns to defaults on mount if they don't contain any
   // agent traces virtual columns (e.g., first visit or migrating from old EuiTable columns).
   useEffect(() => {
-    const traceOnlyVirtualColumns = ['latency', 'totalTokens', 'status'];
-    const hasTraceVirtualColumns = columns.some((c) => traceOnlyVirtualColumns.includes(c));
-    if (
-      columns.length === 0 ||
-      (columns.length === 1 && columns[0] === '_source') ||
-      !hasTraceVirtualColumns
-    ) {
-      dispatch(
-        setColumns(
-          evalsEnabled ? defaultColumns : defaultColumns.filter((c) => c !== 'evaluations')
-        )
-      );
-    } else if (
-      evalsEnabled &&
-      defaultColumns.includes('evaluations') &&
-      !columns.includes('evaluations')
-    ) {
-      // Saved column state from before the Evaluations column existed.
-      const at = columns.indexOf('totalTokens');
-      const next = [...columns];
-      next.splice(at >= 0 ? at + 1 : next.length, 0, 'evaluations');
-      dispatch(setColumns(next));
-    }
+    const next = initialColumns(columns, defaultColumns, evalsEnabled);
+    if (next) dispatch(setColumns(next));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Retain previous results while a new query loads (e.g. sort change)
@@ -385,8 +402,6 @@ interface DataTableInfoBarProps {
   entityName: 'span' | 'trace' | 'session';
   wrapCellText: boolean;
   onWrapCellTextChange: (v: boolean) => void;
-  /** Extra table controls shown before the wrap switch (e.g. a filter toggle). */
-  controls?: React.ReactNode;
 }
 
 interface InfoBarCountProps {
@@ -485,7 +500,6 @@ export const DataTableInfoBar: React.FC<DataTableInfoBarProps> = ({
   entityName,
   wrapCellText,
   onWrapCellTextChange,
-  controls,
 }) => {
   const CountMessage =
     entityName === 'span'
@@ -511,7 +525,6 @@ export const DataTableInfoBar: React.FC<DataTableInfoBarProps> = ({
           />
         </EuiText>
       </EuiFlexItem>
-      {controls && <EuiFlexItem>{controls}</EuiFlexItem>}
       <EuiFlexItem grow={false}>
         <EuiSwitch
           label={

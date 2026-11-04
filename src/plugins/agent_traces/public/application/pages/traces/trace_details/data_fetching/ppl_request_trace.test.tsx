@@ -176,6 +176,14 @@ describe('ppl_request_trace', () => {
       );
     });
 
+    it('escapes the trace id so it cannot close the string literal', async () => {
+      await tracePPLService.fetchTraceSpans({ ...defaultParams, traceId: 'x" or true | head 1' });
+      expect(mockBuildPPLQueryRequest).toHaveBeenCalledWith(
+        expect.anything(),
+        'source = test-index | where traceId = "x\\" or true | head 1" | head 100'
+      );
+    });
+
     it('passes abort signal to executePPLQuery', async () => {
       const controller = new AbortController();
       await tracePPLService.fetchTraceSpans(defaultParams, controller.signal);

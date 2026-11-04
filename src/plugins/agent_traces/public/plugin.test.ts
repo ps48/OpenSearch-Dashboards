@@ -3,7 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { BehaviorSubject, Observable } from 'rxjs';
 import { AgentTracesPlugin } from './plugin';
+import { AppNavLinkStatus, AppUpdater } from '../../../core/public';
+import { createOsdUrlTracker } from '../../opensearch_dashboards_utils/public';
 import { agentEvalsNavPopover } from './nav_popover';
 import { AGENT_EVALS_NAV_ID } from '../common';
 import { coreMock } from '../../../core/public/mocks';
@@ -237,7 +240,8 @@ describe('AgentTracesPlugin', () => {
     it('should register agent traces applications', () => {
       plugin.setup(coreSetup as any, setupDeps as any);
 
-      expect(coreSetup.application.register).toHaveBeenCalledTimes(1);
+      // Classic navigation: Evaluations and the base app.
+      expect(coreSetup.application.register).toHaveBeenCalledTimes(2);
       expect(coreSetup.application.register).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'agentTraces',
@@ -283,6 +287,36 @@ describe('AgentTracesPlugin', () => {
       expect(others.every((l) => (l.order as number) > 50)).toBe(true);
     });
 
+    const registeredIds = () =>
+      (coreSetup.application.register as jest.Mock).mock.calls.map((c) => c[0].id as string);
+
+    it.each([
+      ['classic', false],
+      ['icon side', true],
+    ])('registers Evaluations before the base app (%s nav)', (_mode, iconSideNav) => {
+      (coreSetup.chrome.getIsIconSideNavEnabled as jest.Mock).mockReturnValue(iconSideNav);
+      plugin.setup(coreSetup, setupDeps);
+      const ids = registeredIds();
+      expect(ids).toContain(AGENT_EVALS_NAV_ID);
+      // parseAppUrl takes the first app whose id is a prefix of the URL.
+      expect(ids.indexOf(AGENT_EVALS_NAV_ID)).toBeLessThan(ids.indexOf('agentTraces'));
+    });
+
+    it('adds the Evaluations nav link right after Agent Traces (classic nav)', () => {
+      (coreSetup.chrome.getIsIconSideNavEnabled as jest.Mock).mockReturnValue(false);
+      plugin.setup(coreSetup, setupDeps);
+      const calls = (coreSetup.chrome.navGroup.addNavLinksToGroup as jest.Mock).mock.calls;
+      const groupsWith = (id: string) =>
+        calls
+          .filter((c) => (c[1] as Array<{ id: string }>).some((l) => l.id === id))
+          .map((c) => c[0].id);
+      expect(groupsWith(AGENT_EVALS_NAV_ID).sort()).toEqual(groupsWith('agentTraces').sort());
+      const link = calls
+        .flatMap((c) => c[1] as Array<{ id: string; order?: number; category?: unknown }>)
+        .find((l) => l.id === AGENT_EVALS_NAV_ID);
+      expect(link).toEqual(expect.objectContaining({ order: 301, category: undefined }));
+    });
+
     it('should register nav links during setup', () => {
       plugin.setup(coreSetup, setupDeps);
 
@@ -310,6 +344,77 @@ describe('AgentTracesPlugin', () => {
       const result = plugin.start(coreStart, startDeps);
 
       expect(result.slotRegistry).toBeDefined();
+    });
+  });
+
+  describe('nav link visibility', () => {
+    const latestUpdater = (appId: string): AppUpdater => {
+      const app = (coreSetup.application.register as jest.Mock).mock.calls
+        .map((c) => c[0])
+        .find((a) => a.id === appId);
+      let latest: AppUpdater = () => ({});
+      const sub = (app.updater$ as Observable<AppUpdater>).subscribe((u) => (latest = u));
+      sub.unsubscribe();
+      return latest;
+    };
+    const trackerSubjectFor = (appId: string) =>
+      (createOsdUrlTracker as jest.Mock).mock.calls
+        .map((c) => c[0])
+        .find((o) => String(o.storageKey).endsWith(`:${appId}`))
+        .navLinkUpdater$ as BehaviorSubject<AppUpdater>;
+
+    beforeEach(() => {
+      (coreSetup.chrome.getIsIconSideNavEnabled as jest.Mock).mockReturnValue(true);
+      plugin.setup(coreSetup, setupDeps);
+    });
+
+    it('keeps Evaluations hidden with the flag off after a time change updates the default path', () => {
+      plugin.start(coreStart, startDeps);
+      const app = { id: AGENT_EVALS_NAV_ID } as any;
+      expect(latestUpdater(AGENT_EVALS_NAV_ID)(app)).toEqual(
+        expect.objectContaining({ navLinkStatus: AppNavLinkStatus.hidden })
+      );
+      // What the URL tracker does on a time or refresh change.
+      trackerSubjectFor(AGENT_EVALS_NAV_ID).next(() => ({ defaultPath: '#/?_g=(time:x)' }));
+      expect(latestUpdater(AGENT_EVALS_NAV_ID)(app)).toEqual({
+        navLinkStatus: AppNavLinkStatus.hidden,
+        defaultPath: '#/?_g=(time:x)',
+      });
+    });
+
+    it('keeps the base app hidden when Agent Traces is off and its tracker emits', () => {
+      plugin.start(coreStart, startDeps);
+      trackerSubjectFor('agentTraces').next(() => ({ defaultPath: '#/x' }));
+      expect(latestUpdater('agentTraces')({ id: 'agentTraces' } as any)).toEqual({
+        navLinkStatus: AppNavLinkStatus.hidden,
+        defaultPath: '#/x',
+      });
+    });
+
+    it('keeps Evaluations hidden with the flag off in the classic nav', () => {
+      const classic = new AgentTracesPlugin(initializerContext as any);
+      (coreSetup.application.register as jest.Mock).mockClear();
+      (createOsdUrlTracker as jest.Mock).mockClear();
+      (coreSetup.chrome.getIsIconSideNavEnabled as jest.Mock).mockReturnValue(false);
+      classic.setup(coreSetup, setupDeps);
+      classic.start(coreStart, startDeps);
+      trackerSubjectFor(AGENT_EVALS_NAV_ID).next(() => ({ defaultPath: '#/z' }));
+      expect(latestUpdater(AGENT_EVALS_NAV_ID)({ id: AGENT_EVALS_NAV_ID } as any)).toEqual({
+        navLinkStatus: AppNavLinkStatus.hidden,
+        defaultPath: '#/z',
+      });
+    });
+
+    it('shows Evaluations when the capability is on', () => {
+      (coreStart.application as any).capabilities = {
+        agentTraces: { agentTracesEnabled: true, agentEvalsEnabled: true },
+      };
+      plugin.start(coreStart, startDeps);
+      trackerSubjectFor(AGENT_EVALS_NAV_ID).next(() => ({ defaultPath: '#/y' }));
+      expect(latestUpdater(AGENT_EVALS_NAV_ID)({ id: AGENT_EVALS_NAV_ID } as any)).toEqual({
+        navLinkStatus: AppNavLinkStatus.visible,
+        defaultPath: '#/y',
+      });
     });
   });
 

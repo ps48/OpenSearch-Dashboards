@@ -25,6 +25,11 @@ export type FlyoutView =
       fullTreeError?: string;
       /** Tab to open on (e.g. `evaluations`). */
       initialTab?: string;
+      /**
+       * Changes on every open that asks for `initialTab`, so the flyout switches to it even
+       * when that trace's flyout is already open (same key, no remount).
+       */
+      tabRequest?: number;
     }
   | {
       kind: 'session';

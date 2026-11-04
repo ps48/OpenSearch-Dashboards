@@ -4,7 +4,7 @@
  */
 
 import { i18n } from '@osd/i18n';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 import { isAgentEvalsEnabled } from './application/evaluations/eval_feature_flag';
 import {
@@ -84,6 +84,20 @@ export class AgentTracesPlugin implements Plugin<
   private stateUpdaterByApp: Record<string, BehaviorSubject<AppUpdater>> = {
     agentTraces: new BehaviorSubject<AppUpdater>(() => ({})),
   };
+  // Nav link visibility is kept apart from the URL trackers' subjects: core keeps only the
+  // latest updater per `updater$`, so a tracker's `{ defaultPath }` emission (on every time or
+  // refresh change) would otherwise replace the `{ navLinkStatus: hidden }` set in start().
+  private navVisibilityUpdater$ = new BehaviorSubject<AppUpdater>(() => ({}));
+
+  /** The app's `updater$`: its URL tracker state merged with the nav link visibility. */
+  private appUpdater$(appId: string): Observable<AppUpdater> {
+    return combineLatest([this.stateUpdaterByApp[appId], this.navVisibilityUpdater$]).pipe(
+      map(([stateUpdater, visibilityUpdater]): AppUpdater => (app) => ({
+        ...stateUpdater(app),
+        ...visibilityUpdater(app),
+      }))
+    );
+  }
 
   private stopUrlTrackingCallbackByApp: Record<string, () => void> = {};
   private currentHistory?: ScopedHistory;
@@ -197,7 +211,7 @@ export class AgentTracesPlugin implements Plugin<
       return {
         id: PLUGIN_ID,
         title: PLUGIN_NAME,
-        updater$: appStateUpdater.asObservable(),
+        updater$: this.appUpdater$(appId),
         order: 1000,
         workspaceAvailability: WorkspaceAvailability.insideWorkspace,
         euiIconType: 'inputOutput',
@@ -311,68 +325,6 @@ export class AgentTracesPlugin implements Plugin<
         })
       );
 
-      // Evaluations: a read-only view of GenAI evaluation results, joined to agent traces.
-      if (!this.stateUpdaterByApp[AGENT_EVALS_NAV_ID]) {
-        this.stateUpdaterByApp[AGENT_EVALS_NAV_ID] = new BehaviorSubject<AppUpdater>(() => ({}));
-      }
-      // Like Explore and the base Agent Traces app: the nav link reopens the last URL of the
-      // browser session (tab, filters, runs range), with the current global time range.
-      let evalsHistory: AppMountParameters['history'] | undefined;
-      const evalsTracker = createOsdUrlTracker({
-        baseUrl: core.http.basePath.prepend(`/app/${AGENT_EVALS_NAV_ID}`),
-        defaultSubUrl: '#/',
-        storageKey: `lastUrl:${core.http.basePath.get()}:${AGENT_EVALS_NAV_ID}`,
-        navLinkUpdater$: this.stateUpdaterByApp[AGENT_EVALS_NAV_ID],
-        toastNotifications: core.notifications.toasts,
-        stateParams: [
-          {
-            osdUrlKey: '_g',
-            stateUpdate$: setupDeps.data.query.state$.pipe(
-              filter(
-                (value: Record<string, unknown>) =>
-                  !!((value.changes as any)?.time || (value.changes as any)?.refreshInterval)
-              ),
-              map(({ state }) => getGlobalQueryUrlState(state))
-            ),
-          },
-        ],
-        getHistory: () => evalsHistory as AppMountParameters['history'],
-      });
-      this.stopUrlTrackingCallbackByApp[AGENT_EVALS_NAV_ID] = evalsTracker.stop;
-      core.application.register({
-        id: AGENT_EVALS_NAV_ID,
-        title: i18n.translate('agentTraces.evaluations.appTitle', {
-          defaultMessage: 'Agent Evaluations',
-        }),
-        updater$: this.stateUpdaterByApp[AGENT_EVALS_NAV_ID].asObservable(),
-        order: 1000,
-        workspaceAvailability: WorkspaceAvailability.insideWorkspace,
-        euiIconType: 'inputOutput',
-        category: DEFAULT_APP_CATEGORIES.opensearchDashboards,
-        mount: async (params: AppMountParameters) => {
-          if (!this.initializeServices) {
-            throw Error('Agent Traces plugin method initializeServices is undefined');
-          }
-          const { core: coreStart, plugins: pluginsStart } = await this.initializeServices();
-          if (!(await this.getIsAgentTracesEnabledWorkspace(coreStart))) {
-            coreStart.application.navigateToApp('discover', { replace: true });
-            return () => {};
-          }
-          if (!isAgentEvalsEnabled(coreStart.application.capabilities)) {
-            coreStart.application.navigateToApp(AGENT_TRACES_NAV_ID, { replace: true });
-            return () => {};
-          }
-          const { renderEvaluationsApp } = await import('./application/evaluations');
-          evalsHistory = params.history;
-          evalsTracker.appMounted();
-          const unmount = renderEvaluationsApp(params, coreStart, pluginsStart);
-          return () => {
-            evalsTracker.appUnMounted();
-            unmount();
-          };
-        },
-      });
-
       core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, [
         {
           id: AGENT_TRACES_NAV_ID,
@@ -404,6 +356,72 @@ export class AgentTracesPlugin implements Plugin<
       ]);
     }
 
+    // Evaluations: a read-only view of GenAI evaluation results, joined to agent traces.
+    // Registered with both navigations (its nav link differs, below), before the base app.
+    if (!this.stateUpdaterByApp[AGENT_EVALS_NAV_ID]) {
+      this.stateUpdaterByApp[AGENT_EVALS_NAV_ID] = new BehaviorSubject<AppUpdater>(() => ({}));
+    }
+    // Like Explore and the base Agent Traces app: the nav link reopens the last URL of the
+    // browser session (tab, filters, runs range), with the current global time range.
+    let evalsHistory: AppMountParameters['history'] | undefined;
+    const evalsTracker = createOsdUrlTracker({
+      baseUrl: core.http.basePath.prepend(`/app/${AGENT_EVALS_NAV_ID}`),
+      defaultSubUrl: '#/',
+      storageKey: `lastUrl:${core.http.basePath.get()}:${AGENT_EVALS_NAV_ID}`,
+      navLinkUpdater$: this.stateUpdaterByApp[AGENT_EVALS_NAV_ID],
+      toastNotifications: core.notifications.toasts,
+      stateParams: [
+        {
+          osdUrlKey: '_g',
+          stateUpdate$: setupDeps.data.query.state$.pipe(
+            filter(
+              (value: Record<string, unknown>) =>
+                !!((value.changes as any)?.time || (value.changes as any)?.refreshInterval)
+            ),
+            map(({ state }) => getGlobalQueryUrlState(state))
+          ),
+        },
+      ],
+      getHistory: () => evalsHistory as AppMountParameters['history'],
+    });
+    this.stopUrlTrackingCallbackByApp[AGENT_EVALS_NAV_ID] = evalsTracker.stop;
+    core.application.register({
+      id: AGENT_EVALS_NAV_ID,
+      title: i18n.translate('agentTraces.evaluations.appTitle', {
+        defaultMessage: 'Agent Evaluations',
+      }),
+      updater$: this.appUpdater$(AGENT_EVALS_NAV_ID),
+      order: 1000,
+      workspaceAvailability: WorkspaceAvailability.insideWorkspace,
+      euiIconType: 'inputOutput',
+      category: DEFAULT_APP_CATEGORIES.opensearchDashboards,
+      mount: async (params: AppMountParameters) => {
+        if (!this.initializeServices) {
+          throw Error('Agent Traces plugin method initializeServices is undefined');
+        }
+        const { core: coreStart, plugins: pluginsStart } = await this.initializeServices();
+        if (!(await this.getIsAgentTracesEnabledWorkspace(coreStart))) {
+          coreStart.application.navigateToApp('discover', { replace: true });
+          return () => {};
+        }
+        if (!isAgentEvalsEnabled(coreStart.application.capabilities)) {
+          // The Traces sub-app exists with the icon side nav only.
+          coreStart.application.navigateToApp(isIconSideNav ? AGENT_TRACES_NAV_ID : PLUGIN_ID, {
+            replace: true,
+          });
+          return () => {};
+        }
+        const { renderEvaluationsApp } = await import('./application/evaluations');
+        evalsHistory = params.history;
+        evalsTracker.appMounted();
+        const unmount = renderEvaluationsApp(params, coreStart, pluginsStart);
+        return () => {
+          evalsTracker.appUnMounted();
+          unmount();
+        };
+      },
+    });
+
     // Register the base Agent Traces application AFTER any sub-apps so
     // parseAppUrl matches `/app/agentTraces/traces` to the sub-app first.
     core.application.register(createAgentTracesApp());
@@ -419,6 +437,17 @@ export class AgentTracesPlugin implements Plugin<
       ];
       core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, navLinks);
       core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.all, navLinks);
+      // Classic navigation: Evaluations right after Agent Traces (hidden with the flag off).
+      const evalsNavLinks = [
+        {
+          id: AGENT_EVALS_NAV_ID,
+          category: undefined,
+          order: 301,
+          euiIconType: AgentEvalsIcon,
+        },
+      ];
+      core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.observability, evalsNavLinks);
+      core.chrome.navGroup.addNavLinksToGroup(DEFAULT_NAV_GROUPS.all, evalsNavLinks);
     }
     this.registerEmbeddable(core, setupDeps);
 
@@ -451,22 +480,14 @@ export class AgentTracesPlugin implements Plugin<
     const agentEvalsNavStatus = isAgentEvalsEnabled(capabilities)
       ? AppNavLinkStatus.visible
       : AppNavLinkStatus.hidden;
-    // Agent Evaluations off: drop a "traces where an evaluation fails" filter kept from a
-    // session where they were on, so it cannot narrow the Traces and Spans queries.
-    Object.values(this.stateUpdaterByApp).forEach((updater) => {
-      updater.next((app) => {
-        if (app.id === AGENT_EVALS_NAV_ID) {
-          return { navLinkStatus: agentEvalsNavStatus };
-        }
-        if (
-          app.id === PLUGIN_ID ||
-          app.id === AGENT_TRACES_NAV_ID ||
-          app.id === AGENT_SPANS_NAV_ID
-        ) {
-          return { navLinkStatus: agentTracesNavStatus };
-        }
-        return {};
-      });
+    this.navVisibilityUpdater$.next((app) => {
+      if (app.id === AGENT_EVALS_NAV_ID) {
+        return { navLinkStatus: agentEvalsNavStatus };
+      }
+      if (app.id === PLUGIN_ID || app.id === AGENT_TRACES_NAV_ID || app.id === AGENT_SPANS_NAV_ID) {
+        return { navLinkStatus: agentTracesNavStatus };
+      }
+      return {};
     });
 
     this.initializeServices = () => {

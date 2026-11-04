@@ -34,7 +34,7 @@ export class TracePPLService extends PPLService {
     limit: number,
     filters: Array<{ field: string; value: any }> = []
   ): string {
-    let query = `source = ${dataset.title} | where traceId = "${traceId}"`;
+    let query = `source = ${dataset.title} | where traceId = ${escapePPLValue(traceId)}`;
 
     filters.forEach((filter) => {
       const escapedValue = escapePPLValue(filter.value);
@@ -80,7 +80,9 @@ export class TracePPLService extends PPLService {
     }
 
     try {
-      const pplQuery = `source = ${dataset.title} | where traceId = "${traceId}" | where spanId = "${spanId}" | head ${limit}`;
+      const pplQuery = `source = ${dataset.title} | where traceId = ${escapePPLValue(
+        traceId
+      )} | where spanId = ${escapePPLValue(spanId)} | head ${limit}`;
 
       const queryRequest = buildPPLQueryRequest(dataset, pplQuery);
       return await executePPLQuery(this.dataService, queryRequest);

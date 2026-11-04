@@ -15,9 +15,7 @@ jest.mock('./row_evaluations_context', () => ({
 let mockCore: Record<string, unknown>;
 jest.mock('./table_shared', () => ({
   useDataTableCore: () => mockCore,
-  DataTableInfoBar: ({ controls }: { controls?: React.ReactNode }) => (
-    <div data-test-subj="infoBar">{controls}</div>
-  ),
+  DataTableInfoBar: () => <div data-test-subj="infoBar" />,
   TableLoadingState: () => <div />,
   TableEmptyState: () => <div />,
   hitToBaseRow: (h: { _source: Record<string, string> }) => ({
@@ -29,6 +27,11 @@ jest.mock('./table_shared', () => ({
     level: 0,
     isExpandable: true,
   }),
+}));
+
+let mockEvalsEnabled = true;
+jest.mock('../../evaluations/eval_feature_flag', () => ({
+  useAgentEvalsEnabled: () => mockEvalsEnabled,
 }));
 
 const mockFetchTraceSpans = jest.fn();
@@ -93,7 +96,75 @@ const core = (hits: unknown[], isQueryLoading = false) => ({
 });
 
 describe('TracesDataTable deep link', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockEvalsEnabled = true;
+  });
+
+  it('ignores a linked trace id that is not a trace id', () => {
+    window.location.hash = `#/?openTraceId=${encodeURIComponent('x" or true | head 1')}`;
+    mockCore = core([hit('t1')]);
+    render(<TracesDataTable />);
+    expect(mockOpenFlyout).not.toHaveBeenCalled();
+    expect(mockFetchTraceSpans).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('#/');
+  });
+
+  it('opens the trace but ignores a malformed linked span id', () => {
+    const traceId = '0b5599adba151ad2227c9bdb91e548a2';
+    window.location.hash = `#/?openTraceId=${traceId}&openSpanId=${encodeURIComponent('a"b')}`;
+    mockFetchTraceSpans.mockResolvedValue(spansResponse(traceId));
+    mockCore = core([hit(traceId)]);
+    render(<TracesDataTable />);
+    // Listed and no valid span: the row opens as on a click.
+    expect(mockOpenFlyout).toHaveBeenCalledWith(
+      expect.objectContaining({ id: `${traceId}-root`, traceId }),
+      undefined
+    );
+  });
+
+  it('does not open deep links with Agent Evaluations off', () => {
+    mockEvalsEnabled = false;
+    const traceId = '0b5599adba151ad2227c9bdb91e548a2';
+    window.location.hash = `#/?openTraceId=${traceId}`;
+    mockCore = core([hit(traceId)]);
+    render(<TracesDataTable />);
+    expect(mockOpenFlyout).not.toHaveBeenCalled();
+    expect(mockFetchTraceSpans).not.toHaveBeenCalled();
+  });
+
+  it('keeps the restarted fetch when the aborted one settles, so a third change restarts it', async () => {
+    const traceId = '0b5599adba151ad2227c9bdb91e548a2';
+    window.location.hash = `#/?openTraceId=${traceId}`;
+    // Every fetch but the third hangs until aborted.
+    mockFetchTraceSpans.mockImplementation(
+      (_params: unknown, signal: AbortSignal) =>
+        new Promise((resolve, reject) => {
+          if (mockFetchTraceSpans.mock.calls.length === 3) {
+            resolve(spansResponse(traceId));
+            return;
+          }
+          signal.addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          );
+        })
+    );
+    mockCore = core([hit('other-trace')]);
+    const { rerender } = render(<TracesDataTable />);
+    expect(mockFetchTraceSpans).toHaveBeenCalledTimes(1);
+    // Second hits: the first fetch is aborted and restarted; its late `finally` must not drop
+    // the restarted fetch.
+    mockCore = core([hit('other-trace'), hit('t2')]);
+    await act(async () => rerender(<TracesDataTable />));
+    expect(mockFetchTraceSpans).toHaveBeenCalledTimes(2);
+    // Third hits (e.g. auto-refresh) while the restarted fetch runs: restarted again.
+    mockCore = core([hit('t3')]);
+    await act(async () => rerender(<TracesDataTable />));
+    expect(mockFetchTraceSpans).toHaveBeenCalledTimes(3);
+    await waitFor(() =>
+      expect(mockUpdateFullTree).toHaveBeenCalledWith(traceId, expect.any(Array), false)
+    );
+  });
 
   it('loads the linked trace tree even when the hits change while its spans load', async () => {
     const traceId = '0b5599adba151ad2227c9bdb91e548a2';
@@ -163,9 +234,9 @@ describe('TracesDataTable info bar', () => {
     window.location.hash = '#/';
   });
 
-  it('renders the info bar with no extra controls', () => {
+  it('renders the info bar', () => {
     mockCore = core([hit('t1')]);
     render(<TracesDataTable />);
-    expect(screen.getByTestId('infoBar')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('infoBar')).toBeInTheDocument();
   });
 });

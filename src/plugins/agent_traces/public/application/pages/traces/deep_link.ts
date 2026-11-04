@@ -25,6 +25,13 @@ export const takeHashParam = (name: string): string | undefined => {
 };
 
 /**
+ * Trace and span ids are hex (OTel), optionally with dashes (e.g. X-Ray style ids). Deep-link
+ * values that do not look like one are ignored: they come from the URL and reach PPL.
+ */
+const TRACE_OR_SPAN_ID = /^[0-9a-fA-F-]{1,128}$/;
+export const isTraceOrSpanId = (value: string): boolean => TRACE_OR_SPAN_ID.test(value);
+
+/**
  * Agent Evaluations "Open session": `openSessionId=<id>` in the hash query opens that
  * session's view once `ready`, then leaves the URL. The time range comes from the link's `_g`.
  */

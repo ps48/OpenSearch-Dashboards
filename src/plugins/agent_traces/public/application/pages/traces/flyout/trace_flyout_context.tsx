@@ -2,7 +2,7 @@
  * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import moment from 'moment-timezone';
 import { TraceDetailsFlyout } from './trace_details_flyout';
 import { TraceRow, formatTimestamp } from '../hooks/tree_utils';
@@ -47,6 +47,7 @@ export const TraceFlyoutProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [services?.uiSettings]);
   const formatTs = useCallback((ts: string) => formatTimestamp(ts, timezone), [timezone]);
 
+  const tabRequestRef = useRef(0);
   const openFlyout = useCallback(
     (trace: TraceRow, options?: OpenTraceOptions) => {
       collapseSidebar();
@@ -57,6 +58,7 @@ export const TraceFlyoutProvider: React.FC<{ children: React.ReactNode }> = ({ c
         isLoadingFullTree: true,
         fullTreeError: undefined,
         initialTab: options?.initialTab,
+        tabRequest: options?.initialTab ? ++tabRequestRef.current : undefined,
       };
       setHistory((prev) =>
         options?.fromSession
@@ -158,6 +160,7 @@ export const TraceFlyoutProvider: React.FC<{ children: React.ReactNode }> = ({ c
           isLoadingFullTree={view.isLoadingFullTree}
           fullTreeError={view.fullTreeError}
           initialTab={view.initialTab}
+          tabRequest={view.tabRequest}
           onOpenSession={(session) => openSession(session, { fromTrace: true })}
           navigation={navigation}
         />

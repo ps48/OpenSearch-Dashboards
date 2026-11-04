@@ -68,8 +68,6 @@ export interface TraceTreeViewProps {
   onCollapseAll?: () => void;
   /** Evaluation results per span id: a count badge, a red dot when one failed. */
   evalsBySpanId?: Record<string, EvalResult[]>;
-  /** When set (the header's FAILED chip), spans outside it are dimmed. */
-  highlightedSpanIds?: Set<string>;
 }
 
 export const TraceTreeView: React.FC<TraceTreeViewProps> = ({
@@ -83,7 +81,6 @@ export const TraceTreeView: React.FC<TraceTreeViewProps> = ({
   onExpandAll,
   onCollapseAll,
   evalsBySpanId,
-  highlightedSpanIds,
 }) => {
   const [query, setQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,11 +107,7 @@ export const TraceTreeView: React.FC<TraceTreeViewProps> = ({
       const isExpanded = expandedNodes.has(node.id);
       const rowClassName = `agentTracesFlyout__treeRow${
         isSelected ? ' agentTracesFlyout__treeRow--selected' : ''
-      }${matchSet.has(node.id) ? ' agentTracesFlyout__treeRow--match' : ''}${
-        highlightedSpanIds && !highlightedSpanIds.has(node.traceRow?.spanId ?? '')
-          ? ' agentTracesFlyout__treeRow--dimmed'
-          : ''
-      }`;
+      }${matchSet.has(node.id) ? ' agentTracesFlyout__treeRow--match' : ''}`;
 
       return (
         <div key={node.id} className="agentTracesFlyout__treeNode">

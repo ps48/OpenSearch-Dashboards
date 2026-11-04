@@ -16,6 +16,8 @@ import {
   DataTableInfoBar,
   extractSpanFilterQuery,
   splitPplCommands,
+  shownColumns,
+  initialColumns,
 } from './table_shared';
 
 describe('table_shared', () => {
@@ -326,22 +328,39 @@ describe('table_shared', () => {
       fireEvent.click(switchEl);
       expect(onWrapChange).toHaveBeenCalledWith(true);
     });
+  });
+});
 
-    it('renders extra controls before the wrap switch', () => {
-      render(
-        // @ts-expect-error TS2769 TODO(ts-error): fixme
-        <IntlProvider locale="en">
-          <DataTableInfoBar
-            {...defaultProps}
-            controls={<div data-test-subj="extraControl">Failing evaluations only</div>}
-          />
-        </IntlProvider>
-      );
-      const extra = screen.getByTestId('extraControl');
-      const wrap = screen.getByTestId('agentTracesWrapCellTextSwitch');
-      // eslint-disable-next-line no-bitwise
-      expect(extra.compareDocumentPosition(wrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    });
+describe('Evaluations column and the flag', () => {
+  const defaults = ['name', 'latency', 'totalTokens', 'evaluations', 'status'];
+
+  it('drops a saved Evaluations column with Agent Evaluations off, keeps it on', () => {
+    const saved = ['name', 'totalTokens', 'evaluations', 'status'];
+    expect(shownColumns(saved, false)).toEqual(['name', 'totalTokens', 'status']);
+    expect(shownColumns(saved, true)).toEqual(saved);
+  });
+
+  it('sets the defaults without the Evaluations column with the flag off', () => {
+    expect(initialColumns([], defaults, false)).toEqual([
+      'name',
+      'latency',
+      'totalTokens',
+      'status',
+    ]);
+    expect(initialColumns(['_source'], defaults, true)).toEqual(defaults);
+  });
+
+  it('adds the Evaluations column after Total tokens to old column state, flag on only', () => {
+    const old = ['name', 'latency', 'totalTokens', 'status'];
+    expect(initialColumns(old, defaults, true)).toEqual([
+      'name',
+      'latency',
+      'totalTokens',
+      'evaluations',
+      'status',
+    ]);
+    expect(initialColumns(old, defaults, false)).toBeUndefined();
+    expect(initialColumns(defaults, defaults, true)).toBeUndefined();
   });
 });
 

@@ -34,8 +34,20 @@ const RowEvaluationsContext = createContext<RowEvaluations>(EMPTY);
 
 export const useRowEvaluations = () => useContext(RowEvaluationsContext);
 
-/** At most this many trace ids per lookup; the table shows one page of traces. */
-const MAX_TRACE_IDS = 200;
+/**
+ * At most this many trace ids per lookup. The table can list more rows (`discover:sampleSize`,
+ * and a page of spans covers many traces), so the ids are looked up in chunks: one query per
+ * chunk, never one per row.
+ */
+export const TRACE_IDS_PER_QUERY = 200;
+
+/** The distinct ids, sorted, in chunks of `size`. */
+export const chunkTraceIds = (ids: string[], size = TRACE_IDS_PER_QUERY): string[][] => {
+  const distinct = Array.from(new Set(ids.filter(Boolean))).sort();
+  const chunks: string[][] = [];
+  for (let i = 0; i < distinct.length; i += size) chunks.push(distinct.slice(i, i + size));
+  return chunks;
+};
 
 /** Tallies from `buildTracesTallyQuery` rows. */
 export const indexRowTallies = (
@@ -69,10 +81,7 @@ export const RowEvaluationsProvider: React.FC<{
   const index = useEvalsIndexPattern();
   const dataSource = useEvalsDataSource();
   const [value, setValue] = useState<RowEvaluations>(EMPTY);
-  const key = useMemo(
-    () => Array.from(new Set(traceIds)).slice(0, MAX_TRACE_IDS).sort().join(','),
-    [traceIds]
-  );
+  const key = useMemo(() => Array.from(new Set(traceIds)).sort().join(','), [traceIds]);
 
   useEffect(() => {
     if (!key || !services?.data || !index) {
@@ -82,14 +91,21 @@ export const RowEvaluationsProvider: React.FC<{
     const controller = new AbortController();
     const timefilter = services.data.query.timefilter.timefilter;
     const from = timefilter.calculateBounds(timefilter.getTime()).min?.toISOString() ?? 'now-7d';
-    runPpl(
-      services.data,
-      evalsDataset(index, dataSource),
-      buildTracesTallyQuery(index, key.split(','), mode === 'span'),
-      { from, to: new Date().toISOString() },
-      controller.signal
+    const range = { from, to: new Date().toISOString() };
+    Promise.all(
+      chunkTraceIds(key.split(',')).map((ids) =>
+        runPpl(
+          services.data,
+          evalsDataset(index, dataSource),
+          buildTracesTallyQuery(index, ids, mode === 'span'),
+          range,
+          controller.signal
+        )
+      )
     )
-      .then((rows) => !controller.signal.aborted && setValue(indexRowTallies(rows, mode)))
+      .then(
+        (chunks) => !controller.signal.aborted && setValue(indexRowTallies(chunks.flat(), mode))
+      )
       .catch(() => !controller.signal.aborted && setValue({ ...EMPTY, mode }));
     return () => controller.abort();
   }, [key, mode, services?.data, index, dataSource]);

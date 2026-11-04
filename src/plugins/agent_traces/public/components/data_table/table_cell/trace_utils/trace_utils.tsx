@@ -47,8 +47,11 @@ const AgentTracesEvaluationsCell: React.FC<{
 }> = ({ traceRow, isRoot, hitId }) => {
   const value = useRowEvaluations();
   const ctx = useTraceExpansion();
+  // Trace rows count per trace only: an expanded child span has no tally of its own here (its
+  // results are in the trace's tally), so it shows nothing rather than "no evaluations".
+  if (value.mode === 'trace' && !isRoot) return null;
   const tally =
-    isRoot && value.mode === 'trace'
+    value.mode === 'trace'
       ? value.byTraceId.get(traceRow.traceId)
       : value.bySpanId.get(traceRow.spanId);
   return (

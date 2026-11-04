@@ -275,6 +275,21 @@ describe('sessionIdOf', () => {
     expect(screen.getByTestId('mock-expanded')).toHaveTextContent(/^0$/);
   });
 
+  it('switches to the asked tab when it is asked for again while open', () => {
+    const { rerender } = render(
+      <TraceDetailsFlyout {...defaultProps} initialTab="logs" tabRequest={1} />
+    );
+    expect(screen.getByTestId('mock-trace-logs')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Trace Tree'));
+    expect(screen.queryByTestId('mock-trace-logs')).not.toBeInTheDocument();
+    // Same props: nothing changes.
+    rerender(<TraceDetailsFlyout {...defaultProps} initialTab="logs" tabRequest={1} />);
+    expect(screen.queryByTestId('mock-trace-logs')).not.toBeInTheDocument();
+    // A new request for the tab (the row's tally clicked again).
+    rerender(<TraceDetailsFlyout {...defaultProps} initialTab="logs" tabRequest={2} />);
+    expect(screen.getByTestId('mock-trace-logs')).toBeInTheDocument();
+  });
+
   it('adds a Related logs tab with the trace log count, keyed on the trace id', () => {
     const { useTraceLogs } = jest.requireMock('./use_trace_logs');
     render(<TraceDetailsFlyout {...defaultProps} />);

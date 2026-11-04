@@ -24,7 +24,8 @@ import {
 } from './table_shared';
 import { getHitId } from '../../../components/data_table/table_cell/trace_utils/trace_utils';
 import './traces_table.scss';
-import { takeHashParam, useOpenSessionFromLink } from './deep_link';
+import { isTraceOrSpanId, takeHashParam, useOpenSessionFromLink } from './deep_link';
+import { useAgentEvalsEnabled } from '../../evaluations/eval_feature_flag';
 import { dropShadowedAiRoots } from '../../utils/ai_root';
 
 const DEFAULT_TRACE_COLUMNS = [...AGENT_TRACES_DEFAULT_COLUMNS];
@@ -93,17 +94,20 @@ export const TracesDataTable: React.FC = () => {
   >(new Map());
   const [childMetaMap, setChildMetaMap] = useState<Map<string, Map<string, RowMeta>>>(new Map());
   const [traceLoadingState, setTraceLoadingState] = useState<Map<string, LoadingState>>(new Map());
-  const inFlightRef = useRef<Set<string>>(new Set());
+  // One controller per trace being fetched. A fetch only removes its own entry, so an aborted
+  // fetch settling late cannot drop the entry of the fetch that replaced it.
+  const inFlightRef = useRef<Map<string, AbortController>>(new Map());
   const traceSpansCacheRef = useRef<Map<string, BaseRow[]>>(new Map());
-  const abortControllerRef = useRef<AbortController | null>(null);
   const flyoutTraceIdRef = useRef<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pendingScrollRestoreRef = useRef<number | null>(null);
 
   // Abort in-flight fetches on unmount
   useEffect(() => {
+    const inFlight = inFlightRef.current;
     return () => {
-      abortControllerRef.current?.abort();
+      inFlight.forEach((controller) => controller.abort());
+      inFlight.clear();
     };
   }, []);
 
@@ -118,7 +122,7 @@ export const TracesDataTable: React.FC = () => {
     // tree..." for good, so it is fetched again.
     const flyoutTraceId = flyoutTraceIdRef.current;
     const interrupted = !!flyoutTraceId && inFlightRef.current.has(flyoutTraceId);
-    abortControllerRef.current?.abort();
+    inFlightRef.current.forEach((controller) => controller.abort());
     setExpandedRows(new Set());
     setChildHitsMap(new Map());
     setChildMetaMap(new Map());
@@ -154,9 +158,8 @@ export const TracesDataTable: React.FC = () => {
       if (inFlightRef.current.has(traceId)) return;
       if (!pplService || !datasetParam) return;
 
-      inFlightRef.current.add(traceId);
       const controller = new AbortController();
-      abortControllerRef.current = controller;
+      inFlightRef.current.set(traceId, controller);
       setTraceLoadingState((prev) => {
         const next = new Map(prev);
         next.set(traceId, { loading: true, error: null });
@@ -224,7 +227,7 @@ export const TracesDataTable: React.FC = () => {
           return next;
         });
       } finally {
-        inFlightRef.current.delete(traceId);
+        if (inFlightRef.current.get(traceId) === controller) inFlightRef.current.delete(traceId);
       }
     },
     [pplService, datasetParam, formatTs]
@@ -355,15 +358,20 @@ export const TracesDataTable: React.FC = () => {
   );
 
   // Deep link (Agent Evaluations "Open trace"): `openTraceId=<id>` in the hash query opens that
-  // trace's flyout once, from its row when listed, else from the trace id alone.
+  // trace's flyout once, from its row when listed, else from the trace id alone. Only with
+  // Agent Evaluations on (they make these links), and only for well-formed ids: the values come
+  // from the URL and end up in a PPL query.
+  const evalsEnabled = useAgentEvalsEnabled();
   const openedFromLinkRef = useRef(false);
   useEffect(() => {
-    if (openedFromLinkRef.current || !isInitialized || isQueryLoading) return;
+    if (!evalsEnabled || openedFromLinkRef.current || !isInitialized || isQueryLoading) return;
     const linkedTraceId = takeHashParam('openTraceId');
     if (!linkedTraceId) return;
     // `openSpanId`: open the trace with that span selected.
-    const linkedSpanId = takeHashParam('openSpanId');
+    const rawSpanId = takeHashParam('openSpanId');
     openedFromLinkRef.current = true;
+    if (!isTraceOrSpanId(linkedTraceId)) return;
+    const linkedSpanId = rawSpanId && isTraceOrSpanId(rawSpanId) ? rawSpanId : undefined;
     const hit = hits.find(
       (h) => (h._source as Record<string, unknown> | undefined)?.traceId === linkedTraceId
     );
@@ -394,10 +402,10 @@ export const TracesDataTable: React.FC = () => {
     flyoutTraceIdRef.current = linkedTraceId;
     openFlyout(row);
     expandTrace(linkedTraceId);
-  }, [isInitialized, isQueryLoading, hits, handleRowClick, openFlyout, expandTrace]);
+  }, [evalsEnabled, isInitialized, isQueryLoading, hits, handleRowClick, openFlyout, expandTrace]);
 
   // Deep link (Agent Evaluations "Open session"): opens the session view.
-  useOpenSessionFromLink(isInitialized, openSession);
+  useOpenSessionFromLink(evalsEnabled && isInitialized, openSession);
 
   const expansionContextValue = useMemo(
     () => ({
@@ -415,16 +423,14 @@ export const TracesDataTable: React.FC = () => {
   // Loading state — show during active query or before initial query has completed
   if ((isQueryLoading || !isInitialized) && hits.length === 0) {
     return (
-      <>
-        <TableLoadingState
-          message={
-            <FormattedMessage
-              id="agentTraces.tracesDataTable.loading"
-              defaultMessage="Loading agent traces..."
-            />
-          }
-        />
-      </>
+      <TableLoadingState
+        message={
+          <FormattedMessage
+            id="agentTraces.tracesDataTable.loading"
+            defaultMessage="Loading agent traces..."
+          />
+        }
+      />
     );
   }
 
