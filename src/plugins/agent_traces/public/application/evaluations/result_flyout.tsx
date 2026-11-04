@@ -697,6 +697,15 @@ export const ResultFlyout: React.FC<{
                         <code>{r.label}</code>
                       </>
                     )}
+                    {r.judgeLabel && (
+                      <span data-test-subj="agtEvlFlyoutJudgeLabel">
+                        {' · '}
+                        {i18n.translate('agentTraces.evals.flyout.judgeLabel', {
+                          defaultMessage: 'Judge label',
+                        })}{' '}
+                        <code>{r.judgeLabel}</code>
+                      </span>
+                    )}
                     {r.errorType && (
                       <>
                         {' · '}

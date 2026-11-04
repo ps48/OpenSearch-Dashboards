@@ -10,6 +10,7 @@ import {
   agentSuites,
   caseStatusOf,
   changeOf,
+  recordsToResults,
   comparison,
   defaultVersionPair,
   emptyTally,
@@ -77,6 +78,24 @@ describe('verdict and pass rate', () => {
     expect(changeOf('pass', 'scored')).toBe('changed');
     expect(changeOf('scored', 'pass')).toBe('changed');
     expect(changeOf('fail', 'error')).toBe('changed');
+  });
+
+  it("reads the judge's own label next to the verdict", () => {
+    const [r] = recordsToResults([
+      {
+        attributes: {
+          gen_ai: { evaluation: { name: 'tone', score: { label: 'pass' } } },
+          opensearch: { gen_ai: { evaluation: { judge_label: 'Polite' } } },
+        },
+      },
+    ]);
+    // The verdict comes from score.label only.
+    expect(r.verdict).toBe('pass');
+    expect(r.label).toBe('pass');
+    expect(r.judgeLabel).toBe('Polite');
+    expect(recordsToResults([{ attributes: {} }])[0].judgeLabel).toBeUndefined();
+    // Lowercase-exact: a judge label in score.label is not a verdict.
+    expect(verdictOf({ label: 'Pass' })).toBe('scored');
   });
 
   it('reads PPL times as UTC', () => {

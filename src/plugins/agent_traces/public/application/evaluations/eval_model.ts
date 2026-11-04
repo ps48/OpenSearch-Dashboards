@@ -743,7 +743,13 @@ export interface EvalResult {
   name: string;
   verdict: Verdict;
   value?: number;
+  /** `gen_ai.evaluation.score.label`: the verdict (`pass` / `fail`), or the judge's label. */
   label?: string;
+  /**
+   * The judge's own label (`opensearch.gen_ai.evaluation.judge_label`), set by the SDKs when
+   * `label` holds the pass/fail verdict. Display only: the verdict never reads it.
+   */
+  judgeLabel?: string;
   explanation?: string;
   errorType?: string;
   agentName?: string;
@@ -792,6 +798,7 @@ export const recordToResult = (row: PplRecord, index = 0): EvalResult => {
     verdict: verdictOf({ errorType, label }),
     value: num(get(row, F.value)),
     label,
+    judgeLabel: s(F.judgeLabel),
     explanation: s(F.explanation),
     errorType,
     agentName: s(F.agentName),

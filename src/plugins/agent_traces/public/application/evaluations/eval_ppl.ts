@@ -33,7 +33,10 @@ export const F = {
   scope: 'instrumentationScope.name',
   name: 'attributes.gen_ai.evaluation.name',
   value: 'attributes.gen_ai.evaluation.score.value',
+  /** The verdict (`pass` / `fail`, lowercase) when there is one, else the judge's label. */
   label: 'attributes.gen_ai.evaluation.score.label',
+  /** The judge's own label when `score.label` holds a pass/fail verdict (SDK, gap field). */
+  judgeLabel: 'attributes.opensearch.gen_ai.evaluation.judge_label',
   explanation: 'attributes.gen_ai.evaluation.explanation',
   errorType: 'attributes.error.type',
   agentName: 'attributes.gen_ai.agent.name',

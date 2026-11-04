@@ -196,6 +196,12 @@ describe('ResultFlyout', () => {
     );
   });
 
+  it("shows the judge's own label next to the verdict", () => {
+    const withJudgeLabel = { ...offline, judgeLabel: 'Helpful' };
+    renderFlyout(withJudgeLabel);
+    expect(screen.getByTestId('agtEvlFlyoutJudgeLabel')).toHaveTextContent('Judge label Helpful');
+  });
+
   it('builds the raw event only while it is open', () => {
     renderFlyout();
     const raw = screen.getByTestId('agtEvlRawEvent');
