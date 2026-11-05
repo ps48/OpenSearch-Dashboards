@@ -91,11 +91,15 @@ export const detectEvals = async (services: EvaluationsServices): Promise<EvalsD
     logs,
     evaluationsDataset: sameTitle,
     tracesDataset: defaults.traces,
-    // The results sit on the evaluations dataset's data source, else next to the spans.
+    // The results sit on the evaluations dataset's data source, else next to the spans, else on
+    // the data source the workspace's other index patterns read: with multiple data sources (as
+    // on a workspace without a traces dataset yet) there may be no local cluster to ask.
     results: await countEvaluationResults(
       services,
       index,
-      defaults.evaluations?.dataSource ?? defaults.traces?.dataSource
+      defaults.evaluations?.dataSource ??
+        defaults.traces?.dataSource ??
+        all.find((d) => d.dataSource)?.dataSource
     ),
   };
 };

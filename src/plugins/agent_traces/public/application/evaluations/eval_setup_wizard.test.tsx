@@ -127,6 +127,27 @@ describe('countEvaluationResults and detectEvals', () => {
     expect(found.results).toBe(7);
     expect(mockRunPpl.mock.calls[0][2]).toContain('source = otel-v1-genai-evaluation*');
   });
+
+  it('counts on the data source of the other index patterns when no dataset has one', async () => {
+    // A workspace with only untyped index patterns on a data source (an APM setup), and no
+    // local cluster to ask: the count must not go to the local cluster.
+    mockRunPpl.mockResolvedValue([{ n: 3 }]);
+    const { services } = makeServices({
+      withEvals: false,
+      withTraces: false,
+      extra: [
+        {
+          id: 'apm-traces-ip',
+          attributes: { title: 'otel-v1-apm-span*' },
+          references: [{ id: 'ds-1', name: 'dataSource', type: 'data-source' }],
+        },
+      ],
+    });
+    const found = await detectEvals(asServices(services));
+    expect(found.traces).toEqual([]);
+    expect(found.results).toBe(3);
+    expect(mockRunPpl.mock.calls[0][1]).toMatchObject({ dataSource: { id: 'ds-1' } });
+  });
 });
 
 describe('EvalSetupWizard', () => {
