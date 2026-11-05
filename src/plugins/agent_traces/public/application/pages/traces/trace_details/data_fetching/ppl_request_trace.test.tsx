@@ -266,4 +266,26 @@ describe('ppl_request_trace', () => {
       await expect(tracePPLService.fetchSpanDetails(defaultParams)).rejects.toThrow(error);
     });
   });
+
+  describe('fetchSpanParents', () => {
+    it('reads the parents of all the given traces in one query, without a time field', async () => {
+      const signal = new AbortController().signal;
+      await tracePPLService.fetchSpanParents(['t1', 'a"b'], createMockDataset(), signal);
+      expect(mockBuildPPLQueryRequest).toHaveBeenCalledWith(
+        { id: 'test-dataset-id', title: 'test-index', type: 'INDEX_PATTERN' },
+        'source = test-index | where traceId in ("t1", "a\\"b") | fields traceId, spanId, parentSpanId | head 10000'
+      );
+      expect(mockExecutePPLQuery).toHaveBeenCalledWith(
+        mockDataService,
+        { query: { query: 'mock-query' } },
+        signal
+      );
+    });
+
+    it('throws without trace ids', async () => {
+      await expect(tracePPLService.fetchSpanParents([], createMockDataset())).rejects.toThrow(
+        'Missing required parameters'
+      );
+    });
+  });
 });

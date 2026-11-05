@@ -11,6 +11,8 @@ import {
   TRACE_IDS_PER_QUERY,
   chunkTraceIds,
   settledRows,
+  splitTraceIdsOf,
+  tallyByRun,
   useRowEvaluations,
 } from './row_evaluations_context';
 import { resetEvalsDatasetState } from '../../evaluations/eval_dataset';
@@ -51,6 +53,50 @@ const renderProvider = (services: unknown, traceIds: string[]) =>
       </RowEvaluationsProvider>
     </OpenSearchDashboardsContextProvider>
   );
+
+const renderWithRuns = (
+  services: unknown,
+  runs: Array<{ traceId: string; spanId: string }>,
+  fetchSpanParents: jest.Mock
+) =>
+  render(
+    <OpenSearchDashboardsContextProvider services={services}>
+      <RowEvaluationsProvider
+        traceIds={runs.map((r) => r.traceId)}
+        mode="trace"
+        agentRuns={runs}
+        fetchSpanParents={fetchSpanParents}
+      >
+        <Probe />
+      </RowEvaluationsProvider>
+    </OpenSearchDashboardsContextProvider>
+  );
+
+// Trace `tp` has an HTTP root `r` with two parallel agents `a` and `b`; `a` calls the LLM `a1`.
+const PARALLEL_PARENTS = [
+  { traceId: 'tp', spanId: 'r', parentSpanId: '' },
+  { traceId: 'tp', spanId: 'a', parentSpanId: 'r' },
+  { traceId: 'tp', spanId: 'a1', parentSpanId: 'a' },
+  { traceId: 'tp', spanId: 'b', parentSpanId: 'r' },
+];
+const PARALLEL_RUNS = [
+  { traceId: 'tp', spanId: 'a' },
+  { traceId: 'tp', spanId: 'b' },
+  { traceId: 'ts', spanId: 's' },
+];
+const parallelTallies = async (_data: unknown, _dataset: unknown, query: string) =>
+  query.includes('`spanId`')
+    ? [
+        { traceId: 'tp', spanId: 'a1', verdict: 'fail', n: 2 },
+        { traceId: 'tp', spanId: 'a', verdict: 'pass', n: 1 },
+        { traceId: 'tp', spanId: 'b', verdict: 'pass', n: 3 },
+        { traceId: 'tp', spanId: 'r', verdict: 'pass', n: 5 },
+      ]
+    : [
+        { traceId: 'tp', verdict: 'pass', n: 9 },
+        { traceId: 'tp', verdict: 'fail', n: 2 },
+        { traceId: 'ts', verdict: 'pass', n: 1 },
+      ];
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `t${String(i).padStart(4, '0')}`);
 
@@ -101,6 +147,44 @@ describe('RowEvaluationsProvider', () => {
     expect(mockRunPpl).toHaveBeenCalledTimes(2);
   });
 
+  it('gives each agent run of a trace listed as several runs its own tally', async () => {
+    mockRunPpl.mockImplementation(parallelTallies);
+    const fetchSpanParents = jest.fn(async () => PARALLEL_PARENTS);
+    const { services } = makeServices(true);
+    renderWithRuns(services, PARALLEL_RUNS, fetchSpanParents);
+    await waitFor(() => expect(seen?.splitTraceIds.has('tp')).toBe(true));
+    // Only the split trace's parents are read, in one call.
+    expect(fetchSpanParents).toHaveBeenCalledTimes(1);
+    expect(fetchSpanParents.mock.calls[0][0]).toEqual(['tp']);
+    expect(seen?.byRunSpanId.get('a')).toMatchObject({ pass: 1, fail: 2 });
+    expect(seen?.byRunSpanId.get('b')).toMatchObject({ pass: 3, fail: 0 });
+    // A trace listed once keeps its whole-trace tally.
+    expect(seen?.splitTraceIds.has('ts')).toBe(false);
+    expect(seen?.byTraceId.get('ts')).toMatchObject({ pass: 1 });
+  });
+
+  it('falls back to the whole-trace tally when the span parents cannot be read', async () => {
+    mockRunPpl.mockImplementation(parallelTallies);
+    const fetchSpanParents = jest.fn(async () => {
+      throw new Error('boom');
+    });
+    const { services } = makeServices(true);
+    renderWithRuns(services, PARALLEL_RUNS, fetchSpanParents);
+    await waitFor(() => expect(seen?.byTraceId.get('tp')).toBeDefined());
+    expect(seen?.splitTraceIds.size).toBe(0);
+    expect(seen?.byTraceId.get('tp')).toMatchObject({ pass: 9, fail: 2 });
+  });
+
+  it('reads no span parents when every trace is listed once', async () => {
+    mockRunPpl.mockImplementation(parallelTallies);
+    const fetchSpanParents = jest.fn(async () => []);
+    const { services } = makeServices(true);
+    renderWithRuns(services, [{ traceId: 'ts', spanId: 's' }], fetchSpanParents);
+    await waitFor(() => expect(seen?.byTraceId.get('ts')).toBeDefined());
+    expect(fetchSpanParents).not.toHaveBeenCalled();
+    expect(mockRunPpl).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves the column empty when a lookup fails', async () => {
     mockRunPpl.mockRejectedValue(new Error('no such index'));
     const { services } = makeServices(true);
@@ -108,6 +192,46 @@ describe('RowEvaluationsProvider', () => {
     await waitFor(() => expect(mockRunPpl).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 0));
     expect(seen?.byTraceId.size).toBe(0);
+  });
+});
+
+describe('splitTraceIdsOf and tallyByRun', () => {
+  it('finds the traces listed as more than one run', () => {
+    expect(Array.from(splitTraceIdsOf(PARALLEL_RUNS))).toEqual(['tp']);
+    expect(
+      splitTraceIdsOf([
+        { traceId: 't', spanId: 'a' },
+        { traceId: 't', spanId: 'a' },
+      ]).size
+    ).toBe(0);
+  });
+
+  it('counts each result on the run it sits under, and results outside every run on none', () => {
+    const byRun = tallyByRun(
+      [
+        { traceId: 'tp', spanId: 'a1', verdict: 'fail', n: 2 },
+        { traceId: 'tp', spanId: 'r', verdict: 'pass', n: 5 },
+        { traceId: 'tp', spanId: 'gone', verdict: 'pass', n: 1 },
+        { traceId: 'tp', verdict: 'pass', n: 1 },
+      ],
+      PARALLEL_RUNS,
+      PARALLEL_PARENTS
+    );
+    expect(byRun.get('a')).toMatchObject({ fail: 2, pass: 0 });
+    expect(byRun.has('b')).toBe(false);
+    expect(byRun.has('r')).toBe(false);
+  });
+
+  it('stops on a cycle in the parents', () => {
+    const byRun = tallyByRun(
+      [{ traceId: 't', spanId: 'x', verdict: 'pass', n: 1 }],
+      [{ traceId: 't', spanId: 'a' }],
+      [
+        { traceId: 't', spanId: 'x', parentSpanId: 'y' },
+        { traceId: 't', spanId: 'y', parentSpanId: 'x' },
+      ]
+    );
+    expect(byRun.size).toBe(0);
   });
 });
 

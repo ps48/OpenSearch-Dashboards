@@ -38,7 +38,8 @@ import { useTraceExpansion } from '../../../../application/pages/traces/trace_ex
 import { useRowEvaluations } from '../../../../application/pages/traces/row_evaluations_context';
 import { BaseRow } from '../../../../application/pages/traces/hooks/tree_utils';
 import { EvalTallyCell } from '../../../../application/pages/traces/flyout/trace_evaluations';
-/** A row's evaluation results as a tally: a trace row counts its trace, a span row its span.
+/** A row's evaluation results as a tally: a trace row counts its trace (or its agent run, when
+ *  the trace is listed as several), a span row its span.
  *  The tally opens the trace's Evaluations tab. */
 const AgentTracesEvaluationsCell: React.FC<{
   traceRow: BaseRow;
@@ -50,10 +51,13 @@ const AgentTracesEvaluationsCell: React.FC<{
   // Trace rows count per trace only: an expanded child span has no tally of its own here (its
   // results are in the trace's tally), so it shows nothing rather than "no evaluations".
   if (value.mode === 'trace' && !isRoot) return null;
+  // A trace listed as several agent runs: each run row counts the results of its own subtree.
   const tally =
-    value.mode === 'trace'
-      ? value.byTraceId.get(traceRow.traceId)
-      : value.bySpanId.get(traceRow.spanId);
+    value.mode === 'span'
+      ? value.bySpanId.get(traceRow.spanId)
+      : value.splitTraceIds.has(traceRow.traceId)
+        ? value.byRunSpanId.get(traceRow.spanId)
+        : value.byTraceId.get(traceRow.traceId);
   return (
     <EvalTallyCell
       tally={tally}

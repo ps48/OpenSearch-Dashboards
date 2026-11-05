@@ -10,7 +10,7 @@ import { AGENT_TRACES_DEFAULT_COLUMNS } from '../../../../common';
 import { DocViewFilterFn, OpenSearchSearchHit } from '../../../types/doc_views_types';
 import { TraceExpansionProvider, RowMeta } from './trace_expansion_context';
 import { useTraceFlyout } from './flyout/trace_flyout_context';
-import { RowEvaluationsProvider } from './row_evaluations_context';
+import { AgentRunRow, RowEvaluationsProvider, SpanParent } from './row_evaluations_context';
 import { BaseRow, LoadingState, buildFullSpanTree, hitsToAgentSpans } from './hooks/tree_utils';
 import { transformPPLDataToTraceHits } from './trace_details/traces/ppl_to_trace_hits';
 import { usePPLQueryDeps } from './hooks/use_ppl_query_deps';
@@ -85,6 +85,29 @@ export const TracesDataTable: React.FC = () => {
         .map((hit) => String((hit._source as Record<string, unknown> | undefined)?.traceId ?? ''))
         .filter(Boolean),
     [hits]
+  );
+
+  // The listed rows as agent runs: a trace listed more than once (parallel agents) gets a tally
+  // per run, placed by the spans' parents.
+  const evalAgentRuns = useMemo<AgentRunRow[]>(
+    () =>
+      hits.map((hit) => {
+        const source = (hit._source ?? {}) as Record<string, unknown>;
+        return { traceId: String(source.traceId ?? ''), spanId: String(source.spanId ?? '') };
+      }),
+    [hits]
+  );
+  const fetchSpanParents = useCallback(
+    async (traceIds: string[], signal: AbortSignal): Promise<SpanParent[]> => {
+      if (!pplService || !datasetParam) return [];
+      const response = await pplService.fetchSpanParents(traceIds, datasetParam, signal);
+      return transformPPLDataToTraceHits(response).map(({ traceId, spanId, parentSpanId }) => ({
+        traceId,
+        spanId,
+        parentSpanId,
+      }));
+    },
+    [pplService, datasetParam]
   );
 
   // Tree expansion state
@@ -451,7 +474,12 @@ export const TracesDataTable: React.FC = () => {
 
   return (
     <TraceExpansionProvider value={expansionContextValue}>
-      <RowEvaluationsProvider traceIds={evalTraceIds} mode="trace">
+      <RowEvaluationsProvider
+        traceIds={evalTraceIds}
+        mode="trace"
+        agentRuns={evalAgentRuns}
+        fetchSpanParents={fetchSpanParents}
+      >
         <div className="agentTracesTable__container">
           <DataTableInfoBar
             hasHead={hasHead}

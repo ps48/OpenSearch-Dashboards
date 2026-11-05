@@ -72,6 +72,35 @@ export class TracePPLService extends PPLService {
     }
   }
 
+  /**
+   * traceId, spanId and parentSpanId of the spans of the given traces, in one query and without
+   * a time bound (like `fetchTraceSpans`).
+   */
+  async fetchSpanParents(
+    traceIds: string[],
+    dataset: Dataset,
+    signal?: AbortSignal,
+    limit = 10000
+  ): Promise<any> {
+    if (traceIds.length === 0 || !dataset) {
+      throw new Error('Missing required parameters: traceIds and dataset');
+    }
+    const pplQuery = `source = ${dataset.title} | where traceId in (${traceIds
+      .map(escapePPLValue)
+      .join(', ')}) | fields traceId, spanId, parentSpanId | head ${limit}`;
+    const datasetWithoutTime = {
+      id: dataset.id,
+      title: dataset.title,
+      type: dataset.type,
+      ...(dataset.dataSource && { dataSource: dataset.dataSource }),
+    };
+    return await executePPLQuery(
+      this.dataService,
+      buildPPLQueryRequest(datasetWithoutTime, pplQuery),
+      signal
+    );
+  }
+
   async fetchSpanDetails(params: PPLSpanQueryParams): Promise<any> {
     const { traceId, spanId, dataset, limit = 100 } = params;
 
