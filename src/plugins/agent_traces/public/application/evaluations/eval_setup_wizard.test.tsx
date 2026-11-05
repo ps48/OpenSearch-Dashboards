@@ -115,6 +115,14 @@ describe('countEvaluationResults and detectEvals', () => {
     await expect(countEvaluationResults(asServices(services))).rejects.toThrow('Boom');
   });
 
+  it('refuses a title that is not a PPL-safe index, without querying', async () => {
+    const { services } = makeServices();
+    await expect(
+      countEvaluationResults(asServices(services), 'otel-v1-genai-evaluation* | head 1')
+    ).rejects.toThrow('cannot be read as an index name');
+    expect(mockRunPpl).not.toHaveBeenCalled();
+  });
+
   it('detects the datasets, proposes the defaults and counts over the evaluations dataset', async () => {
     mockRunPpl.mockResolvedValue([{ n: 7 }]);
     const { services } = makeServices({ queryDataset: { id: 'tr2', signalType: 'traces' } });

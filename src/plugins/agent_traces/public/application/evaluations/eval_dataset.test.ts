@@ -149,6 +149,13 @@ describe('evaluations app config', () => {
     expect(defaultEvalsDatasets([], [logs[0]])).toEqual({});
   });
 
+  it('skips an evaluations dataset whose title PPL cannot read as an index', () => {
+    const unsafe = { id: 'l3', title: 'otel-v1-genai-evaluation* | head 1' };
+    const safe = { id: 'l2', title: 'otel-v1-genai-evaluation-*' };
+    expect(defaultEvalsDatasets([], [unsafe]).evaluations).toBeUndefined();
+    expect(defaultEvalsDatasets([], [unsafe, safe]).evaluations).toBe(safe);
+  });
+
   it("reads spans from the config's traces dataset, else otel-v1-apm-span-*", () => {
     const base = {
       configId: 'c',

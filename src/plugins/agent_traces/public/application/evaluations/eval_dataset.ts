@@ -149,7 +149,7 @@ export const isEvalsDatasetTitle = (title: string) => title.startsWith('otel-v1-
 /**
  * The defaults Settings proposes: the traces dataset Agent Traces uses (the query's dataset
  * when it is a traces dataset, else the first traces dataset, as Agent Traces picks it) and an
- * existing logs dataset over `otel-v1-genai-evaluation*`.
+ * existing logs dataset over `otel-v1-genai-evaluation*` whose title is a PPL-safe index.
  */
 export const defaultEvalsDatasets = (
   traces: DatasetRef[],
@@ -157,7 +157,8 @@ export const defaultEvalsDatasets = (
   agentTracesDatasetId?: string
 ): { traces?: DatasetRef; evaluations?: DatasetRef } => ({
   traces: traces.find((d) => d.id === agentTracesDatasetId) ?? traces[0],
-  evaluations: logs.find((d) => isEvalsDatasetTitle(d.title)),
+  // Only a title PPL can read as an index (the queries put it after `source =`).
+  evaluations: logs.find((d) => isEvalsDatasetTitle(d.title) && isPplSafeIndex(d.title)),
 });
 
 /** The id an entity points at: `{ tracesDataset: { id: 'references[0].id' } }`. */

@@ -63,12 +63,24 @@ const MODAL_TITLE = i18n.translate('agentTraces.evalsSettings.title', {
   defaultMessage: 'Agent evaluations settings',
 });
 
-/** One count over the evaluation indices; a missing index means none (undefined). */
+/**
+ * One count over the evaluation indices; a missing index means none (undefined). A title that
+ * is not a PPL-safe index name (spaces, pipes, quotes) is an error.
+ */
 export const countEvaluationResults = async (
   services: EvaluationsServices,
   index = EVALS_DATASET_TITLE,
   dataSource?: DataSourceRef
 ): Promise<number | undefined> => {
+  // The title goes into the query as is: one PPL would misread is refused, not queried.
+  if (!isPplSafeIndex(index)) {
+    throw new Error(
+      i18n.translate('agentTraces.evalsSettings.unsafeIndex', {
+        defaultMessage: '"{index}" cannot be read as an index name.',
+        values: { index },
+      })
+    );
+  }
   try {
     const rows = await runPpl(
       services.data,
