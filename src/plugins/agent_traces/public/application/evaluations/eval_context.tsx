@@ -59,6 +59,7 @@ export const defaultEvalContext = (
     agentsSource: 'all',
     agentSource: 'all',
     results: { agents: [], names: [], versions: [], verdicts: [], source: 'all', q: '' },
+    runs: { agents: [], suites: [], q: '' },
   },
   setState: noop,
   navigate: noop,

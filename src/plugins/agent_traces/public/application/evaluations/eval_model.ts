@@ -452,6 +452,16 @@ const runsOf = (rows: PplRecord[]): RunRow[] => {
 /** Suite page runs (oldest first) from `buildSuiteRunsQuery`. */
 export const suiteRuns = (rows: PplRecord[]): RunRow[] => runsOf(rows);
 
+/** Eval runs tab rows (latest first) from `buildEvalRunsQuery`. */
+export const evalRuns = (rows: PplRecord[]): RunRow[] => runsOf(rows).reverse();
+
+/** Two runs that compare: the same suite and the same agent, not the same run. */
+export const isCompatibleRun = (
+  a: Pick<RunRow, 'runId' | 'suite' | 'agent'>,
+  b: Pick<RunRow, 'runId' | 'suite' | 'agent'>
+): boolean =>
+  a.runId !== b.runId && a.suite !== undefined && a.suite === b.suite && a.agent === b.agent;
+
 /** Cases (and cases passed) per run, from `buildSuiteRunCasesQuery`. */
 export const runCases = (rows: PplRecord[]): Map<string, { cases: number; passed: number }> =>
   new Map(
@@ -598,8 +608,21 @@ export const runDetail = (runId: string, allRows: PplRecord[]): RunDetail | unde
 export interface RunRef {
   runId: string;
   suite?: string;
+  /** Read by the lookup without a suite only. */
+  agent?: string;
   started: number;
 }
+
+/** The runs of `buildRunsLookupQuery` rows. */
+export const runRefsOf = (rows: PplRecord[]): RunRef[] =>
+  rows
+    .map((row) => ({
+      runId: str(get(row, F.runId)) ?? '',
+      suite: str(get(row, F.suiteName)),
+      agent: str(get(row, F.agentName)),
+      started: parseTime(row.started),
+    }))
+    .filter((r) => r.runId);
 
 /** From `buildRunsLookupQuery`: the run of the same suite that started last before `runId`. */
 export const runBefore = (rows: PplRecord[], runId: string): RunRef | undefined => {

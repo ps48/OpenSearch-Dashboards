@@ -14,6 +14,7 @@ describe('runsOfRoute', () => {
   it('lists none on the other pages (they read the global range)', () => {
     expect(runsOfRoute({ page: 'agents' })).toEqual([]);
     expect(runsOfRoute({ page: 'results' })).toEqual([]);
+    expect(runsOfRoute({ page: 'runs' })).toEqual([]);
     expect(runsOfRoute({ page: 'agent', agent: 'tp', tab: 'evaluations' })).toEqual([]);
     expect(runsOfRoute({ page: 'suite', suite: 'golden' })).toEqual([]);
   });

@@ -203,40 +203,104 @@ export const buildAgentSuitesQuery = (index: string, agent: string): string =>
 
 // ---------------------------------------------------------------------- Suite page
 
+/** The runs aggregation: results and first result time per run (and `by`) and verdict. */
+const runsStats = (by: string[]) =>
+  `stats count() as n, min(${fld(F.time)}) as started by ${by.map(fld).join(', ')}, verdict`;
+
 export const buildSuiteRunsQuery = (index: string, suite: string): string =>
   join([
     ...base(index),
     `where ${fld(F.suiteName)} = ${quote(suite)}`,
     VERDICT_EVAL,
-    `stats count() as n, min(${fld(F.time)}) as started by ${fld(F.runId)}, ${fld(
-      F.agentName
-    )}, ${fld(F.agentVersion)}, ${fld(F.ciUrl)}, verdict`,
+    runsStats([F.runId, F.agentName, F.agentVersion, F.ciUrl]),
     head,
   ]);
 
 /**
- * Cases passed per run of a suite: a case passes when one of its results passed and none
- * failed or errored (as `caseStatusOf`). Two aggregations (per case, then per run): one row
- * per run.
+ * Cases passed per run: a case passes when one of its results passed and none failed or
+ * errored (as `caseStatusOf`). Two aggregations (per case, then per run): one row per run.
  */
+const runCasesStats = [
+  `eval bad = if(isnotnull(${fld(F.errorType)}) or ${fld(F.label)} = 'fail', 1, 0), good = if(${fld(
+    F.label
+  )} = 'pass', 1, 0)`,
+  `stats sum(bad) as bad, sum(good) as good by ${fld(F.runId)}, ${fld(F.caseId)}`,
+  'eval ok = if(bad = 0 and good > 0, 1, 0)',
+  `stats count() as cases, sum(ok) as passed by ${fld(F.runId)}`,
+  head,
+];
+
+/** Cases passed per run of a suite. */
 export const buildSuiteRunCasesQuery = (index: string, suite: string): string =>
+  join([...base(index), `where ${fld(F.suiteName)} = ${quote(suite)}`, ...runCasesStats]);
+
+// ---------------------------------------------------------------------- Eval runs (home)
+
+export type RunsFacet = 'agents' | 'suites';
+export const RUNS_FACETS: RunsFacet[] = ['agents', 'suites'];
+
+/** Eval runs tab filters: agents and suites (any of), and a search in run id, suite and agent. */
+export interface RunsFilters {
+  agents: string[];
+  suites: string[];
+  q: string;
+}
+
+export const EMPTY_RUNS_FILTERS: RunsFilters = { agents: [], suites: [], q: '' };
+
+/** Offline results only, with the filters (but `except`, for its own filter menu). */
+const runsFiltersWhere = (f: RunsFilters, except?: RunsFacet): string[] => {
+  const out = [`where isnotnull(${fld(F.runId)})`];
+  if (f.agents.length && except !== 'agents')
+    out.push(`where ${f.agents.map(agentCond).join(' or ')}`);
+  if (f.suites.length && except !== 'suites')
+    out.push(`where ${f.suites.map((v) => valueCond(F.suiteName, v)).join(' or ')}`);
+  const q = f.q.trim();
+  if (q) {
+    const pattern = quote(`%${likeLiteral(q)}%`);
+    out.push(
+      `where ${[F.runId, F.suiteName, F.agentName]
+        .map((x) => `like(${fld(x)}, ${pattern})`)
+        .join(' or ')}`
+    );
+  }
+  return out;
+};
+
+/**
+ * Every run in the range across suites and agents: the suite page's runs aggregation without
+ * the suite, by suite name too, latest first (the cap drops the oldest runs).
+ */
+export const buildEvalRunsQuery = (index: string, filters: RunsFilters): string =>
   join([
     ...base(index),
-    `where ${fld(F.suiteName)} = ${quote(suite)}`,
-    `eval bad = if(isnotnull(${fld(F.errorType)}) or ${fld(F.label)} = 'fail', 1, 0), good = if(${fld(
-      F.label
-    )} = 'pass', 1, 0)`,
-    `stats sum(bad) as bad, sum(good) as good by ${fld(F.runId)}, ${fld(F.caseId)}`,
-    'eval ok = if(bad = 0 and good > 0, 1, 0)',
-    `stats count() as cases, sum(ok) as passed by ${fld(F.runId)}`,
+    ...runsFiltersWhere(filters),
+    VERDICT_EVAL,
+    runsStats([F.runId, F.suiteName, F.agentName, F.agentVersion]),
+    'sort - started',
     head,
+  ]);
+
+/** Cases passed per run, for the runs of `buildEvalRunsQuery`. */
+export const buildEvalRunCasesQuery = (index: string, filters: RunsFilters): string =>
+  join([...base(index), ...runsFiltersWhere(filters), ...runCasesStats]);
+
+/** An Eval runs filter menu's values (top 50, with their number of runs). */
+export const buildRunsFacetQuery = (index: string, filters: RunsFilters, facet: RunsFacet) =>
+  join([
+    ...base(index),
+    ...runsFiltersWhere(filters, facet),
+    `stats dc(${fld(F.runId)}) as n by ${fld(facet === 'agents' ? F.agentName : F.suiteName)}`,
+    'sort - n',
+    `head ${FACET_LIMIT}`,
   ]);
 
 // ---------------------------------------------------------------------- Run page
 
 /**
  * The runs of a suite in the range with their start, latest first: finds the run before a run
- * (the cap drops the oldest runs, not the recent ones). Without a suite: every run.
+ * (the cap drops the oldest runs, not the recent ones). Without a suite: every run, by agent
+ * too, so the Eval runs tab finds the runs of the same suite and agent whatever its filters.
  */
 export const buildRunsLookupQuery = (index: string, suite?: string): string =>
   join([
@@ -244,8 +308,14 @@ export const buildRunsLookupQuery = (index: string, suite?: string): string =>
     suite !== undefined
       ? `where ${fld(F.suiteName)} = ${quote(suite)}`
       : `where isnotnull(${fld(F.runId)})`,
-    `stats min(${fld(F.time)}) as started by ${fld(F.suiteName)}, ${fld(F.runId)}`,
-    ...(suite !== undefined ? ['sort - started'] : []),
+    `stats min(${fld(F.time)}) as started by ${[
+      F.suiteName,
+      ...(suite !== undefined ? [] : [F.agentName]),
+      F.runId,
+    ]
+      .map(fld)
+      .join(', ')}`,
+    'sort - started',
     head,
   ]);
 

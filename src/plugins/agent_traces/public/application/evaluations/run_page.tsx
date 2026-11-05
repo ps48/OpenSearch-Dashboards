@@ -163,18 +163,41 @@ export const useRunBefore = (runId?: string, suite?: string | null) => {
   };
 };
 
-/** "Compare with…": the suite's other runs, read when the menu opens. */
-const CompareWithMenu: React.FC<{
+/**
+ * "Compare with…": the suite's other runs, read when the menu opens (the run page, and each
+ * row of the Eval runs tab with `sameAgent`). The older run of the two is A.
+ */
+export const CompareWithMenu: React.FC<{
   runId: string;
   suite?: string;
   started: number;
-  /** Other runs of the suite in the range (from the runs lookup). */
+  /** Other runs to compare with in the range (from a runs lookup). */
   others: number;
   /** The runs lookup failed: nothing to compare with is known. */
   unavailable?: boolean;
   /** The runs lookup has not answered yet. */
   pending?: boolean;
-}> = ({ runId, suite, started, others: otherCount, unavailable, pending }) => {
+  /** Only the runs of the same agent (`agent`, undefined for no agent name). */
+  sameAgent?: boolean;
+  agent?: string;
+  /** Why there is nothing to compare with (the run page's text by default). */
+  noOthersTip?: string;
+  /** A table row's action: a small "Compare" button. */
+  compact?: boolean;
+  testId?: string;
+}> = ({
+  runId,
+  suite,
+  started,
+  others: otherCount,
+  unavailable,
+  pending,
+  sameAgent,
+  agent,
+  noOthersTip,
+  compact,
+  testId = 'agtEvlCompareWith',
+}) => {
   const { dataset, index, browseRange, refreshKey, rangeLabel, navigate } = useEvalContext();
   const [open, setOpen] = useState(false);
   const { rows, loading } = usePplRows(
@@ -183,7 +206,10 @@ const CompareWithMenu: React.FC<{
     browseRange,
     refreshKey
   );
-  const runs = useMemo(() => suiteRuns(rows), [rows]);
+  const runs = useMemo(
+    () => suiteRuns(rows).filter((r) => r.runId === runId || !sameAgent || r.agent === agent),
+    [rows, runId, sameAgent, agent]
+  );
   const self = runs.find((r) => r.runId === runId);
   const before = runs.filter((r) => r.started < started).pop();
   const others = runs.filter((r) => r.runId !== runId).reverse();
@@ -201,25 +227,28 @@ const CompareWithMenu: React.FC<{
                   defaultMessage: 'The runs of this suite could not be read.',
                 })
               : otherCount === 0 && !pending
-                ? i18n.translate('agentTraces.evals.run.noOtherRuns', {
+                ? (noOthersTip ??
+                  i18n.translate('agentTraces.evals.run.noOtherRuns', {
                     defaultMessage:
                       'No other run of this suite in {range} or the 30 days before this run.',
                     values: { range: rangeLabel },
-                  })
+                  }))
                 : undefined
           }
         >
           <EuiButtonEmpty
-            size="s"
+            size={compact ? 'xs' : 's'}
             iconType="arrowDown"
             iconSide="right"
             isDisabled={!suite || unavailable || pending || otherCount === 0}
             onClick={() => setOpen(!open)}
-            data-test-subj="agtEvlCompareWith"
+            data-test-subj={testId}
           >
-            {i18n.translate('agentTraces.evals.run.compareWith', {
-              defaultMessage: 'Compare with…',
-            })}
+            {compact
+              ? i18n.translate('agentTraces.evals.run.compare', { defaultMessage: 'Compare' })
+              : i18n.translate('agentTraces.evals.run.compareWith', {
+                  defaultMessage: 'Compare with…',
+                })}
           </EuiButtonEmpty>
         </EuiToolTip>
       }
@@ -236,7 +265,7 @@ const CompareWithMenu: React.FC<{
           runs={others}
           loading={loading}
           marked={before?.runId}
-          testId="agtEvlCompareWithList"
+          testId={`${testId}List`}
           onPick={(picked) => {
             setOpen(false);
             const r = others.find((x) => x.runId === picked);

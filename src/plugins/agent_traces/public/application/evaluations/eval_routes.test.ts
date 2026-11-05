@@ -60,7 +60,19 @@ describe('evaluation routes', () => {
         source: 'offline',
         q: 'x',
       },
+      runs: { agents: [], suites: [], q: '' },
     });
+  });
+
+  it('reads the Eval runs tab and keeps its filters', () => {
+    expect(routeOfHash('#/runs')).toEqual({ page: 'runs' });
+    expect(routeOfHash('#/runs?_a=(x)')).toEqual({ page: 'runs' });
+    expect(pathOfRoute({ page: 'runs' })).toBe('/runs');
+    expect(hashOfRoute({ page: 'runs' }, '#/results?_g=(x)')).toBe('#/runs?_g=(x)');
+    expect(
+      normalizeAppState({ runs: { agents: ['tp', 1], suites: ['golden'], q: 'run_1' } }).runs
+    ).toEqual({ agents: ['tp'], suites: ['golden'], q: 'run_1' });
+    expect(normalizeAppState({ runs: 'bad' }).runs).toEqual({ agents: [], suites: [], q: '' });
   });
 
   it('keeps the version pair per agent and a valid chart slice', () => {

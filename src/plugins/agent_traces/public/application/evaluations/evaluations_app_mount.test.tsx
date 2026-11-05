@@ -38,6 +38,10 @@ jest.mock('./eval_dataset', () => ({
 }));
 // The screens and dialogs have their own tests: stubs that show they are open.
 jest.mock('./agents_home', () => ({ AgentsHome: () => <div data-test-subj="agentsHome" /> }));
+jest.mock('./runs_view', () => ({ RunsView: () => <div data-test-subj="runsView" /> }));
+jest.mock('./results_view', () => ({
+  ResultsView: () => <div data-test-subj="resultsView" />,
+}));
 jest.mock('./eval_settings_modal', () => ({
   ...jest.requireActual('./eval_settings_modal'),
   EvalSettingsModal: () => <div data-test-subj="settingsModal" />,
@@ -105,12 +109,15 @@ const services = () => ({
   application: { navigateToApp: jest.fn(), getUrlForApp: jest.fn(() => '/app/x') },
 });
 
+let lastServices: ReturnType<typeof services>;
+
 const mount = (hash: string) => {
+  lastServices = services();
   window.history.replaceState(null, '', `/app/agentTraces/evaluations${hash}`);
   const history: MemoryHistory = createMemoryHistory({ initialEntries: [`/${hash}`] });
   render(
     <I18nProvider>
-      <OpenSearchDashboardsContextProvider services={services()}>
+      <OpenSearchDashboardsContextProvider services={lastServices}>
         <EvaluationsApp params={{ history } as unknown as AppMountParameters} />
       </OpenSearchDashboardsContextProvider>
     </I18nProvider>
@@ -140,6 +147,46 @@ describe('EvaluationsApp', () => {
     expect(within(header).getByTestId('agtEvlExperimental')).toBeInTheDocument();
     expect(controlIds()).toEqual(['agtEvlGettingStartedButton', 'agtEvlSettingsButton']);
     expect(screen.queryByTestId('agtEvlRefresh')).not.toBeInTheDocument();
+  });
+
+  it('the home tabs: Agents, Eval runs, Eval results, Agents by default', () => {
+    mount('');
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((t) => t.textContent)).toEqual(['Agents', 'Eval runs', 'Eval results']);
+    expect(tabs.map((t) => t.getAttribute('data-test-subj'))).toEqual([
+      'agtEvlHomeTab-agents',
+      'agtEvlHomeTab-runs',
+      'agtEvlHomeTab-results',
+    ]);
+    expect(screen.getByTestId('agtEvlHomeTab-agents')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('agentsHome')).toBeInTheDocument();
+  });
+
+  it('Eval runs opens #/runs, keeping the app state, with its breadcrumb', () => {
+    const history = mount('#/agents?_a=(runs:(agents:!(tp),q:x,suites:!()))');
+    fireEvent.click(screen.getByTestId('agtEvlHomeTab-runs'));
+    expect(history.location.hash).toMatch(/^#\/runs\?/);
+    expect(history.location.hash).toContain('agents:!(tp)');
+    expect(screen.getByTestId('runsView')).toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlHomeTab-runs')).toHaveAttribute('aria-selected', 'true');
+    const crumbs = lastServices.chrome.setBreadcrumbs.mock.calls.pop()?.[0];
+    expect(crumbs.map((c: { text: string }) => c.text)).toEqual(['Evaluations', 'Eval runs']);
+    // Back returns to Agents.
+    act(() => history.goBack());
+    expect(screen.getByTestId('agentsHome')).toBeInTheDocument();
+  });
+
+  it('Eval results: the renamed tab, route kept, with its breadcrumb and title', () => {
+    mount('#/results');
+    expect(screen.getByTestId('agtEvlHomeTab-results')).toHaveTextContent('Eval results');
+    expect(screen.getByTestId('agtEvlHomeTab-results')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('resultsView')).toBeInTheDocument();
+    const crumbs = lastServices.chrome.setBreadcrumbs.mock.calls.pop()?.[0];
+    expect(crumbs.map((c: { text: string }) => c.text)).toEqual(['Evaluations', 'Eval results']);
+    expect(lastServices.chrome.docTitle.change).toHaveBeenLastCalledWith([
+      'Eval results',
+      'Agent evaluations',
+    ]);
   });
 
   it('Getting started opens the tour, without Set up when a config exists', () => {

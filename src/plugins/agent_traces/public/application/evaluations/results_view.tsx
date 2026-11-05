@@ -26,6 +26,7 @@ import {
   EuiText,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
+import { TimeRange } from '../../../../data/common';
 import { EvalResult, Verdict, facetValues, num, recordsToResults } from './eval_model';
 import {
   DEFAULT_RESULTS_SORT,
@@ -97,25 +98,48 @@ const valueLabel = (facet: Facet, value: string) =>
       ? versionLabel(value)
       : agentLabel(value);
 
-/** A filter menu: its values load only while it is open. */
-const FacetFilter: React.FC<{
-  facet: Facet;
-  filters: ResultsFilters;
+/**
+ * A filter menu (Results, Eval runs): the top values in the range with their counts, read
+ * only while it is open (`queryOf` builds the query then).
+ */
+export const FacetMenu: React.FC<{
+  id: string;
+  label: string;
+  searchPlaceholder: string;
+  queryOf: () => string;
+  /** The values' field in the query's rows. */
+  valueKey: string;
+  valueLabel: (value: string) => string;
+  timeRange: TimeRange;
   selected: string[];
   onChange: (values: string[]) => void;
-}> = ({ facet, filters, selected, onChange }) => {
-  const { dataset, index, timeRange, refreshKey } = useSliceContext();
+}> = ({
+  id,
+  label,
+  searchPlaceholder,
+  queryOf,
+  valueKey,
+  valueLabel: labelOf,
+  timeRange,
+  selected,
+  onChange,
+}) => {
+  const { dataset, refreshKey } = useEvalContext();
   const [open, setOpen] = useState(false);
-  const query = open ? buildFacetQuery(index, filters, facet) : undefined;
-  const { rows, loading, error } = usePplRows(dataset, query, timeRange, refreshKey);
-  const values = facetValues(rows, FACET_KEY[facet]);
+  const { rows, loading, error } = usePplRows(
+    dataset,
+    open ? queryOf() : undefined,
+    timeRange,
+    refreshKey
+  );
+  const values = facetValues(rows, valueKey);
   // Selected values stay listed even when the range no longer holds them.
   const listed = [
     ...values,
     ...selected.filter((s) => !values.some((v) => v.value === s)).map((value) => ({ value, n: 0 })),
   ];
   const options: EuiSelectableOption[] = listed.map((v) => ({
-    label: valueLabel(facet, v.value),
+    label: labelOf(v.value),
     key: v.value,
     checked: selected.includes(v.value) ? 'on' : undefined,
     append: <span className="agtEvlDim agtEvlSmall">{v.n.toLocaleString()}</span>,
@@ -132,9 +156,9 @@ const FacetFilter: React.FC<{
           isSelected={open}
           hasActiveFilters={selected.length > 0}
           numActiveFilters={selected.length || undefined}
-          data-test-subj={`agtEvlFacet-${facet}`}
+          data-test-subj={`agtEvlFacet-${id}`}
         >
-          {FACET_LABEL[facet]}
+          {label}
         </EuiFilterButton>
       }
     >
@@ -143,7 +167,7 @@ const FacetFilter: React.FC<{
           defaultMessage: 'Top values in the range',
         })}
       </EuiPopoverTitle>
-      <div className="agtEvlFacet" data-test-subj={`agtEvlFacetList-${facet}`}>
+      <div className="agtEvlFacet" data-test-subj={`agtEvlFacetList-${id}`}>
         {error ? (
           <EuiText size="xs" color="danger" className="agtEvlFacet__error">
             <p>{error}</p>
@@ -153,8 +177,8 @@ const FacetFilter: React.FC<{
             searchable
             searchProps={{
               compressed: true,
-              placeholder: FACET_SEARCH[facet],
-              'data-test-subj': `agtEvlFacetSearch-${facet}`,
+              placeholder: searchPlaceholder,
+              'data-test-subj': `agtEvlFacetSearch-${id}`,
             }}
             options={options}
             isLoading={loading}
@@ -173,6 +197,29 @@ const FacetFilter: React.FC<{
         )}
       </div>
     </EuiPopover>
+  );
+};
+
+/** A Results filter menu, with the other filters applied (and the chart slice, when set). */
+const FacetFilter: React.FC<{
+  facet: Facet;
+  filters: ResultsFilters;
+  selected: string[];
+  onChange: (values: string[]) => void;
+}> = ({ facet, filters, selected, onChange }) => {
+  const { index, timeRange } = useSliceContext();
+  return (
+    <FacetMenu
+      id={facet}
+      label={FACET_LABEL[facet]}
+      searchPlaceholder={FACET_SEARCH[facet]}
+      queryOf={() => buildFacetQuery(index, filters, facet)}
+      valueKey={FACET_KEY[facet]}
+      valueLabel={(value) => valueLabel(facet, value)}
+      timeRange={timeRange}
+      selected={selected}
+      onChange={onChange}
+    />
   );
 };
 

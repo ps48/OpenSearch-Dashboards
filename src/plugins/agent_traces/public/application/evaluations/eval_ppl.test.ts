@@ -19,6 +19,10 @@ import {
   buildOneTraceSpansQuery,
   buildRootSpansQuery,
   buildRunsLookupQuery,
+  buildEvalRunsQuery,
+  buildEvalRunCasesQuery,
+  buildRunsFacetQuery,
+  EMPTY_RUNS_FILTERS,
   buildSessionResultsQuery,
   buildSuiteRunCasesQuery,
   buildSessionRootsQuery,
@@ -155,6 +159,61 @@ describe('evaluation PPL', () => {
     );
   });
 
+  describe('Eval runs', () => {
+    const RUNS_STATS =
+      'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict';
+    const OFFLINE = 'where isnotnull(`attributes.test.suite.run.id`)';
+
+    it('every run: the suite runs aggregation without the suite, by suite, latest first', () => {
+      expect(buildEvalRunsQuery(I, EMPTY_RUNS_FILTERS)).toBe(
+        [...BASE, OFFLINE, VERD, RUNS_STATS, 'sort - started', 'head 10000'].join(' | ')
+      );
+    });
+
+    it('filters by agents, suites and an escaped search in run id, suite and agent', () => {
+      const filters = { agents: ['tp', '~none'], suites: ["it's"], q: "50%_o'k" };
+      const pattern = "'%50\\\\%\\\\_o\\'k%'";
+      const where = [
+        OFFLINE,
+        "where `attributes.gen_ai.agent.name` = 'tp' or isnull(`attributes.gen_ai.agent.name`)",
+        "where `attributes.test.suite.name` = 'it\\'s'",
+        `where like(\`attributes.test.suite.run.id\`, ${pattern}) or like(\`attributes.test.suite.name\`, ${pattern}) or like(\`attributes.gen_ai.agent.name\`, ${pattern})`,
+      ];
+      expect(buildEvalRunsQuery(I, filters)).toBe(
+        [...BASE, ...where, VERD, RUNS_STATS, 'sort - started', 'head 10000'].join(' | ')
+      );
+      // Cases passed per run: the same filters, the suite page's two aggregations.
+      expect(buildEvalRunCasesQuery(I, filters)).toBe(
+        [
+          ...BASE,
+          ...where,
+          "eval bad = if(isnotnull(`attributes.error.type`) or `attributes.gen_ai.evaluation.score.label` = 'fail', 1, 0), good = if(`attributes.gen_ai.evaluation.score.label` = 'pass', 1, 0)",
+          'stats sum(bad) as bad, sum(good) as good by `attributes.test.suite.run.id`, `attributes.test.case.id`',
+          'eval ok = if(bad = 0 and good > 0, 1, 0)',
+          'stats count() as cases, sum(ok) as passed by `attributes.test.suite.run.id`',
+          'head 10000',
+        ].join(' | ')
+      );
+    });
+
+    it('a filter menu counts runs, without its own filter', () => {
+      const filters = { agents: ['tp'], suites: ['golden'], q: '' };
+      expect(buildRunsFacetQuery(I, filters, 'suites')).toBe(
+        [
+          ...BASE,
+          OFFLINE,
+          "where `attributes.gen_ai.agent.name` = 'tp'",
+          'stats dc(`attributes.test.suite.run.id`) as n by `attributes.test.suite.name`',
+          'sort - n',
+          'head 50',
+        ].join(' | ')
+      );
+      expect(buildRunsFacetQuery(I, filters, 'agents')).toContain(
+        "where `attributes.test.suite.name` = 'golden' | stats dc(`attributes.test.suite.run.id`) as n by `attributes.gen_ai.agent.name`"
+      );
+    });
+  });
+
   it('Run: by run, case, evaluation, verdict and trace (no run before)', () => {
     expect(buildRunCasesQuery(I, 'run_1')).toBe(
       [
@@ -180,11 +239,13 @@ describe('evaluation PPL', () => {
   });
 
   it('Run: the runs in the range, to find the run before', () => {
+    // Every run, by agent too (the Eval runs tab's compatible runs), latest first.
     expect(buildRunsLookupQuery(I)).toBe(
       [
         ...BASE,
         'where isnotnull(`attributes.test.suite.run.id`)',
-        'stats min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.test.suite.run.id`',
+        'stats min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.test.suite.run.id`',
+        'sort - started',
         'head 10000',
       ].join(' | ')
     );

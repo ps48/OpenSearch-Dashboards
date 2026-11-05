@@ -37,6 +37,8 @@ import {
   APP_STATE_KEY,
   EvalAppState,
   EvalRoute,
+  HOME_PAGES,
+  HomePage,
   hashOfRoute,
   normalizeAppState,
   routeOfHash,
@@ -71,6 +73,7 @@ import { SuitePage } from './suite_page';
 import { RunPage } from './run_page';
 import { CompareRuns } from './compare_runs';
 import { ResultsView } from './results_view';
+import { RunsView } from './runs_view';
 import { ResultFlyout } from './result_flyout';
 import type { EvaluationsServices } from '.';
 
@@ -86,6 +89,13 @@ const PAGE_TITLE = i18n.translate('agentTraces.evalsPage.title', {
 const CRUMB_HOME = i18n.translate('agentTraces.evalsPage.crumbEvaluations', {
   defaultMessage: 'Evaluations',
 });
+
+/** The home's tabs: their labels are also the tabs' breadcrumbs and page titles. */
+export const HOME_TAB_LABEL: Record<HomePage, string> = {
+  agents: i18n.translate('agentTraces.evalsPage.tabAgents', { defaultMessage: 'Agents' }),
+  runs: i18n.translate('agentTraces.evalsPage.tabRuns', { defaultMessage: 'Eval runs' }),
+  results: i18n.translate('agentTraces.evalsPage.tabResults', { defaultMessage: 'Eval results' }),
+};
 
 /** Page state in `_a` (replace: filters do not flood history), screens in the hash path. */
 const useAppState = (params: AppMountParameters, services: EvaluationsServices) => {
@@ -217,30 +227,29 @@ const titleOf = (route: EvalRoute): string => {
       return i18n.translate('agentTraces.evalsPage.compareTitle', {
         defaultMessage: 'Compare runs',
       });
+    case 'runs':
+    case 'results':
+      return HOME_TAB_LABEL[route.page];
     default:
       return PAGE_TITLE;
   }
 };
 
-/** Agents and Results: the home's two tabs. */
+/** The home's tabs: Agents (the default), Eval runs and Eval results. */
 const HomeTabs: React.FC<{ route: EvalRoute }> = ({ route }) => {
   const { navigate } = React.useContext(EvalContext);
   return (
     <EuiTabs size="s">
-      <EuiTab
-        isSelected={route.page === 'agents'}
-        onClick={() => navigate(AGENTS_ROUTE)}
-        data-test-subj="agtEvlHomeTab-agents"
-      >
-        {i18n.translate('agentTraces.evalsPage.tabAgents', { defaultMessage: 'Agents' })}
-      </EuiTab>
-      <EuiTab
-        isSelected={route.page === 'results'}
-        onClick={() => navigate({ page: 'results' })}
-        data-test-subj="agtEvlHomeTab-results"
-      >
-        {i18n.translate('agentTraces.evalsPage.tabResults', { defaultMessage: 'Results' })}
-      </EuiTab>
+      {HOME_PAGES.map((page) => (
+        <EuiTab
+          key={page}
+          isSelected={route.page === page}
+          onClick={() => navigate({ page } as EvalRoute)}
+          data-test-subj={`agtEvlHomeTab-${page}`}
+        >
+          {HOME_TAB_LABEL[page]}
+        </EuiTab>
+      ))}
     </EuiTabs>
   );
 };
@@ -263,6 +272,14 @@ export const EvalScreen: React.FC<{ route: EvalRoute }> = ({ route }) => {
           <HomeTabs route={route} />
           <EuiSpacer size="m" />
           <ResultsView />
+        </>
+      );
+    case 'runs':
+      return (
+        <>
+          <HomeTabs route={route} />
+          <EuiSpacer size="m" />
+          <RunsView />
         </>
       );
     default:
@@ -382,8 +399,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
         : {}),
     });
     const crumbs = [crumb(CRUMB_HOME, route.page === 'agents' ? undefined : AGENTS_ROUTE)];
-    if (route.page === 'results') crumbs.push(crumb(titleOf(route)));
-    if (route.page !== 'agents' && route.page !== 'results') crumbs.push(crumb(titleOf(route)));
+    if (route.page !== 'agents') crumbs.push(crumb(titleOf(route)));
     services.chrome.setBreadcrumbs(crumbs);
     services.chrome.docTitle.change(
       route.page === 'agents' ? PAGE_TITLE : [titleOf(route), PAGE_TITLE]

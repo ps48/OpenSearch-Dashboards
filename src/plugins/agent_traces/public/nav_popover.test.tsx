@@ -45,16 +45,24 @@ describe('agent_traces nav popovers', () => {
   });
 
   describe('Evaluations popover', () => {
-    it('declares Agents, Results and Settings', () => {
+    it('declares Agents, Eval runs, Eval results and Settings', () => {
       expect((agentEvalsNavPopover.actions ?? []).map((a) => a.id)).toEqual([
         'agents',
+        'runs',
         'results',
         'settings',
+      ]);
+      expect((agentEvalsNavPopover.actions ?? []).map((a) => a.label)).toEqual([
+        'Agents',
+        'Eval runs',
+        'Eval results',
+        'Settings',
       ]);
     });
 
     it.each([
       ['agents', '#/agents'],
+      ['runs', '#/runs'],
       ['results', '#/results'],
       // The app opens Settings once mounted.
       ['settings', '#/agents?openSettings=true'],

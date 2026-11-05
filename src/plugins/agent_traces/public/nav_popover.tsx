@@ -60,7 +60,7 @@ export const agentSpansNavPopover: NavPopoverConfig = buildAgentNavPopover(
 );
 
 /**
- * Evaluations: its two screens and its settings. Settings navigates with `openSettings=true`
+ * Evaluations: the home's three tabs and its settings. Settings navigates with `openSettings=true`
  * in the hash query, which the app honors once mounted (an action only has navigateToApp).
  */
 export const agentEvalsNavPopover: NavPopoverConfig = {
@@ -72,8 +72,16 @@ export const agentEvalsNavPopover: NavPopoverConfig = {
       onClick: ({ navigateToApp }) => navigateToApp(AGENT_EVALS_NAV_ID, { path: '#/agents' }),
     },
     {
+      id: 'runs',
+      label: i18n.translate('agentTraces.navPopover.evalsRuns', { defaultMessage: 'Eval runs' }),
+      iconType: 'play',
+      onClick: ({ navigateToApp }) => navigateToApp(AGENT_EVALS_NAV_ID, { path: '#/runs' }),
+    },
+    {
       id: 'results',
-      label: i18n.translate('agentTraces.navPopover.evalsResults', { defaultMessage: 'Results' }),
+      label: i18n.translate('agentTraces.navPopover.evalsResults', {
+        defaultMessage: 'Eval results',
+      }),
       iconType: 'list',
       onClick: ({ navigateToApp }) => navigateToApp(AGENT_EVALS_NAV_ID, { path: '#/results' }),
     },

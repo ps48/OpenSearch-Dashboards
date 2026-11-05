@@ -4,6 +4,8 @@
  */
 
 import {
+  isCompatibleRun,
+  runRefsOf,
   agentEvaluations,
   agentRows,
   agentVersionRows,
@@ -532,5 +534,32 @@ describe('result documents', () => {
       }).level
     ).toBe('trace');
     expect(recordToResult({ attributes: {} }).expectedTruncated).toBe(false);
+  });
+});
+
+describe('Eval runs compatibility', () => {
+  const run = (runId: string, suite?: string, agent?: string) => ({ runId, suite, agent });
+  it('same suite and same agent, not the same run', () => {
+    expect(isCompatibleRun(run('a', 'g', 'tp'), run('b', 'g', 'tp'))).toBe(true);
+    expect(isCompatibleRun(run('a', 'g', 'tp'), run('a', 'g', 'tp'))).toBe(false);
+    expect(isCompatibleRun(run('a', 'g', 'tp'), run('b', 'g', 'bot'))).toBe(false);
+    expect(isCompatibleRun(run('a', 'g', 'tp'), run('b', 'r', 'tp'))).toBe(false);
+    // Runs without an agent name compare with each other; runs without a suite do not.
+    expect(isCompatibleRun(run('a', 'g'), run('b', 'g'))).toBe(true);
+    expect(isCompatibleRun(run('a'), run('b'))).toBe(false);
+  });
+
+  it('reads the runs lookup rows, agent included', () => {
+    expect(
+      runRefsOf([
+        {
+          started: '2026-10-28 07:00:00',
+          'attributes.test.suite.run.id': 'r1',
+          'attributes.test.suite.name': 'g',
+          'attributes.gen_ai.agent.name': 'tp',
+        },
+        { started: '2026-10-28 07:00:00' },
+      ])
+    ).toEqual([{ runId: 'r1', suite: 'g', agent: 'tp', started: Date.UTC(2026, 9, 28, 7) }]);
   });
 });

@@ -3,12 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EMPTY_RESULTS_FILTERS, EvalSource, ResultsFilters } from './eval_ppl';
+import {
+  EMPTY_RESULTS_FILTERS,
+  EMPTY_RUNS_FILTERS,
+  EvalSource,
+  ResultsFilters,
+  RunsFilters,
+} from './eval_ppl';
 
 /**
  * Screens of the Agent Evaluations app, by the path of the URL hash:
  *
- * - `#/agents`: Agents (home); `#/results`: Results across agents;
+ * - the home's tabs: `#/agents` Agents (the default), `#/runs` Eval runs (every suite run) and
+ *   `#/results` Eval results (results across agents);
  * - `#/agents/<agent>?tab=evaluations|suites|results`: one agent;
  * - `#/suites/<suite>`: a suite's runs; `#/runs/<run id>`: one run's cases;
  * - `#/compare/<run A>/<run B>`: two runs, A the baseline.
@@ -21,6 +28,7 @@ export const AGENT_TABS: AgentTab[] = ['evaluations', 'suites', 'results'];
 
 export type EvalRoute =
   | { page: 'agents' }
+  | { page: 'runs' }
   | { page: 'results' }
   | { page: 'agent'; agent: string; tab: AgentTab }
   | { page: 'suite'; suite: string }
@@ -28,6 +36,10 @@ export type EvalRoute =
   | { page: 'compare'; runA: string; runB: string };
 
 export const AGENTS_ROUTE: EvalRoute = { page: 'agents' };
+
+/** The home's tabs, in their order. */
+export type HomePage = 'agents' | 'runs' | 'results';
+export const HOME_PAGES: HomePage[] = ['agents', 'runs', 'results'];
 
 const decode = (value: string) => {
   try {
@@ -56,6 +68,7 @@ export const routeOfHash = (hash: string): EvalRoute => {
   if (parts[0] === 'results') return { page: 'results' };
   if (parts[0] === 'suites' && parts[1]) return { page: 'suite', suite: parts[1] };
   if (parts[0] === 'runs' && parts[1]) return { page: 'run', runId: parts[1] };
+  if (parts[0] === 'runs') return { page: 'runs' };
   if (parts[0] === 'compare' && parts[1] && parts[2])
     return { page: 'compare', runA: parts[1], runB: parts[2] };
   return AGENTS_ROUTE;
@@ -66,6 +79,8 @@ export const pathOfRoute = (route: EvalRoute): string => {
   switch (route.page) {
     case 'agent':
       return `/agents/${e(route.agent)}`;
+    case 'runs':
+      return '/runs';
     case 'results':
       return '/results';
     case 'suite':
@@ -101,6 +116,8 @@ export interface EvalAppState {
   agentSource: EvalSource;
   /** Results view filters (the agent page locks the agent itself). */
   results: Omit<ResultsFilters, 'lockAgent'>;
+  /** Eval runs tab filters. */
+  runs: RunsFilters;
   /** Agent page: the two versions compared (B against A), remembered per agent. */
   versionPick?: Record<string, VersionPick>;
   /** A chart point's time bucket (epoch ms): the Results view reads only this slice. */
@@ -121,6 +138,7 @@ export const DEFAULT_APP_STATE: EvalAppState = {
   agentsSource: 'all',
   agentSource: 'all',
   results: EMPTY_RESULTS_FILTERS,
+  runs: EMPTY_RUNS_FILTERS,
 };
 
 const SOURCES: EvalSource[] = ['all', 'online', 'offline'];
@@ -159,6 +177,7 @@ export const normalizeAppState = (raw: unknown): EvalAppState => {
     string,
     unknown
   >;
+  const runs = (r.runs && typeof r.runs === 'object' ? r.runs : {}) as Record<string, unknown>;
   return {
     agentsSource: source(r.agentsSource),
     agentSource: source(r.agentSource),
@@ -169,6 +188,11 @@ export const normalizeAppState = (raw: unknown): EvalAppState => {
       verdicts: strings(res.verdicts),
       source: source(res.source),
       q: typeof res.q === 'string' ? res.q : '',
+    },
+    runs: {
+      agents: strings(runs.agents),
+      suites: strings(runs.suites),
+      q: typeof runs.q === 'string' ? runs.q : '',
     },
     versionPick: versionPicks(r.versionPick),
     slice: timeSlice(r.slice),

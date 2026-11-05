@@ -28,7 +28,8 @@ Read-only screens over `gen_ai.evaluation.result` events in the evaluations inde
 | Route | Screen | File |
 | --- | --- | --- |
 | `#/agents` | Agents (home, tab Agents) | `agents_home.tsx` |
-| `#/results` | Results (home, tab Results) | `results_view.tsx` |
+| `#/runs` | Eval runs (home, tab Eval runs) | `runs_view.tsx` |
+| `#/results` | Eval results (home, tab Eval results) | `results_view.tsx` |
 | `#/agents/<agent>?tab=evaluations\|suites\|results` | Agent | `agent_page.tsx` |
 | `#/suites/<suite>` | Suite | `suite_page.tsx` |
 | `#/runs/<run id>` | Run (cases, expandable results) | `run_page.tsx` |
