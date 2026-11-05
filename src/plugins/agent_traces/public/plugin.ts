@@ -27,7 +27,7 @@ import {
   createOsdUrlTracker,
   withNotifyOnErrors,
 } from '../../opensearch_dashboards_utils/public';
-import { getGlobalQueryUrlState } from '../../data/public';
+import { QueryStateChange, getGlobalQueryUrlState } from '../../data/public';
 import {
   AgentTracesFlavor,
   PLUGIN_ID,
@@ -74,6 +74,10 @@ import { SlotRegistryService } from './services/slot_registry';
 import { logActionRegistry } from './services/log_action_registry';
 import { createAskAiAction } from './actions/ask_ai_action';
 import { importDataActionConfig } from './actions/import_data_action';
+
+/** A global query state change that moved the time range or the refresh interval. */
+export const isTimeOrRefreshChange = ({ changes }: { changes?: QueryStateChange }): boolean =>
+  !!(changes?.time || changes?.refreshInterval);
 
 export class AgentTracesPlugin implements Plugin<
   AgentTracesPluginSetup,
@@ -191,10 +195,7 @@ export class AgentTracesPlugin implements Plugin<
             {
               osdUrlKey: '_g',
               stateUpdate$: setupDeps.data.query.state$.pipe(
-                filter(
-                  (value: Record<string, unknown>) =>
-                    !!((value.changes as any)?.time || (value.changes as any)?.refreshInterval)
-                ),
+                filter(isTimeOrRefreshChange),
                 map(({ state }) => getGlobalQueryUrlState(state))
               ),
             },
@@ -374,10 +375,7 @@ export class AgentTracesPlugin implements Plugin<
         {
           osdUrlKey: '_g',
           stateUpdate$: setupDeps.data.query.state$.pipe(
-            filter(
-              (value: Record<string, unknown>) =>
-                !!((value.changes as any)?.time || (value.changes as any)?.refreshInterval)
-            ),
+            filter(isTimeOrRefreshChange),
             map(({ state }) => getGlobalQueryUrlState(state))
           ),
         },

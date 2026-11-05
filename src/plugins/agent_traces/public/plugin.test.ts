@@ -4,7 +4,7 @@
  */
 
 import { BehaviorSubject, Observable } from 'rxjs';
-import { AgentTracesPlugin } from './plugin';
+import { AgentTracesPlugin, isTimeOrRefreshChange } from './plugin';
 import { AppNavLinkStatus, AppUpdater } from '../../../core/public';
 import { createOsdUrlTracker } from '../../opensearch_dashboards_utils/public';
 import { agentEvalsNavPopover } from './nav_popover';
@@ -425,5 +425,15 @@ describe('AgentTracesPlugin', () => {
 
       expect(() => plugin.stop()).not.toThrow();
     });
+  });
+});
+
+describe('isTimeOrRefreshChange', () => {
+  it('is true for a time or refresh interval change only', () => {
+    expect(isTimeOrRefreshChange({ changes: { time: true } })).toBe(true);
+    expect(isTimeOrRefreshChange({ changes: { refreshInterval: true } })).toBe(true);
+    expect(isTimeOrRefreshChange({ changes: { filters: true } })).toBe(false);
+    expect(isTimeOrRefreshChange({ changes: {} })).toBe(false);
+    expect(isTimeOrRefreshChange({})).toBe(false);
   });
 });
