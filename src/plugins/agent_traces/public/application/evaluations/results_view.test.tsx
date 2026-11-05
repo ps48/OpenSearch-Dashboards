@@ -213,6 +213,31 @@ describe('ResultsView', () => {
     expect(mockPpl.queries).toContain(page(0));
   });
 
+  it('goes back to page 1 on a new range after a Refresh that kept the same bounds', () => {
+    const ctx = testContext();
+    const page = (p: number) =>
+      buildResultsPageQuery(TEST_INDEX, EMPTY_RESULTS_FILTERS, DEFAULT_RESULTS_SORT, p);
+    const { rerender } = renderWithContext(<ResultsView />, ctx);
+    fireEvent.click(screen.getByTestId('pagination-button-next'));
+    const rerenderWith = (patch: Partial<typeof ctx>) =>
+      rerender(
+        <I18nProvider>
+          <EvalContext.Provider value={{ ...ctx, ...patch }}>
+            <ResultsView />
+          </EvalContext.Provider>
+        </I18nProvider>
+      );
+    // Refresh over an absolute range: refreshKey changes, the bounds do not.
+    rerenderWith({ refreshKey: 1 });
+    mockPpl.queries.length = 0;
+    // A new range is a filter change, not a refresh: page 1 again.
+    rerenderWith({
+      timeRange: { from: '2026-10-01T00:00:00.000Z', to: ctx.timeRange.to },
+      refreshKey: 1,
+    });
+    expect(mockPpl.queries).toContain(page(0));
+  });
+
   it('searches a filter menu', () => {
     mockPpl.answer((q) =>
       q.includes('sort - n')

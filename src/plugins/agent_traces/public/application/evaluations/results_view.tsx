@@ -248,17 +248,20 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
   const [pageIndex, setPageIndex] = useState(0);
   const filtersKey = JSON.stringify([filters, timeRange]);
   // New filters or a new range go back to page 1; Refresh (which resolves a relative range
-  // again, so `timeRange` changes too) keeps the page.
+  // again, so `timeRange` changes too) keeps the page. The refresh seen last is kept up to date
+  // on every Refresh, including one that leaves the filters key alone (an absolute range), so a
+  // later filter change is not mistaken for a refresh.
   const lastRefresh = useRef(refreshKey);
   useEffect(() => {
-    if (lastRefresh.current !== refreshKey) {
-      lastRefresh.current = refreshKey;
-      return;
-    }
-    setPageIndex(0);
+    const refreshed = lastRefresh.current !== refreshKey;
+    lastRefresh.current = refreshKey;
+    if (!refreshed) setPageIndex(0);
     // Keyed on the filters; refreshKey is read to tell a refresh apart.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersKey]);
+  useEffect(() => {
+    lastRefresh.current = refreshKey;
+  }, [refreshKey]);
 
   const page = usePplRows(
     dataset,
