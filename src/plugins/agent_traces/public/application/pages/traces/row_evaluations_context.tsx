@@ -49,6 +49,21 @@ export const chunkTraceIds = (ids: string[], size = TRACE_IDS_PER_QUERY): string
   return chunks;
 };
 
+/**
+ * The rows of the chunks that answered: one failed chunk (a throttle, a shard failure) does not
+ * blank the rows the others found. Rejects only when every chunk failed.
+ */
+export const settledRows = async (chunks: Array<Promise<PplRecord[]>>): Promise<PplRecord[]> => {
+  const settled = await Promise.allSettled(chunks);
+  const answered = settled.filter(
+    (r): r is PromiseFulfilledResult<PplRecord[]> => r.status === 'fulfilled'
+  );
+  if (settled.length > 0 && answered.length === 0) {
+    throw (settled[0] as PromiseRejectedResult).reason;
+  }
+  return answered.flatMap((r) => r.value);
+};
+
 /** Tallies from `buildTracesTallyQuery` rows. */
 export const indexRowTallies = (
   rows: PplRecord[],
@@ -71,7 +86,8 @@ export const indexRowTallies = (
 /**
  * The Evaluations column: one aggregation (count by trace id, or by span id, and verdict) for
  * the traces of the visible page, from the start of the range to now (results land after the
- * traces). A missing eval index or a failed lookup leaves the column empty.
+ * traces). A missing eval index, or every chunk failing, leaves the column empty; a chunk that
+ * failed only leaves its own rows without a tally.
  */
 export const RowEvaluationsProvider: React.FC<{
   traceIds: string[];
@@ -92,7 +108,7 @@ export const RowEvaluationsProvider: React.FC<{
     const timefilter = services.data.query.timefilter.timefilter;
     const from = timefilter.calculateBounds(timefilter.getTime()).min?.toISOString() ?? 'now-7d';
     const range = { from, to: new Date().toISOString() };
-    Promise.all(
+    settledRows(
       chunkTraceIds(key.split(',')).map((ids) =>
         runPpl(
           services.data,
@@ -103,9 +119,7 @@ export const RowEvaluationsProvider: React.FC<{
         )
       )
     )
-      .then(
-        (chunks) => !controller.signal.aborted && setValue(indexRowTallies(chunks.flat(), mode))
-      )
+      .then((rows) => !controller.signal.aborted && setValue(indexRowTallies(rows, mode)))
       .catch(() => !controller.signal.aborted && setValue({ ...EMPTY, mode }));
     return () => controller.abort();
   }, [key, mode, services?.data, index, dataSource]);

@@ -10,6 +10,7 @@ import {
   RowEvaluationsProvider,
   TRACE_IDS_PER_QUERY,
   chunkTraceIds,
+  settledRows,
   useRowEvaluations,
 } from './row_evaluations_context';
 import { resetEvalsDatasetState } from '../../evaluations/eval_dataset';
@@ -86,6 +87,20 @@ describe('RowEvaluationsProvider', () => {
     expect(seen?.byTraceId.get(traceIds[TRACE_IDS_PER_QUERY + 10])).toBeDefined();
   });
 
+  it('keeps the tallies of the chunks that answered when another chunk fails', async () => {
+    let call = 0;
+    mockRunPpl.mockImplementation(async (_data, _dataset, query: string) => {
+      call += 1;
+      if (call === 1) throw new Error('throttled');
+      const listed = Array.from(query.matchAll(/'(t\d{4})'/g)).map((m) => m[1]);
+      return listed.map((traceId) => ({ traceId, verdict: 'pass', n: 1 }));
+    });
+    const { services } = makeServices(true);
+    renderProvider(services, ids(TRACE_IDS_PER_QUERY + 50));
+    await waitFor(() => expect(seen?.byTraceId.size).toBe(50));
+    expect(mockRunPpl).toHaveBeenCalledTimes(2);
+  });
+
   it('leaves the column empty when a lookup fails', async () => {
     mockRunPpl.mockRejectedValue(new Error('no such index'));
     const { services } = makeServices(true);
@@ -93,6 +108,17 @@ describe('RowEvaluationsProvider', () => {
     await waitFor(() => expect(mockRunPpl).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 0));
     expect(seen?.byTraceId.size).toBe(0);
+  });
+});
+
+describe('settledRows', () => {
+  it('keeps the answered chunks and rejects only when all failed', async () => {
+    const boom = new Error('boom');
+    await expect(settledRows([Promise.resolve([{ n: 1 }]), Promise.reject(boom)])).resolves.toEqual(
+      [{ n: 1 }]
+    );
+    await expect(settledRows([Promise.reject(boom)])).rejects.toBe(boom);
+    await expect(settledRows([])).resolves.toEqual([]);
   });
 });
 
