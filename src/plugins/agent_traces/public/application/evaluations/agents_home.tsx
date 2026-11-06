@@ -30,6 +30,7 @@ import {
   NO_AGENT_LABEL,
   PassRateCell,
   QueryErrorCallout,
+  LAST_RESULT_LABEL,
   SourceFilter,
   formatTime,
   versionLabel,
@@ -149,9 +150,7 @@ export const AgentsHome: React.FC = () => {
     },
     {
       field: 'last',
-      name: i18n.translate('agentTraces.evals.agents.lastResult', {
-        defaultMessage: 'Last result',
-      }),
+      name: LAST_RESULT_LABEL[state.agentsSource],
       align: 'right',
       sortable: true,
       render: (last: number) => <span className="agtEvlDim">{formatTime(last)}</span>,
@@ -177,6 +176,12 @@ export const AgentsHome: React.FC = () => {
       </EuiText>
       <EuiSpacer size="m" />
       <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+        <EuiFlexItem grow={false}>
+          <SourceFilter
+            value={state.agentsSource}
+            onChange={(agentsSource) => setState({ agentsSource })}
+          />
+        </EuiFlexItem>
         <EuiFlexItem>
           <EuiCompressedFieldSearch
             fullWidth
@@ -186,12 +191,6 @@ export const AgentsHome: React.FC = () => {
               defaultMessage: 'Search agents',
             })}
             data-test-subj="agtEvlAgentsSearch"
-          />
-        </EuiFlexItem>
-        <EuiFlexItem grow={false}>
-          <SourceFilter
-            value={state.agentsSource}
-            onChange={(agentsSource) => setState({ agentsSource })}
           />
         </EuiFlexItem>
       </EuiFlexGroup>

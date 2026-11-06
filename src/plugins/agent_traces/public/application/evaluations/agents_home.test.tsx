@@ -171,6 +171,15 @@ describe('AgentsHome', () => {
         .getAllByTestId(`agtEvlSource-${s}`)
         .find((el) => el.tagName === 'INPUT') as HTMLElement;
     expect(radio('offline')).toBeChecked();
+    // The source filter sits left of the search, and names the date column by its source.
+    const search = screen.getByTestId('agtEvlAgentsSearch');
+    const controls = Array.from(document.querySelectorAll('input'));
+    expect(controls.indexOf(radio('offline') as HTMLInputElement)).toBeLessThan(
+      controls.indexOf(search as HTMLInputElement)
+    );
+    expect(
+      screen.getAllByRole('columnheader').some((h) => h.textContent === 'Last offline result')
+    ).toBe(true);
     expect(radio('online')).not.toBeChecked();
     fireEvent.click(radio('online'));
     expect(ctx.setState).toHaveBeenCalledWith({ agentsSource: 'online' });

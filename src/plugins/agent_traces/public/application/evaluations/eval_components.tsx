@@ -296,6 +296,19 @@ export const TallyCell: React.FC<{ tally: Tally }> = ({ tally }) => {
   );
 };
 
+/** "Last result", saying which results the source filter keeps (one message per source). */
+export const LAST_RESULT_LABEL: Record<EvalSource, string> = {
+  all: i18n.translate('agentTraces.evals.lastResult.all', {
+    defaultMessage: 'Last result (any source)',
+  }),
+  online: i18n.translate('agentTraces.evals.lastResult.online', {
+    defaultMessage: 'Last online result',
+  }),
+  offline: i18n.translate('agentTraces.evals.lastResult.offline', {
+    defaultMessage: 'Last offline result',
+  }),
+};
+
 const SOURCE_LABEL: Record<EvalSource, string> = {
   all: i18n.translate('agentTraces.evals.source.all', { defaultMessage: 'All' }),
   online: i18n.translate('agentTraces.evals.source.online', { defaultMessage: 'Online' }),

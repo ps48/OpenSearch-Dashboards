@@ -132,6 +132,10 @@ describe('AgentPage', () => {
     const rows = screen.getAllByTestId(/^agtEvlEvalRow-/);
     expect(rows[0]).toHaveAttribute('data-test-subj', 'agtEvlEvalRow-accuracy');
     expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Versions');
+    // The date's label says which results the source filter keeps.
+    expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Last result (any source)');
+    // The first tab is the Overview.
+    expect(screen.getByTestId('agtEvlAgentTab-evaluations')).toHaveTextContent('Overview');
     const props = mockChart.mock.calls[0][0] as {
       series: Array<{ id: string; points: unknown[] }>;
     };
@@ -289,6 +293,7 @@ describe('AgentPage', () => {
     // 10 results each, under 30, but a suite run is a fixed set: not greyed.
     expect(within(acc).queryByTestId('agtEvlDeltaLow')).not.toBeInTheDocument();
     expect(within(acc).getByTestId('agtEvlDelta')).toHaveTextContent('-30 pts');
+    expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Last offline result');
   });
 
   it('Online/Offline is pushed into both queries', () => {

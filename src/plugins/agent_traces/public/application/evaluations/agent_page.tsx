@@ -40,6 +40,7 @@ import {
   versionKey,
 } from './eval_model';
 import {
+  EvalSource,
   NO_VERSION,
   buildAgentEvaluationsQuery,
   buildAgentSuitesQuery,
@@ -58,6 +59,7 @@ import {
   MetaItem,
   PassRateCell,
   QueryErrorCallout,
+  LAST_RESULT_LABEL,
   SourceFilter,
   VersionBadge,
   formatTime,
@@ -66,14 +68,17 @@ import {
 } from './eval_components';
 
 const TAB_LABEL: Record<AgentTab, string> = {
-  evaluations: i18n.translate('agentTraces.evals.agent.tabEvaluations', {
-    defaultMessage: 'Evaluations',
+  evaluations: i18n.translate('agentTraces.evals.agent.tabOverview', {
+    defaultMessage: 'Overview',
   }),
   suites: i18n.translate('agentTraces.evals.agent.tabSuites', { defaultMessage: 'Test suites' }),
   results: i18n.translate('agentTraces.evals.agent.tabResults', { defaultMessage: 'Results' }),
 };
 
-const AgentMeta: React.FC<{ data: AgentEvaluations }> = ({ data: { summary } }) => {
+const AgentMeta: React.FC<{ data: AgentEvaluations; source: EvalSource }> = ({
+  data: { summary },
+  source,
+}) => {
   if (!summary) return null;
   const live = summary.versions.filter((v) => isLive(v));
   return (
@@ -100,12 +105,8 @@ const AgentMeta: React.FC<{ data: AgentEvaluations }> = ({ data: { summary } }) 
       >
         <strong>{summary.n.toLocaleString()}</strong>
       </MetaItem>
-      <MetaItem
-        label={i18n.translate('agentTraces.evals.agent.lastResult', {
-          defaultMessage: 'Last result',
-        })}
-      >
-        {formatTime(summary.last)}
+      <MetaItem label={LAST_RESULT_LABEL[source]}>
+        <span data-test-subj="agtEvlAgentLastResult">{formatTime(summary.last)}</span>
       </MetaItem>
     </div>
   );
@@ -409,7 +410,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
 
   return (
     <>
-      <AgentMeta data={data} />
+      <AgentMeta data={data} source={source} />
       <SourceFilter value={source} onChange={(agentSource) => setState({ agentSource })} />
       <EuiSpacer size="m" />
       <EuiPanel paddingSize="m" hasShadow={false} hasBorder>
