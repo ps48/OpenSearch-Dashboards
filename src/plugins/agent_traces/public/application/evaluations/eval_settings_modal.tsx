@@ -12,7 +12,7 @@ import {
   EuiComboBox,
   EuiComboBoxOptionOption,
   EuiForm,
-  EuiFormRow,
+  EuiCompressedFormRow,
   EuiModal,
   EuiModalBody,
   EuiModalFooter,
@@ -353,7 +353,7 @@ export const EvalSettingsModal: React.FC<{
             </>
           )}
           <EuiForm component="form" isInvalid={showErrors}>
-            <EuiFormRow
+            <EuiCompressedFormRow
               label={i18n.translate('agentTraces.evalsSettings.traces', {
                 defaultMessage: 'Traces dataset',
               })}
@@ -377,8 +377,8 @@ export const EvalSettingsModal: React.FC<{
                 isInvalid={showErrors && errors.traces.length > 0}
                 data-test-subj="agtEvlSettingsTraces"
               />
-            </EuiFormRow>
-            <EuiFormRow
+            </EuiCompressedFormRow>
+            <EuiCompressedFormRow
               label={i18n.translate('agentTraces.evalsSettings.evals', {
                 defaultMessage: 'Evaluations dataset',
               })}
@@ -408,7 +408,7 @@ export const EvalSettingsModal: React.FC<{
                 isInvalid={showErrors && errors.evals.length > 0}
                 data-test-subj="agtEvlSettingsEvals"
               />
-            </EuiFormRow>
+            </EuiCompressedFormRow>
             {created && !created.error && (
               <>
                 <EuiSpacer size="s" />
@@ -486,10 +486,11 @@ export const EvalSettingsModal: React.FC<{
           </EuiForm>
         </EuiModalBody>
         <EuiModalFooter>
-          <EuiButtonEmpty onClick={() => onClose()} data-test-subj="agtEvlSettingsCancel">
+          <EuiButtonEmpty size="s" onClick={() => onClose()} data-test-subj="agtEvlSettingsCancel">
             {i18n.translate('agentTraces.evalsSettings.cancel', { defaultMessage: 'Cancel' })}
           </EuiButtonEmpty>
           <EuiButton
+            size="s"
             fill
             onClick={save}
             isLoading={saving}

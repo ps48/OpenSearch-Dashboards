@@ -8,7 +8,7 @@ import {
   EuiBasicTableColumn,
   EuiButton,
   EuiButtonEmpty,
-  EuiCheckbox,
+  EuiCompressedCheckbox,
   EuiFlexGroup,
   EuiFlexItem,
   EuiLink,
@@ -82,7 +82,7 @@ export const runSelectColumn = <T extends Pickable>(
   render: (r: T) => {
     const reason = sel.blockedReason(r);
     const box = (
-      <EuiCheckbox
+      <EuiCompressedCheckbox
         id={`agtEvlSelect-${r.runId}`}
         checked={sel.isSelected(r)}
         disabled={!!reason}

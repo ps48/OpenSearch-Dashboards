@@ -11,7 +11,7 @@ import {
   EuiCodeBlock,
   EuiComboBox,
   EuiDescriptionList,
-  EuiFormRow,
+  EuiCompressedFormRow,
   EuiLoadingContent,
   EuiModal,
   EuiModalBody,
@@ -341,7 +341,7 @@ export const EvalSetupWizard: React.FC<{
           </p>
         </EuiCallOut>
       ) : (
-        <EuiFormRow
+        <EuiCompressedFormRow
           label={i18n.translate('agentTraces.evalsSetup.tracesLabel', {
             defaultMessage: 'Traces dataset',
           })}
@@ -357,7 +357,7 @@ export const EvalSetupWizard: React.FC<{
             onChange={(selected) => setTraces(selected[0]?.value)}
             data-test-subj="agtEvlSetupTraces"
           />
-        </EuiFormRow>
+        </EuiCompressedFormRow>
       )}
     </>
   );
@@ -459,20 +459,21 @@ export const EvalSetupWizard: React.FC<{
           </div>
         </EuiModalBody>
         <EuiModalFooter>
-          <EuiButtonEmpty onClick={() => onClose()} data-test-subj="agtEvlSetupCancel">
+          <EuiButtonEmpty size="s" onClick={() => onClose()} data-test-subj="agtEvlSetupCancel">
             {i18n.translate('agentTraces.evalsSetup.cancel', { defaultMessage: 'Cancel' })}
           </EuiButtonEmpty>
           {index > 0 && (
-            <EuiButton onClick={back} data-test-subj="agtEvlSetupBack">
+            <EuiButton size="s" onClick={back} data-test-subj="agtEvlSetupBack">
               {i18n.translate('agentTraces.evalsSetup.back', { defaultMessage: 'Back' })}
             </EuiButton>
           )}
           {step !== 'create' ? (
-            <EuiButton fill onClick={next} data-test-subj="agtEvlSetupNext">
+            <EuiButton size="s" fill onClick={next} data-test-subj="agtEvlSetupNext">
               {i18n.translate('agentTraces.evalsSetup.next', { defaultMessage: 'Next' })}
             </EuiButton>
           ) : (
             <EuiButton
+              size="s"
               fill
               onClick={create}
               isLoading={creating}

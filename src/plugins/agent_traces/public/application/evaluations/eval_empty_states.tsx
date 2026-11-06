@@ -174,14 +174,25 @@ export const NoEvalsDatasetPrompt: React.FC<{
           )}
           <EuiFlexGroup gutterSize="s" responsive={false} wrap alignItems="center">
             <EuiFlexItem grow={false}>
-              <EuiButton fill iconType="gear" onClick={onSetUp} data-test-subj="agtEvlGetStarted">
+              <EuiButton
+                size="s"
+                fill
+                iconType="gear"
+                onClick={onSetUp}
+                data-test-subj="agtEvlGetStarted"
+              >
                 {i18n.translate('agentTraces.evalsEmpty.setUp', {
                   defaultMessage: 'Set up evaluations',
                 })}
               </EuiButton>
             </EuiFlexItem>
             <EuiFlexItem grow={false}>
-              <EuiButton iconType="help" onClick={onGettingStarted} data-test-subj="agtEvlTour">
+              <EuiButton
+                size="s"
+                iconType="help"
+                onClick={onGettingStarted}
+                data-test-subj="agtEvlTour"
+              >
                 {i18n.translate('agentTraces.evalsEmpty.gettingStarted', {
                   defaultMessage: 'Getting started',
                 })}

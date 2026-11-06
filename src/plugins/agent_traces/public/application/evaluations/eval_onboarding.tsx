@@ -383,20 +383,26 @@ export const GettingStartedModal: React.FC<{
           <div data-test-subj={`agtEvlTourScreen-${screen.id}`}>{screen.body}</div>
         </EuiModalBody>
         <EuiModalFooter>
-          <EuiButtonEmpty onClick={onClose} data-test-subj="agtEvlTourClose">
+          <EuiButtonEmpty size="s" onClick={onClose} data-test-subj="agtEvlTourClose">
             {i18n.translate('agentTraces.evalsTour.close', { defaultMessage: 'Close' })}
           </EuiButtonEmpty>
           {step > 0 && (
-            <EuiButton onClick={() => setStep(step - 1)} data-test-subj="agtEvlTourBack">
+            <EuiButton size="s" onClick={() => setStep(step - 1)} data-test-subj="agtEvlTourBack">
               {i18n.translate('agentTraces.evalsTour.back', { defaultMessage: 'Back' })}
             </EuiButton>
           )}
           {!last ? (
-            <EuiButton fill onClick={() => setStep(step + 1)} data-test-subj="agtEvlTourNext">
+            <EuiButton
+              size="s"
+              fill
+              onClick={() => setStep(step + 1)}
+              data-test-subj="agtEvlTourNext"
+            >
               {i18n.translate('agentTraces.evalsTour.next', { defaultMessage: 'Next' })}
             </EuiButton>
           ) : onSetUp ? (
             <EuiButton
+              size="s"
               fill
               iconType="gear"
               onClick={() => {
@@ -410,7 +416,7 @@ export const GettingStartedModal: React.FC<{
               })}
             </EuiButton>
           ) : (
-            <EuiButton fill onClick={onClose} data-test-subj="agtEvlTourDone">
+            <EuiButton size="s" fill onClick={onClose} data-test-subj="agtEvlTourDone">
               {i18n.translate('agentTraces.evalsTour.done', { defaultMessage: 'Done' })}
             </EuiButton>
           )}

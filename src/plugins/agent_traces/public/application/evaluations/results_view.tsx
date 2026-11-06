@@ -12,7 +12,7 @@ import {
   EuiBasicTableColumn,
   EuiButtonEmpty,
   EuiCompressedFieldSearch,
-  EuiFilterButton,
+  EuiSmallFilterButton,
   EuiFilterGroup,
   EuiFlexGroup,
   EuiFlexItem,
@@ -151,7 +151,7 @@ export const FacetMenu: React.FC<{
       closePopover={() => setOpen(false)}
       panelPaddingSize="none"
       button={
-        <EuiFilterButton
+        <EuiSmallFilterButton
           iconType="arrowDown"
           onClick={() => setOpen(!open)}
           isSelected={open}
@@ -160,7 +160,7 @@ export const FacetMenu: React.FC<{
           data-test-subj={`agtEvlFacet-${id}`}
         >
           {label}
-        </EuiFilterButton>
+        </EuiSmallFilterButton>
       }
     >
       <EuiPopoverTitle paddingSize="s">

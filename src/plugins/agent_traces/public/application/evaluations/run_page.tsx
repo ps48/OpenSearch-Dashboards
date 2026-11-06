@@ -56,7 +56,6 @@ import {
   quote,
 } from './eval_ppl';
 import { SpanIOView } from './span_io_view';
-import { CaseLog } from './case_log';
 import { useRunNames } from './use_run_names';
 import { useRootSpans } from './eval_spans';
 import {
@@ -144,12 +143,6 @@ const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, case
         </span>
       </EuiTitle>
       <ResultRows results={results} onOpen={openResult} testId="agtEvlCaseResultRows" />
-      {caseRow.traceId && (
-        <>
-          <EuiSpacer size="m" />
-          <CaseLog traceId={caseRow.traceId} caseId={caseId} />
-        </>
-      )}
     </div>
   );
 };
