@@ -126,6 +126,26 @@ describe('TraceCompareFlyout', () => {
     );
   });
 
+  it('heads each side with its run name, else the short run id, and the description', async () => {
+    renderWithContext(
+      <TraceCompareFlyout
+        caseId="c1"
+        traceA="ta"
+        traceB="tb"
+        runA={{ runId: 'run_20261027_bbbb2222' }}
+        runB={{ runId: 'run_20261028_cccc3333', name: 'v5 shorter prompt', description: 'Trimmed' }}
+        onClose={jest.fn()}
+      />
+    );
+    await waitFor(() => expect(screen.getByTestId('agtEvlSpans-tb')).toBeInTheDocument());
+    const a = screen.getByTestId('agtEvlTraceCol-Run A');
+    const b = screen.getByTestId('agtEvlTraceCol-Run B');
+    expect(within(a).getByTestId('agtEvlTraceColRun')).toHaveTextContent('bbbb2222');
+    expect(within(a).queryByTestId('agtEvlTraceColRunDescription')).not.toBeInTheDocument();
+    expect(within(b).getByTestId('agtEvlTraceColRun')).toHaveTextContent('v5 shorter prompt');
+    expect(within(b).getByTestId('agtEvlTraceColRunDescription')).toHaveTextContent('Trimmed');
+  });
+
   const renderCompare = () =>
     renderWithContext(
       <TraceCompareFlyout

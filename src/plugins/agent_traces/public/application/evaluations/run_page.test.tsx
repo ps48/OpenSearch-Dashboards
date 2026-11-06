@@ -11,6 +11,7 @@ import {
   buildCaseResultsQuery,
   buildRootSpansQuery,
   buildRunCasesQuery,
+  buildRunNamesQuery,
   buildRunsLookupQuery,
   buildSuiteRunsQuery,
   buildTraceSpansQuery,
@@ -37,6 +38,7 @@ const RUN = 'run_20261028_cccc3333';
 const RUN_QUERIES = () => [
   buildRunCasesQuery(TEST_INDEX, RUN),
   buildRunEvaluatorsQuery(TEST_INDEX, RUN),
+  buildRunNamesQuery(TEST_INDEX, [RUN, 'run_20261027_bbbb2222']),
   buildRunsLookupQuery(TEST_INDEX, 'golden'),
   buildRunCasesQuery(TEST_INDEX, 'run_20261027_bbbb2222'),
 ];
@@ -252,7 +254,7 @@ describe('RunPage', () => {
     // EUI opens the tooltip after a delay and a queued state change (real timers).
     fireEvent.mouseOver(button.closest('.euiToolTipAnchor') as HTMLElement);
     expect(
-      await screen.findByText(/^No other run of this suite in Last 7 days/, undefined, {
+      await screen.findByText(/^No other run of this test suite in Last 7 days/, undefined, {
         timeout: 5000,
       })
     ).toBeInTheDocument();
@@ -392,5 +394,35 @@ describe('RunPage', () => {
     expect(screen.queryByTestId('agtEvlRunEvaluators')).not.toBeInTheDocument();
     expect(buildRunEvaluatorsQuery('evals-*', "r'1")).toContain("= 'r\\'1'");
     expect(evaluatorDescriptionsOf([])).toEqual([]);
+  });
+
+  it('shows the run name and description when the run has them', () => {
+    mockPpl.answer((q) =>
+      q.includes('dedup `attributes.test.suite.run.id`')
+        ? [
+            {
+              [RUN_ID]: RUN,
+              attributes: {
+                opensearch: {
+                  test: {
+                    suite: {
+                      run: { name: 'v5 shorter prompt', description: 'Trimmed the system prompt' },
+                    },
+                  },
+                },
+              },
+            },
+          ]
+        : q.includes('as t0')
+          ? [caseRow('c1', 'accuracy', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05')]
+          : []
+    );
+    renderWithContext(<RunPage runId={RUN} />);
+    expect(screen.getByTestId('agtEvlRunName')).toHaveTextContent('v5 shorter prompt');
+    expect(screen.getByTestId('agtEvlRunDescription')).toHaveTextContent(
+      'Trimmed the system prompt'
+    );
+    // The run id stays in the meta row.
+    expect(screen.getByTestId('agtEvlRunMeta')).toHaveTextContent(RUN);
   });
 });

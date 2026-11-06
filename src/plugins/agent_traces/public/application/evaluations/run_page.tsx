@@ -55,6 +55,7 @@ import {
 } from './eval_ppl';
 import { SpanIOView } from './span_io_view';
 import { CaseLog } from './case_log';
+import { useRunNames } from './use_run_names';
 import { useRootSpans } from './eval_spans';
 import {
   DASH,
@@ -295,13 +296,13 @@ export const CompareWithMenu: React.FC<{
           content={
             unavailable
               ? i18n.translate('agentTraces.evals.run.runsUnavailable', {
-                  defaultMessage: 'The runs of this suite could not be read.',
+                  defaultMessage: 'The runs of this test suite could not be read.',
                 })
               : otherCount === 0 && !pending
                 ? (noOthersTip ??
                   i18n.translate('agentTraces.evals.run.noOtherRuns', {
                     defaultMessage:
-                      'No other run of this suite in {range} or the 30 days before this run.',
+                      'No other run of this test suite in {range} or the 30 days before this run.',
                     values: { range: rangeLabel },
                   }))
                 : undefined
@@ -401,6 +402,11 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
     () => (beforeId ? runDetail(beforeId, beforeCases.rows) : undefined),
     [beforeId, beforeCases.rows]
   );
+  // The run's and the run before's names (each falls back to its short id).
+  const names = useRunNames(
+    useMemo(() => (beforeId ? [runId, beforeId] : [runId]), [runId, beforeId])
+  );
+  const own = names.get(runId);
   const [status, setStatus] = useState<StatusFilter>('all');
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -563,11 +569,33 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
           <EuiSpacer size="s" />
         </>
       )}
+      {own?.description && (
+        <>
+          <EuiText
+            size="s"
+            color="subdued"
+            className="agtEvlProse"
+            data-test-subj="agtEvlRunDescription"
+          >
+            <p>{own.description}</p>
+          </EuiText>
+          <EuiSpacer size="s" />
+        </>
+      )}
       <EuiFlexGroup alignItems="center" gutterSize="s" responsive={false}>
         <EuiFlexItem>
           <div className="agtEvlMeta" data-test-subj="agtEvlRunMeta">
+            {own?.name && (
+              <MetaItem
+                label={i18n.translate('agentTraces.evals.run.runName', { defaultMessage: 'Run' })}
+              >
+                <strong data-test-subj="agtEvlRunName">{own.name}</strong>
+              </MetaItem>
+            )}
             <MetaItem
-              label={i18n.translate('agentTraces.evals.run.suite', { defaultMessage: 'Suite' })}
+              label={i18n.translate('agentTraces.evals.run.suite', {
+                defaultMessage: 'Test suite',
+              })}
             >
               {run.suite ? (
                 <EuiLink onClick={() => run.suite && navigate({ page: 'suite', suite: run.suite })}>

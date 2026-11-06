@@ -33,6 +33,7 @@ import {
   CompareEvalRow,
   CompareSide,
   EvalResult,
+  RunName,
   comparison,
   get,
   recordsToResults,
@@ -69,11 +70,13 @@ import {
   expectedOf,
   formatTime,
   pct,
+  runLabel,
   shortId,
 } from './eval_components';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { TraceCompareFlyout } from './trace_compare_flyout';
+import { useRunNames } from './use_run_names';
 
 const CHANGE_ORDER: Record<CaseChange, number> = {
   regressed: 0,
@@ -314,8 +317,9 @@ const RunPicker: React.FC<{
 const RunCard: React.FC<{
   label: string;
   side: CompareSide;
+  name?: RunName;
   picker: React.ReactNode;
-}> = ({ label, side, picker }) => {
+}> = ({ label, side, name, picker }) => {
   const { navigate } = useEvalContext();
   return (
     <EuiPanel paddingSize="m" hasShadow={false} hasBorder data-test-subj={`agtEvlRunCard-${label}`}>
@@ -326,14 +330,22 @@ const RunCard: React.FC<{
         <EuiFlexItem grow={false}>
           <EuiTitle size="xs">
             <EuiLink
-              className="agtEvlMono"
+              className={name?.name ? undefined : 'agtEvlMono'}
               title={side.runId}
               onClick={() => navigate({ page: 'run', runId: side.runId })}
+              data-test-subj={`agtEvlRunCardName-${label}`}
             >
-              {shortId(side.runId)}
+              {runLabel({ runId: side.runId, name: name?.name })}
             </EuiLink>
           </EuiTitle>
         </EuiFlexItem>
+        {name?.name && (
+          <EuiFlexItem grow={false}>
+            <span className="agtEvlMono agtEvlDim agtEvlSmall" title={side.runId}>
+              {shortId(side.runId)}
+            </span>
+          </EuiFlexItem>
+        )}
         <EuiFlexItem grow={false}>
           <VersionBadge version={side.version} />
         </EuiFlexItem>
@@ -345,6 +357,16 @@ const RunCard: React.FC<{
         <EuiFlexItem />
         <EuiFlexItem grow={false}>{picker}</EuiFlexItem>
       </EuiFlexGroup>
+      {name?.description && (
+        <EuiText
+          size="xs"
+          color="subdued"
+          className="agtEvlProse"
+          data-test-subj={`agtEvlRunCardDescription-${label}`}
+        >
+          <p>{name.description}</p>
+        </EuiText>
+      )}
       <EuiText size="s">
         <p>
           {i18n.translate('agentTraces.evals.compare.cardLine', {
@@ -367,6 +389,7 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
     refreshKey
   );
   const cmp = useMemo(() => comparison(runA, runB, rows), [runA, runB, rows]);
+  const names = useRunNames(useMemo(() => [runA, runB], [runA, runB]));
   // A run id with no results (a wrong link, a run outside the data): say which, rather than
   // a comparison where every case is only in the other run.
   const missingRuns = useMemo(() => {
@@ -528,7 +551,9 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
         <EuiFlexItem>
           <div className="agtEvlMeta" data-test-subj="agtEvlCompareMeta">
             <MetaItem
-              label={i18n.translate('agentTraces.evals.compare.suite', { defaultMessage: 'Suite' })}
+              label={i18n.translate('agentTraces.evals.compare.suite', {
+                defaultMessage: 'Test suite',
+              })}
             >
               {cmp.suite ? (
                 <EuiLink onClick={() => cmp.suite && navigate({ page: 'suite', suite: cmp.suite })}>
@@ -573,6 +598,7 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
           <RunCard
             label={RUN_A}
             side={cmp.a}
+            name={names.get(runA)}
             picker={
               <RunPicker
                 suite={cmp.suite}
@@ -587,6 +613,7 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
           <RunCard
             label={RUN_B}
             side={cmp.b}
+            name={names.get(runB)}
             picker={
               <RunPicker
                 suite={cmp.suite}
@@ -688,6 +715,8 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
           traceB={traces.traceB}
           versionA={cmp.a.version}
           versionB={cmp.b.version}
+          runA={{ runId: runA, ...names.get(runA) }}
+          runB={{ runId: runB, ...names.get(runB) }}
           onClose={() => setTraces(undefined)}
         />
       )}

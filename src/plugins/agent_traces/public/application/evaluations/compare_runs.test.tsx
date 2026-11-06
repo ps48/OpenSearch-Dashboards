@@ -12,7 +12,9 @@ import {
   buildCompareRunsQuery,
   buildRootSpansQuery,
   buildSuiteRunsQuery,
+  buildRunNamesQuery,
 } from './eval_ppl';
+import { shortId } from './eval_components';
 
 // jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
 jest.mock('react-virtualized-auto-sizer', () => ({
@@ -107,7 +109,11 @@ describe('CompareRuns', () => {
 
   it('runs one aggregation over both runs and shows changed cases first', () => {
     renderWithContext(<CompareRuns runA={A} runB={B} />);
-    expect(new Set(mockPpl.queries)).toEqual(new Set([buildCompareRunsQuery(TEST_INDEX, A, B)]));
+    expect(new Set(mockPpl.queries)).toEqual(
+      new Set([buildCompareRunsQuery(TEST_INDEX, A, B), buildRunNamesQuery(TEST_INDEX, [A, B])])
+    );
+    // Without run names, each card names its run by its short id.
+    expect(screen.getByTestId('agtEvlRunCardName-Run A')).toHaveTextContent(shortId(A));
     expect(screen.getByTestId('agtEvlRunCard-Run A')).toHaveTextContent('2 / 3 cases passed');
     expect(screen.getByTestId('agtEvlRunCard-Run B')).toHaveTextContent('75% result pass rate');
     const cases = screen.getByTestId('agtEvlCompareCases');
@@ -243,5 +249,30 @@ describe('CompareRuns', () => {
     renderWithContext(<CompareRuns runA={A} runB={B} />, testContext({ browseRange }));
     fireEvent.click(screen.getByTestId('agtEvlPickRun-a'));
     expect(mockPpl.ranges.get(buildSuiteRunsQuery(TEST_INDEX, 'golden'))).toEqual(browseRange);
+  });
+
+  it('names each run card by its run name, with its description', () => {
+    const names = [
+      {
+        'attributes.test.suite.run.id': B,
+        'attributes.opensearch.test.suite.run.name': 'v5 shorter prompt',
+        'attributes.opensearch.test.suite.run.description': 'Trimmed the system prompt',
+      },
+    ];
+    const answerOf = (q: string) =>
+      q === buildRunNamesQuery(TEST_INDEX, [A, B]) ? names : undefined;
+    const base = mockPpl.hook;
+    const hook = jest.spyOn(mockPpl, 'hook').mockImplementation((d, q, t) => {
+      const named = q ? answerOf(q) : undefined;
+      return named ? { rows: named, loading: false, loaded: true } : base(d, q, t);
+    });
+    renderWithContext(<CompareRuns runA={A} runB={B} />);
+    expect(screen.getByTestId('agtEvlRunCardName-Run B')).toHaveTextContent('v5 shorter prompt');
+    expect(screen.getByTestId('agtEvlRunCard-Run B')).toHaveTextContent(shortId(B));
+    expect(screen.getByTestId('agtEvlRunCardDescription-Run B')).toHaveTextContent(
+      'Trimmed the system prompt'
+    );
+    expect(screen.getByTestId('agtEvlRunCardName-Run A')).toHaveTextContent(shortId(A));
+    hook.mockRestore();
   });
 });

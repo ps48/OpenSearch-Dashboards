@@ -113,6 +113,13 @@ export interface Side {
 
 type CompareView = 'spans' | 'map';
 
+/** A run of one side of Compare traces (its name and description are optional). */
+export interface CompareRunRef {
+  runId?: string;
+  name?: string;
+  description?: string;
+}
+
 const ONLY_HERE = i18n.translate('agentTraces.evals.compareTraces.onlyHere', {
   defaultMessage: 'Only in this trace',
 });
@@ -238,8 +245,11 @@ export const TraceCompareFlyout: React.FC<{
   traceB: string;
   versionA?: string;
   versionB?: string;
+  /** The runs of the two traces, for their names (else the short run id). */
+  runA?: CompareRunRef;
+  runB?: CompareRunRef;
   onClose: () => void;
-}> = ({ caseId, traceA, traceB, versionA, versionB, onClose }) => {
+}> = ({ caseId, traceA, traceB, versionA, versionB, runA, runB, onClose }) => {
   const { services } = useOpenSearchDashboards<{ data: DataPublicPluginStart }>();
   // Both traces' results: the browse range, which holds the run before (where its trace was
   // found), not only the current run's window.
@@ -295,14 +305,39 @@ export const TraceCompareFlyout: React.FC<{
 
   const shared = useMemo(() => (state.sides ? sharedDurationMs(state.sides) : 0), [state.sides]);
 
-  const column = (side: Side, other: Side, label: string, version?: string) => (
-    <EuiFlexItem key={label} className="agtEvlTraceCol">
+  const column = (
+    side: Side,
+    other: Side,
+    label: string,
+    version?: string,
+    run?: CompareRunRef
+  ) => (
+    <EuiFlexItem key={label} className="agtEvlTraceCol" data-test-subj={`agtEvlTraceCol-${label}`}>
       <EuiTitle size="xxs">
         <h4>
-          {label} <VersionBadge version={version} />{' '}
-          <span className="agtEvlMono agtEvlDim">{shortId(side.traceId)}</span>
+          {label}
+          {run?.runId && (
+            <span title={run.runId} data-test-subj="agtEvlTraceColRun">
+              {': '}
+              {run.name ? run.name : <span className="agtEvlMono">{shortId(run.runId)}</span>}
+            </span>
+          )}{' '}
+          <VersionBadge version={version} />{' '}
+          <span className="agtEvlMono agtEvlDim" title={side.traceId}>
+            {shortId(side.traceId)}
+          </span>
         </h4>
       </EuiTitle>
+      {run?.description && (
+        <EuiText
+          size="xs"
+          color="subdued"
+          className="agtEvlProse"
+          data-test-subj="agtEvlTraceColRunDescription"
+        >
+          <p>{run.description}</p>
+        </EuiText>
+      )}
       <EuiText size="xs" color="subdued">
         <p>
           {formatDuration(side.spans[0]?.durationMs ?? NaN)} ·{' '}
@@ -419,8 +454,8 @@ export const TraceCompareFlyout: React.FC<{
             )}
             <EuiSpacer size="s" />
             <EuiFlexGroup gutterSize="l" responsive={false}>
-              {column(state.sides[0], state.sides[1], RUN_A, versionA)}
-              {column(state.sides[1], state.sides[0], RUN_B, versionB)}
+              {column(state.sides[0], state.sides[1], RUN_A, versionA, runA)}
+              {column(state.sides[1], state.sides[0], RUN_B, versionB, runB)}
             </EuiFlexGroup>
           </>
         )}

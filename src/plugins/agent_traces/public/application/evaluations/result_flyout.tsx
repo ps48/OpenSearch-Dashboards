@@ -48,7 +48,7 @@ import { useRunBefore } from './run_page';
 import { JsonAccordion } from './json_viewer';
 import { SpanIOView } from './span_io_view';
 import { getEvalTimezone } from './eval_time';
-import { SpanList, TraceCompareFlyout, flattenSpans } from './trace_compare_flyout';
+import { CompareRunRef, SpanList, TraceCompareFlyout, flattenSpans } from './trace_compare_flyout';
 import {
   DASH,
   EXPECTED_LABEL,
@@ -407,7 +407,12 @@ const CaseSection: React.FC<{
   r: EvalResult;
   openRun?: (runId: string) => void;
   openResult?: (r: EvalResult) => void;
-  onCompareTraces: (traceA: string, traceB: string, versionA?: string) => void;
+  onCompareTraces: (
+    traceA: string,
+    traceB: string,
+    versionA?: string,
+    runA?: CompareRunRef
+  ) => void;
 }> = ({ r, openRun, openResult, onCompareTraces }) => {
   const { dataset, index, browseRange, refreshKey } = useEvalContext();
   const { runId, caseId } = r;
@@ -496,7 +501,12 @@ const CaseSection: React.FC<{
                 {' · '}
                 <EuiLink
                   onClick={() =>
-                    r.traceId && onCompareTraces(prevTrace, r.traceId, prev[0]?.agentVersion)
+                    r.traceId &&
+                    onCompareTraces(prevTrace, r.traceId, prev[0]?.agentVersion, {
+                      runId: beforeId,
+                      name: prev[0]?.runName,
+                      description: prev[0]?.runDescription,
+                    })
                   }
                   data-test-subj="agtEvlFlyoutCompareTraces"
                 >
@@ -647,7 +657,12 @@ export const ResultFlyout: React.FC<{
   onOpenResult?: (r: EvalResult) => void;
 }> = ({ result: r, onClose, links = {}, onOpenResult }) => {
   const [judge, setJudge] = useState(false);
-  const [compare, setCompare] = useState<{ a: string; b: string; versionA?: string }>();
+  const [compare, setCompare] = useState<{
+    a: string;
+    b: string;
+    versionA?: string;
+    runA?: CompareRunRef;
+  }>();
   const at = scalePosition(r);
   const online = !r.runId;
   const items = [
@@ -669,7 +684,7 @@ export const ResultFlyout: React.FC<{
         }
       : {
           title: i18n.translate('agentTraces.evals.flyout.suiteRun', {
-            defaultMessage: 'Suite run',
+            defaultMessage: 'Test suite run',
           }),
           description: (
             <span data-test-subj="agtEvlFlyoutSuiteRun">
@@ -684,14 +699,16 @@ export const ResultFlyout: React.FC<{
               {' · '}
               {links.openRun && r.runId ? (
                 <EuiLink
-                  className="agtEvlMono"
+                  className={r.runName ? undefined : 'agtEvlMono'}
                   title={r.runId}
                   onClick={() => r.runId && links.openRun?.(r.runId)}
                 >
-                  {shortId(r.runId)}
+                  {r.runName ?? shortId(r.runId)}
                 </EuiLink>
               ) : (
-                <span className="agtEvlMono">{shortId(r.runId)}</span>
+                <span className={r.runName ? undefined : 'agtEvlMono'} title={r.runId}>
+                  {r.runName ?? shortId(r.runId)}
+                </span>
               )}
             </span>
           ),
@@ -852,7 +869,7 @@ export const ResultFlyout: React.FC<{
                     r={r}
                     openRun={links.openRun}
                     openResult={onOpenResult}
-                    onCompareTraces={(a, b, versionA) => setCompare({ a, b, versionA })}
+                    onCompareTraces={(a, b, versionA, runA) => setCompare({ a, b, versionA, runA })}
                   />
                   <EuiSpacer size="m" />
                 </>
@@ -880,6 +897,8 @@ export const ResultFlyout: React.FC<{
           traceB={compare.b}
           versionA={compare.versionA}
           versionB={r.agentVersion}
+          runA={compare.runA}
+          runB={{ runId: r.runId, name: r.runName, description: r.runDescription }}
           onClose={() => setCompare(undefined)}
         />
       )}
