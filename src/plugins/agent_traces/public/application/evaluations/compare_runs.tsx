@@ -135,8 +135,6 @@ const ChangeBadge: React.FC<{ change: CaseChange }> = ({ change }) =>
 const statusCell = (s?: CaseStatus) =>
   s ? <VerdictBadge verdict={s} /> : <span className="agtEvlDim">{NOT_IN_RUN}</span>;
 
-const VERDICT_ORDER: Record<string, number> = { fail: 0, error: 1, pass: 2, scored: 3 };
-
 /** A side's results, failing first, with their scores and explanations. */
 const SideResults: React.FC<{ results: EvalResult[]; inRun: boolean; testId: string }> = ({
   results,
@@ -150,10 +148,7 @@ const SideResults: React.FC<{ results: EvalResult[]; inRun: boolean; testId: str
         {NOT_IN_RUN}
       </EuiText>
     );
-  const sorted = [...results].sort(
-    (x, y) => VERDICT_ORDER[x.verdict] - VERDICT_ORDER[y.verdict] || x.name.localeCompare(y.name)
-  );
-  return <ResultRows results={sorted} onOpen={openResult} testId={testId} />;
+  return <ResultRows results={results} onOpen={openResult} testId={testId} byName />;
 };
 
 /**
@@ -212,7 +207,13 @@ const CompareCaseDetail: React.FC<{
             ['b', runB, ioB, versionB, RUN_B, !!row.b],
           ] as const
         ).map(([side, runId, io, version, label, inRun]) => (
-          <div key={side} data-test-subj={`agtEvlCompareSide-${side}`}>
+          // `display: contents`: each side's output and results sit in the grid's shared rows,
+          // so the results start level on both sides whatever the outputs' lengths.
+          <div
+            key={side}
+            className={`agtEvlSideBySide__side agtEvlSideBySide__side--${side}`}
+            data-test-subj={`agtEvlCompareSide-${side}`}
+          >
             <SpanIOView
               idPrefix={`agtEvlCompareOut-${row.caseId}-${side}`}
               testId={`agtEvlCompareOutput${side.toUpperCase()}`}
@@ -224,7 +225,6 @@ const CompareCaseDetail: React.FC<{
                 },
               ]}
             />
-            <EuiSpacer size="s" />
             <SideResults
               results={ofRun(runId)}
               inRun={inRun}

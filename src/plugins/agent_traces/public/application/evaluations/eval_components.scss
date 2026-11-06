@@ -175,11 +175,17 @@
 }
 
 .agtEvlResultRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: $euiSizeXS $euiSizeM;
-  padding: $euiSizeXS 0;
+  // Name, verdict and score on one line; the explanation on its own full-width line below, so
+  // rows read the same in a narrow column and side by side.
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "name verdict score"
+    "why why why";
+  column-gap: $euiSizeS;
+  row-gap: $euiSizeXS;
+  align-items: center;
+  padding: $euiSizeS 0;
   font-size: $euiFontSizeS;
   border-bottom: $euiBorderThin;
 
@@ -188,23 +194,58 @@
   }
 
   &__name {
-    flex: 0 0 180px;
+    grid-area: name;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
 
+  &__verdict {
+    grid-area: verdict;
+  }
+
+  &__score {
+    grid-area: score;
+    min-width: 96px;
+    text-align: right;
+  }
+
   &__why {
-    flex: 1 1 240px;
+    grid-area: why;
     min-width: 0;
+    font-size: $euiFontSizeXS;
+    line-height: $euiLineHeight;
   }
 }
 
 .agtEvlSideBySide {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: $euiSizeL;
+  column-gap: $euiSizeL;
+  row-gap: $euiSizeS;
+  align-items: start;
+
+  &__side {
+    display: contents;
+  }
+
+  // Output in the first row, results in the second, each side in its column.
+  &__side > :first-child {
+    grid-row: 1;
+  }
+
+  &__side > :nth-child(2) {
+    grid-row: 2;
+  }
+
+  &__side--a > * {
+    grid-column: 1;
+  }
+
+  &__side--b > * {
+    grid-column: 2;
+  }
 }
 
 .agtEvlCaseResults {
@@ -406,4 +447,24 @@
   flex-direction: column;
   min-width: 0;
   font-size: $euiFontSizeS;
+}
+
+.agtEvlTraceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: $euiSizeL;
+  row-gap: $euiSizeM;
+  align-items: stretch;
+}
+
+.agtEvlTraceCell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  // The two span panels take the row's height, so they end level and the outputs line up.
+  &--panel > * {
+    flex: 1 1 auto;
+    margin: 0;
+  }
 }

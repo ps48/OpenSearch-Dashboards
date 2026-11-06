@@ -5,8 +5,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  EuiFlexGroup,
-  EuiFlexItem,
   EuiFlyout,
   EuiFlyoutBody,
   EuiFlyoutHeader,
@@ -305,14 +303,10 @@ export const TraceCompareFlyout: React.FC<{
 
   const shared = useMemo(() => (state.sides ? sharedDurationMs(state.sides) : 0), [state.sides]);
 
-  const column = (
-    side: Side,
-    other: Side,
-    label: string,
-    version?: string,
-    run?: CompareRunRef
-  ) => (
-    <EuiFlexItem key={label} className="agtEvlTraceCol" data-test-subj={`agtEvlTraceCol-${label}`}>
+  // Both traces in one grid with shared rows (header, spans, output, results), so each section
+  // starts at the same height on both sides whatever the other sections' heights.
+  const header = (side: Side, label: string, version?: string, run?: CompareRunRef) => (
+    <div className="agtEvlTraceCell" data-test-subj={`agtEvlTraceCol-${label}`}>
       <EuiTitle size="xxs">
         <h4>
           {label}
@@ -347,6 +341,10 @@ export const TraceCompareFlyout: React.FC<{
           })}
         </p>
       </EuiText>
+    </div>
+  );
+  const spansCell = (side: Side, other: Side) => (
+    <div className="agtEvlTraceCell agtEvlTraceCell--panel">
       {!side.spans.length ? (
         <EuiText size="xs" color="subdued">
           <p>
@@ -360,20 +358,26 @@ export const TraceCompareFlyout: React.FC<{
       ) : (
         <TraceMapSide side={side} only={onlyIn(side.spans, other.spans)} />
       )}
-      <EuiSpacer size="s" />
+    </div>
+  );
+  const outputCell = (side: Side) => (
+    <div className="agtEvlTraceCell">
       <SpanIOView
         idPrefix={`agtEvlTraceCompare-${side.traceId}`}
         testId={`agtEvlTraceCompareOutput-${side.traceId}`}
         sections={[{ key: 'output', label: OUTPUT_LABEL, value: side.output }]}
       />
-      <EuiSpacer size="s" />
+    </div>
+  );
+  const resultsCell = (side: Side) => (
+    <div className="agtEvlTraceCell">
       <EuiTitle size="xxs">
         <span>
           {i18n.translate('agentTraces.evals.compareTraces.results', { defaultMessage: 'Results' })}
         </span>
       </EuiTitle>
-      <ResultRows results={side.results} onOpen={openResult} />
-    </EuiFlexItem>
+      <ResultRows results={side.results} onOpen={openResult} byName />
+    </div>
   );
 
   return (
@@ -453,10 +457,16 @@ export const TraceCompareFlyout: React.FC<{
               </EuiText>
             )}
             <EuiSpacer size="s" />
-            <EuiFlexGroup gutterSize="l" responsive={false}>
-              {column(state.sides[0], state.sides[1], RUN_A, versionA, runA)}
-              {column(state.sides[1], state.sides[0], RUN_B, versionB, runB)}
-            </EuiFlexGroup>
+            <div className="agtEvlTraceGrid" data-test-subj="agtEvlTraceCompareGrid">
+              {header(state.sides[0], RUN_A, versionA, runA)}
+              {header(state.sides[1], RUN_B, versionB, runB)}
+              {spansCell(state.sides[0], state.sides[1])}
+              {spansCell(state.sides[1], state.sides[0])}
+              {outputCell(state.sides[0])}
+              {outputCell(state.sides[1])}
+              {resultsCell(state.sides[0])}
+              {resultsCell(state.sides[1])}
+            </div>
           </>
         )}
       </EuiFlyoutBody>

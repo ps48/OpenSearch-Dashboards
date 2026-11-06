@@ -419,9 +419,11 @@ export const ResultRows: React.FC<{
   results: EvalResult[];
   onOpen: (r: EvalResult) => void;
   testId?: string;
-}> = ({ results, onOpen, testId }) => (
+  /** Order by evaluation name: two lists side by side (compare) then put the same rows level. */
+  byName?: boolean;
+}> = ({ results, onOpen, testId, byName }) => (
   <div className="agtEvlResultRows" data-test-subj={testId}>
-    {results.map((r) => (
+    {(byName ? [...results].sort((x, y) => x.name.localeCompare(y.name)) : results).map((r) => (
       <div className="agtEvlResultRow" key={r.id}>
         <span className="agtEvlResultRow__name">
           <EuiLink onClick={() => onOpen(r)} title={r.name}>
