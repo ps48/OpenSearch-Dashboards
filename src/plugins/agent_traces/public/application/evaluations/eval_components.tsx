@@ -424,7 +424,9 @@ export const ResultRows: React.FC<{
     {results.map((r) => (
       <div className="agtEvlResultRow" key={r.id}>
         <span className="agtEvlResultRow__name">
-          <EuiLink onClick={() => onOpen(r)}>{r.name}</EuiLink>
+          <EuiLink onClick={() => onOpen(r)} title={r.name}>
+            {r.name}
+          </EuiLink>
         </span>
         <span className="agtEvlResultRow__verdict">
           <VerdictBadge verdict={r.verdict} />

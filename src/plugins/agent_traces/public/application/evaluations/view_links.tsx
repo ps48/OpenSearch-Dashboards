@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { EuiButtonEmpty, EuiIcon, EuiLink } from '@elastic/eui';
+import { EuiButtonEmpty, EuiLink } from '@elastic/eui';
 import type { EvalResult } from './eval_model';
 
 /** A URL (for a new tab) to a trace in Agent Traces, from the context's `hrefOf`. */
@@ -49,14 +49,9 @@ export const NewTabViewLink: React.FC<{
     );
   }
   return (
+    // EuiLink adds its own popout icon (and screen reader text) for target="_blank".
     <EuiLink {...tab} onClick={onClick} data-test-subj={testId}>
       {label}
-      {href && (
-        <>
-          {' '}
-          <EuiIcon type="popout" size="s" aria-hidden="true" />
-        </>
-      )}
     </EuiLink>
   );
 };

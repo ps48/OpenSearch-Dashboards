@@ -827,7 +827,7 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
         <EuiSpacer size="s" />
         <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
           <EuiFlexItem grow={false}>
-            <EuiFilterGroup data-test-subj="agtEvlCaseStatus">
+            <EuiFilterGroup compressed data-test-subj="agtEvlCaseStatus">
               {filters.map(([key, label, n]) => (
                 <EuiFilterButton
                   key={key}

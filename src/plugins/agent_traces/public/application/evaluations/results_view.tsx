@@ -395,6 +395,7 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
             field: 'agentName',
             name: FACET_LABEL.agents,
             sortable: true,
+            width: '13%',
             truncateText: true,
             render: (a?: string) =>
               a ? (
@@ -415,7 +416,7 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
     {
       field: 'runId',
       name: i18n.translate('agentTraces.evals.results.runType', { defaultMessage: 'Run type' }),
-      width: '150px',
+      width: '13%',
       truncateText: true,
       render: (runId: string | undefined) => (
         <RunTypeCell
@@ -429,6 +430,7 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
       field: 'name',
       name: FACET_LABEL.names,
       sortable: true,
+      width: '15%',
       truncateText: true,
       // A link, so the result opens from the keyboard too (the row click is mouse only).
       render: (n: string, r: EvalResult) => (
@@ -482,7 +484,7 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
       name: i18n.translate('agentTraces.evals.results.explanation', {
         defaultMessage: 'Explanation',
       }),
-      width: '28%',
+      width: '22%',
       render: (e: string | undefined, r: EvalResult) =>
         r.errorType && !e ? (
           // An evaluator error: its error.type is the reason.

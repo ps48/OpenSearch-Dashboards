@@ -188,9 +188,11 @@
   }
 
   &__name {
-    flex: 0 0 160px;
+    flex: 0 0 180px;
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   &__why {
