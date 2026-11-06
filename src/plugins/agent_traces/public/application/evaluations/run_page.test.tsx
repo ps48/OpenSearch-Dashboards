@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
-import { RunPage, filterCases } from './run_page';
+import { RunPage, buildRunEvaluatorsQuery, evaluatorDescriptionsOf, filterCases } from './run_page';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
   buildCaseResultsQuery,
@@ -36,6 +36,7 @@ const RUN = 'run_20261028_cccc3333';
 /** The run's cases (they name its suite), the suite's runs, then the run before's cases. */
 const RUN_QUERIES = () => [
   buildRunCasesQuery(TEST_INDEX, RUN),
+  buildRunEvaluatorsQuery(TEST_INDEX, RUN),
   buildRunsLookupQuery(TEST_INDEX, 'golden'),
   buildRunCasesQuery(TEST_INDEX, 'run_20261027_bbbb2222'),
 ];
@@ -361,5 +362,35 @@ describe('RunPage', () => {
     const cases = [c('a', 'pass'), c('b', 'fail')];
     expect(filterCases(cases, 'fail', '').map((x) => x.caseId)).toEqual(['b']);
     expect(filterCases(cases, 'all', 'NAME A').map((x) => x.caseId)).toEqual(['a']);
+  });
+
+  it('lists what each evaluation checks when the results describe it', () => {
+    mockPpl.answer((q) =>
+      q === buildRunEvaluatorsQuery(TEST_INDEX, RUN)
+        ? [
+            {
+              attributes: {
+                gen_ai: { evaluation: { name: 'tone' } },
+                opensearch: {
+                  gen_ai: { evaluation: { evaluator: { description: 'Is it polite?' } } },
+                },
+              },
+            },
+          ]
+        : q.includes('as t0')
+          ? [caseRow('c1', 'tone', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05')]
+          : []
+    );
+    renderWithContext(<RunPage runId={RUN} />);
+    const panel = screen.getByTestId('agtEvlRunEvaluators');
+    expect(panel).toHaveTextContent('tone');
+    expect(panel).toHaveTextContent('Is it polite?');
+  });
+
+  it('shows no evaluator summary without descriptions', () => {
+    renderWithContext(<RunPage runId={RUN} />);
+    expect(screen.queryByTestId('agtEvlRunEvaluators')).not.toBeInTheDocument();
+    expect(buildRunEvaluatorsQuery('evals-*', "r'1")).toContain("= 'r\\'1'");
+    expect(evaluatorDescriptionsOf([])).toEqual([]);
   });
 });

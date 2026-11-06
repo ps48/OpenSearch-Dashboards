@@ -281,7 +281,7 @@ describe('AgentPage', () => {
     const ctx = testContext({ state: { ...testContext().state, agentSource: 'offline' } });
     renderWithContext(<AgentPage agent="tp" tab="evaluations" />, ctx);
     expect(mockPpl.queries).toContain(buildAgentEvaluationsQuery(TEST_INDEX, 'tp', 'offline'));
-    expect(screen.getByText(/^Offline: each version at its latest suite run\./)).toBeTruthy();
+    expect(screen.getByText(/^Offline: each version at its latest test suite run\./)).toBeTruthy();
     const acc = screen.getByTestId('agtEvlEvalRow-accuracy');
     expect(within(acc).getByText('50%')).toBeInTheDocument();
     // v1 at r1 only (80%), not pooled with r0 (40%).

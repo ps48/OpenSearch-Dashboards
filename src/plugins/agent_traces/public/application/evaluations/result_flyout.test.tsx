@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
-import { ResultFlyout, scalePosition } from './result_flyout';
+import { ResultFlyout, promptLabel, scalePosition } from './result_flyout';
 import { recordToResult } from './eval_model';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
@@ -216,6 +216,10 @@ describe('ResultFlyout', () => {
     fireEvent.click(screen.getByTestId('agtEvlFlyoutJudgeTrace'));
     expect(mockPpl.queries).toContain(buildOneTraceSpansQuery('spans-*', 'judge1'));
     const judge = screen.getByTestId('agtEvlJudgeTrace');
+    // The judge's spans on the Agent Traces Gantt.
+    expect(
+      within(screen.getByTestId('agtEvlSpans-judge1')).getAllByTestId('agtEvlSpan').length
+    ).toBeGreaterThan(0);
     expect(judge).toHaveTextContent('claude-sonnet-4-5');
     expect(judge).toHaveTextContent('1,000 tokens');
     const io = within(judge).getByTestId('agtEvlJudgeIO');
@@ -436,5 +440,58 @@ describe('ResultFlyout', () => {
     expect(scalePosition({ value: 4, scoreMin: 1, scoreMax: 5 })).toBe(0.75);
     expect(scalePosition({ value: 4 })).toBeUndefined();
     expect(scalePosition({ value: 9, scoreMin: 0, scoreMax: 5 })).toBe(1);
+  });
+
+  it('shows the judge context next to the judge label when it was recorded', () => {
+    renderFlyout(
+      recordToResult({
+        '@timestamp': '2026-10-28 07:00:01',
+        traceId: 't',
+        attributes: {
+          gen_ai: {
+            evaluation: { name: 'helpfulness', score: { label: 'fail' } },
+            request: { model: 'judge-model-1' },
+            prompt: { name: 'helpfulness_rubric', version: '3' },
+            system_instructions: '[{"type":"text","content":"Grade strictly."}]',
+          },
+          opensearch: {
+            gen_ai: {
+              evaluation: {
+                judge_label: 'unhelpful',
+                evaluator: { description: 'Does the answer address the question?' },
+                system_instructions_truncated: true,
+              },
+            },
+          },
+        },
+      })
+    );
+    const ctx = screen.getByTestId('agtEvlJudgeContext');
+    expect(within(ctx).getByTestId('agtEvlFlyoutEvaluatorDescription')).toHaveTextContent(
+      'Does the answer address the question?'
+    );
+    expect(ctx).toHaveTextContent('What it checks');
+    expect(within(ctx).getByTestId('agtEvlFlyoutJudgeModel')).toHaveTextContent('judge-model-1');
+    expect(within(ctx).getByTestId('agtEvlFlyoutJudgePrompt')).toHaveTextContent(
+      'helpfulness_rubric@3'
+    );
+    const instructions = within(ctx).getByTestId('agtEvlJudgeInstructions');
+    expect(within(instructions).getByTestId('agtEvlJudgeInstructionsTruncated')).toBeTruthy();
+    // Collapsed: the instructions are only drawn once opened.
+    expect(instructions).not.toHaveTextContent('Grade strictly.');
+    fireEvent.click(within(instructions).getByText('Judge system instructions'));
+    expect(instructions).toHaveTextContent('"content": "Grade strictly."');
+  });
+
+  it('shows no judge context for results without it', () => {
+    renderFlyout();
+    expect(screen.queryByTestId('agtEvlJudgeContext')).not.toBeInTheDocument();
+  });
+
+  it('promptLabel joins the prompt name and version', () => {
+    expect(promptLabel({ promptName: 'p', promptVersion: '2' })).toBe('p@2');
+    expect(promptLabel({ promptName: 'p' })).toBe('p');
+    expect(promptLabel({ promptVersion: '2' })).toBe('@2');
+    expect(promptLabel({})).toBeUndefined();
   });
 });

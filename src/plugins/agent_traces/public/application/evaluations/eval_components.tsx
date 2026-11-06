@@ -307,7 +307,7 @@ const SOURCE_TIP: Partial<Record<EvalSource, string>> = {
     defaultMessage: 'Results on live traffic (no test.suite.run.id)',
   }),
   offline: i18n.translate('agentTraces.evals.source.offlineTip', {
-    defaultMessage: 'Results from suite runs (test.suite.run.id set)',
+    defaultMessage: 'Results from test suite runs (test.suite.run.id set)',
   }),
 };
 

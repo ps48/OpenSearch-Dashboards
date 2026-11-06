@@ -24,6 +24,7 @@ import {
 import { i18n } from '@osd/i18n';
 import {
   BaseRow,
+  TraceRow,
   buildFullSpanTree,
   formatTimestamp,
   hitsToAgentSpans,
@@ -94,6 +95,88 @@ const SectionLabel: React.FC = ({ children }) => (
     <h4>{children}</h4>
   </EuiText>
 );
+
+/** The prompt template as `name@version` (either may be missing). */
+export const promptLabel = (r: Pick<EvalResult, 'promptName' | 'promptVersion'>) =>
+  r.promptName
+    ? `${r.promptName}${r.promptVersion ? `@${r.promptVersion}` : ''}`
+    : r.promptVersion
+      ? `@${r.promptVersion}`
+      : undefined;
+
+/**
+ * The judge's context, when the SDK recorded it: what the evaluator checks, the judge model,
+ * the prompt template and (opt-in) the judge's system instructions, collapsed.
+ */
+export const JudgeContext: React.FC<{ r: EvalResult }> = ({ r }) => {
+  const prompt = promptLabel(r);
+  const items = [
+    r.evaluatorDescription && {
+      title: i18n.translate('agentTraces.evals.flyout.whatItChecks', {
+        defaultMessage: 'What it checks',
+      }),
+      description: (
+        <span className="agtEvlProse" data-test-subj="agtEvlFlyoutEvaluatorDescription">
+          {r.evaluatorDescription}
+        </span>
+      ),
+    },
+    r.judgeModel && {
+      title: i18n.translate('agentTraces.evals.flyout.judgeModel', {
+        defaultMessage: 'Judge model',
+      }),
+      description: (
+        <code data-test-subj="agtEvlFlyoutJudgeModel" title="gen_ai.request.model">
+          {r.judgeModel}
+        </code>
+      ),
+    },
+    prompt && {
+      title: i18n.translate('agentTraces.evals.flyout.judgePrompt', {
+        defaultMessage: 'Judge prompt',
+      }),
+      description: (
+        <code data-test-subj="agtEvlFlyoutJudgePrompt" title="gen_ai.prompt.name / version">
+          {prompt}
+        </code>
+      ),
+    },
+  ].filter(Boolean) as Array<{ title: string; description: React.ReactNode }>;
+  if (!items.length && !r.systemInstructions) return null;
+  return (
+    <div data-test-subj="agtEvlJudgeContext">
+      {items.length > 0 && <EuiDescriptionList type="column" compressed listItems={items} />}
+      {r.systemInstructions && (
+        <>
+          <EuiSpacer size="s" />
+          <JsonAccordion
+            id={`agtEvlJudgeInstructions-${r.id}`}
+            label={
+              <span>
+                {i18n.translate('agentTraces.evals.flyout.judgeInstructions', {
+                  defaultMessage: 'Judge system instructions',
+                })}
+                {r.systemInstructionsTruncated && (
+                  <span
+                    className="agtEvlDim agtEvlSmall"
+                    data-test-subj="agtEvlJudgeInstructionsTruncated"
+                  >
+                    {' '}
+                    {i18n.translate('agentTraces.evals.flyout.judgeInstructionsTruncated', {
+                      defaultMessage: '(truncated)',
+                    })}
+                  </span>
+                )}
+              </span>
+            }
+            value={r.systemInstructions}
+            testId="agtEvlJudgeInstructions"
+          />
+        </>
+      )}
+    </div>
+  );
+};
 
 /** The judged session, trace or span in Agent Traces, in a new tab: an icon after its link. */
 const NewTabLink: React.FC<{ r: EvalResult }> = ({ r }) => {
@@ -478,6 +561,7 @@ export const JudgeTraceView: React.FC<{ traceId: string; result: EvalResult }> =
     );
     return {
       flat,
+      tree: tree as TraceRow[],
       model: llm ? str(readAttribute(raw(llm), 'gen_ai.request.model')) : undefined,
       tokens,
       prompt: llm ? readAttribute(raw(llm), 'gen_ai.input.messages') : undefined,
@@ -513,7 +597,10 @@ export const JudgeTraceView: React.FC<{ traceId: string; result: EvalResult }> =
             : ''}
         </p>
       </EuiText>
-      <SpanList side={{ traceId, spans: view.flat, results: [] }} only={new Set()} />
+      <SpanList
+        side={{ traceId, spans: view.flat, tree: view.tree, results: [] }}
+        only={new Set()}
+      />
       <EuiSpacer size="s" />
       <SpanIOView
         idPrefix={`agtEvlJudge-${traceId}`}
@@ -726,6 +813,16 @@ export const ResultFlyout: React.FC<{
                 )}
               </EuiPanel>
               <EuiSpacer size="m" />
+              {(r.evaluatorDescription ||
+                r.judgeModel ||
+                r.promptName ||
+                r.promptVersion ||
+                r.systemInstructions) && (
+                <>
+                  <JudgeContext r={r} />
+                  <EuiSpacer size="m" />
+                </>
+              )}
               {r.explanation && (
                 <>
                   <EuiText size="s">

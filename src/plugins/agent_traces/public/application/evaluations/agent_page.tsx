@@ -69,7 +69,7 @@ const TAB_LABEL: Record<AgentTab, string> = {
   evaluations: i18n.translate('agentTraces.evals.agent.tabEvaluations', {
     defaultMessage: 'Evaluations',
   }),
-  suites: i18n.translate('agentTraces.evals.agent.tabSuites', { defaultMessage: 'Suites' }),
+  suites: i18n.translate('agentTraces.evals.agent.tabSuites', { defaultMessage: 'Test suites' }),
   results: i18n.translate('agentTraces.evals.agent.tabResults', { defaultMessage: 'Results' }),
 };
 
@@ -464,7 +464,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
                   : offline
                     ? i18n.translate('agentTraces.evals.agent.evalsSubOffline', {
                         defaultMessage:
-                          'Offline: each version at its latest suite run. Sorted by change, worst first. Click an evaluation to see its results for {version}.',
+                          'Offline: each version at its latest test suite run. Sorted by change, worst first. Click an evaluation to see its results for {version}.',
                         values: { version: labelB },
                       })
                     : i18n.translate('agentTraces.evals.agent.evalsSub', {
@@ -538,7 +538,7 @@ const SuitesTab: React.FC<{ agent: string; onCount: (n: number) => void }> = ({
   const columns: Array<EuiBasicTableColumn<SuiteRow>> = [
     {
       field: 'suite',
-      name: i18n.translate('agentTraces.evals.suites.suite', { defaultMessage: 'Suite' }),
+      name: i18n.translate('agentTraces.evals.suites.suite', { defaultMessage: 'Test suite' }),
       sortable: true,
       render: (s: string) => (
         <EuiLink>
@@ -595,7 +595,7 @@ const SuitesTab: React.FC<{ agent: string; onCount: (n: number) => void }> = ({
         count={suites.length}
         sub={i18n.translate('agentTraces.evals.suites.sub', {
           defaultMessage:
-            'Suites with a run in the range. Click a suite to see its runs and compare two of them.',
+            'Test suites with a run in the range. Click a test suite to see its runs and compare two of them.',
         })}
       />
       {error ? (
@@ -616,7 +616,7 @@ const SuitesTab: React.FC<{ agent: string; onCount: (n: number) => void }> = ({
           message={
             loaded && !loading
               ? i18n.translate('agentTraces.evals.suites.empty', {
-                  defaultMessage: 'No suite runs in the range.',
+                  defaultMessage: 'No test suite runs in the range.',
                 })
               : undefined
           }
@@ -627,7 +627,7 @@ const SuitesTab: React.FC<{ agent: string; onCount: (n: number) => void }> = ({
   );
 };
 
-/** One agent: Evaluations, Suites and Results tabs; each tab queries only while shown. */
+/** One agent: Overview, Test suites and Results tabs; each tab queries only while shown. */
 export const AgentPage: React.FC<{ agent: string; tab: AgentTab }> = ({ agent, tab }) => {
   const { navigate } = useEvalContext();
   const [suiteCount, setSuiteCount] = React.useState<number>();

@@ -58,7 +58,7 @@ import { EVALS_CI_URL, EVALS_QUICKSTART_URL, NoResultsInRange } from './eval_emp
 
 const FACET_LABEL: Record<RunsFacet, string> = {
   agents: i18n.translate('agentTraces.evals.runs.agent', { defaultMessage: 'Agent' }),
-  suites: i18n.translate('agentTraces.evals.runs.suite', { defaultMessage: 'Suite' }),
+  suites: i18n.translate('agentTraces.evals.runs.suite', { defaultMessage: 'Test suite' }),
 };
 
 /** One message per facet (a label inserted into a sentence does not translate). */
@@ -67,14 +67,14 @@ const FACET_SEARCH: Record<RunsFacet, string> = {
     defaultMessage: 'Search agents',
   }),
   suites: i18n.translate('agentTraces.evals.runs.searchSuites', {
-    defaultMessage: 'Search suites',
+    defaultMessage: 'Search test suites',
   }),
 };
 
 const FACET_KEY: Record<RunsFacet, string> = { agents: F.agentName, suites: F.suiteName };
 
 const NO_SUITE_LABEL = i18n.translate('agentTraces.evals.runs.noSuite', {
-  defaultMessage: '(no suite name)',
+  defaultMessage: '(no test suite name)',
 });
 
 const facetValueLabel = (facet: RunsFacet, value: string) =>
@@ -92,7 +92,9 @@ const EmptyBody: React.FC = () => (
     </EuiLink>
     {' · '}
     <EuiLink href={EVALS_CI_URL} target="_blank" data-test-subj="agtEvlRunsSuiteInCi">
-      {i18n.translate('agentTraces.evals.runs.suiteInCi', { defaultMessage: 'Run a suite in CI' })}
+      {i18n.translate('agentTraces.evals.runs.suiteInCi', {
+        defaultMessage: 'Run a test suite in CI',
+      })}
     </EuiLink>
   </p>
 );
@@ -264,7 +266,7 @@ export const RunsView: React.FC = () => {
             onChange={(e) => setSearch(e.target.value)}
             onBlur={() => update({ q: search })}
             placeholder={i18n.translate('agentTraces.evals.runs.search', {
-              defaultMessage: 'Search run id, suite or agent',
+              defaultMessage: 'Search run id, test suite or agent',
             })}
             data-test-subj="agtEvlRunsSearch"
           />

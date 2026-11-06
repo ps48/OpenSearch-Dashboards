@@ -11,6 +11,7 @@ import {
   EuiButtonEmpty,
   EuiButtonIcon,
   EuiCallOut,
+  EuiDescriptionList,
   EuiFieldSearch,
   EuiFilterButton,
   EuiFilterGroup,
@@ -33,6 +34,7 @@ import { i18n } from '@osd/i18n';
 import {
   CaseRow,
   CaseStatus,
+  PplRecord,
   recordsToResults,
   otherRunsOfSuite,
   runBefore,
@@ -40,12 +42,16 @@ import {
   suiteRuns,
 } from './eval_model';
 import {
+  EVAL_EVENT,
+  F,
   NO_AGENT,
   buildCaseResultsQuery,
   buildRunCasesQuery,
   buildRunsLookupQuery,
   buildSuiteRunsQuery,
+  fld,
   isTruncated,
+  quote,
 } from './eval_ppl';
 import { SpanIOView } from './span_io_view';
 import { CaseLog } from './case_log';
@@ -141,6 +147,64 @@ const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, case
         </>
       )}
     </div>
+  );
+};
+
+/**
+ * One result document per evaluation of a run, for what each evaluator checks
+ * (`opensearch.gen_ai.evaluation.evaluator.description`). Whole documents, not grouped by:
+ * PPL fails on a field the index mapping does not have (old data).
+ */
+export const buildRunEvaluatorsQuery = (index: string, runId: string): string =>
+  [
+    `source = ${index}`,
+    `where ${fld(F.eventName)} = '${EVAL_EVENT}' and ${fld(F.runId)} = ${quote(runId)}`,
+    `dedup ${fld(F.name)}`,
+    'head 100',
+  ].join(' | ');
+
+/** What each evaluation of a run checks, by evaluation name (those with a description). */
+export const evaluatorDescriptionsOf = (rows: PplRecord[]): Array<[string, string]> => {
+  const out = new Map<string, string>();
+  recordsToResults(rows).forEach((r) => {
+    if (r.evaluatorDescription && !out.has(r.name)) out.set(r.name, r.evaluatorDescription);
+  });
+  return [...out.entries()].sort(([a], [b]) => a.localeCompare(b));
+};
+
+/** The run's evaluations and what each checks, when the SDK recorded a description. */
+const EvaluationsSummary: React.FC<{ runId: string }> = ({ runId }) => {
+  const { dataset, index, browseRange, refreshKey } = useEvalContext();
+  const { rows } = usePplRows(
+    dataset,
+    buildRunEvaluatorsQuery(index, runId),
+    browseRange,
+    refreshKey
+  );
+  const described = useMemo(() => evaluatorDescriptionsOf(rows), [rows]);
+  if (!described.length) return null;
+  return (
+    <>
+      <EuiSpacer size="m" />
+      <EuiPanel paddingSize="s" hasShadow={false} hasBorder data-test-subj="agtEvlRunEvaluators">
+        <EuiTitle size="xxs">
+          <h4>
+            {i18n.translate('agentTraces.evals.run.whatTheyCheck', {
+              defaultMessage: 'What the evaluations check',
+            })}
+          </h4>
+        </EuiTitle>
+        <EuiSpacer size="xs" />
+        <EuiDescriptionList
+          type="column"
+          compressed
+          listItems={described.map(([name, description]) => ({
+            title: name,
+            description: <span className="agtEvlProse">{description}</span>,
+          }))}
+        />
+      </EuiPanel>
+    </>
   );
 };
 
@@ -615,6 +679,7 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
           testId="agtEvlStatTotal"
         />
       </EuiFlexGroup>
+      <EvaluationsSummary runId={runId} />
       <EuiSpacer size="m" />
       <EuiPanel paddingSize="m" hasShadow={false} hasBorder>
         <EuiTitle size="xs">

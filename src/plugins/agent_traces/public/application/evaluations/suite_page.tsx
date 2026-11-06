@@ -288,7 +288,7 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
           message={
             loaded && !loading
               ? i18n.translate('agentTraces.evals.suite.empty', {
-                  defaultMessage: 'No runs of this suite in the range.',
+                  defaultMessage: 'No runs of this test suite in the range.',
                 })
               : undefined
           }

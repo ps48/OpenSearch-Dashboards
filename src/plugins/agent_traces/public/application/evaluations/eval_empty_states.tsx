@@ -72,7 +72,7 @@ export const AgentsEmptyState: React.FC<{ range: string }> = ({ range }) => (
         {' · '}
         <EuiLink href={EVALS_CI_URL} target="_blank" data-test-subj="agtEvlSuiteInCi">
           {i18n.translate('agentTraces.evalsEmpty.suiteInCi', {
-            defaultMessage: 'Run a suite in CI',
+            defaultMessage: 'Run a test suite in CI',
           })}
         </EuiLink>
       </p>

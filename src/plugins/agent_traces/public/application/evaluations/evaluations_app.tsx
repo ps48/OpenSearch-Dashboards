@@ -618,7 +618,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             description={
               <FormattedMessage
                 id="agentTraces.evalsPage.description"
-                defaultMessage="Evaluation results of your agents, from online evaluators and suite runs."
+                defaultMessage="Evaluation results of your agents, from online evaluators and test suite runs."
               />
             }
             controls={
