@@ -26,7 +26,9 @@ import {
   EuiPopoverTitle,
   EuiSpacer,
   EuiStat,
+  EuiIcon,
   EuiText,
+  EuiTextColor,
   EuiTitle,
   EuiToolTip,
 } from '@elastic/eui';
@@ -75,6 +77,7 @@ import {
   expectedOf,
   formatDuration,
   formatTime,
+  runLabel,
 } from './eval_components';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
@@ -351,28 +354,99 @@ export const CompareWithMenu: React.FC<{
   );
 };
 
-/** A run figure, with the run before's value under it. */
+/** The previous run of the suite, as the run figures name it. */
+export interface PreviousRun {
+  label: string;
+  started: number;
+  onCompare: () => void;
+}
+
+/** A figure's change against the previous run. */
+export interface StatDelta {
+  current: number;
+  /** The previous run's value (undefined: the previous run has none). */
+  previous?: number;
+  /** The previous run's figure as shown (e.g. `7 / 8`), for the tooltip. */
+  previousText?: string;
+  /** More is better (passes), or worse (errors). */
+  higherIsBetter: boolean;
+}
+
+/** How a figure moved: up / down with its health color, the same, or new since that run. */
+export const deltaOf = (d: StatDelta): { kind: 'up' | 'down' | 'same' | 'new'; diff: number } => {
+  if ((d.previous === undefined || d.previous === 0) && d.current > 0) {
+    return { kind: 'new', diff: d.current };
+  }
+  const diff = d.current - (d.previous ?? 0);
+  return { kind: diff > 0 ? 'up' : diff < 0 ? 'down' : 'same', diff };
+};
+
+const DeltaLine: React.FC<{ delta: StatDelta; prev: PreviousRun }> = ({ delta, prev }) => {
+  const { kind, diff } = deltaOf(delta);
+  const run = `${prev.label}, ${formatTime(prev.started, 'MMM D, HH:mm')}`;
+  const good = kind === 'same' ? undefined : diff > 0 === delta.higherIsBetter;
+  const color = good === undefined ? 'subdued' : good ? 'success' : 'danger';
+  const text =
+    kind === 'new'
+      ? i18n.translate('agentTraces.evals.run.deltaNew', {
+          defaultMessage: 'New since previous run ({run})',
+          values: { run },
+        })
+      : kind === 'same'
+        ? i18n.translate('agentTraces.evals.run.deltaSame', {
+            defaultMessage: 'Same as previous run ({run})',
+            values: { run },
+          })
+        : i18n.translate('agentTraces.evals.run.delta', {
+            defaultMessage: '{diff} vs previous run ({run})',
+            values: { diff: diff > 0 ? `+${diff}` : String(diff), run },
+          });
+  return (
+    <EuiText size="xs" data-test-subj="agtEvlStatDelta" data-delta={kind}>
+      <p>
+        <EuiToolTip
+          content={
+            delta.previousText !== undefined
+              ? i18n.translate('agentTraces.evals.run.deltaWas', {
+                  defaultMessage: 'Previous run: {value}',
+                  values: { value: delta.previousText },
+                })
+              : undefined
+          }
+        >
+          <EuiTextColor color={color}>
+            {kind === 'up' && <EuiIcon type="sortUp" size="s" color={color} />}
+            {kind === 'down' && <EuiIcon type="sortDown" size="s" color={color} />} {text}
+          </EuiTextColor>
+        </EuiToolTip>{' '}
+        <EuiLink onClick={prev.onCompare} data-test-subj="agtEvlStatDeltaCompare">
+          {i18n.translate('agentTraces.evals.run.deltaCompare', { defaultMessage: 'Compare' })}
+        </EuiLink>
+      </p>
+    </EuiText>
+  );
+};
+
+/** A run figure, with its change against the previous run under it. */
 const RunStat: React.FC<{
   title: string;
   label: string;
-  was?: string;
+  delta?: StatDelta;
+  prev?: PreviousRun;
   line?: string;
   testId: string;
-}> = ({ title, label, was, line, testId }) => (
+}> = ({ title, label, delta, prev, line, testId }) => (
   <EuiFlexItem grow={false}>
     <EuiPanel paddingSize="s" hasShadow={false} hasBorder data-test-subj={testId}>
       <EuiStat titleSize="s" title={title} description={label} />
-      {(was !== undefined || line) && (
-        <EuiText size="xs" color="subdued">
-          <p>
-            {was !== undefined
-              ? i18n.translate('agentTraces.evals.run.was', {
-                  defaultMessage: 'was {value} in the run before',
-                  values: { value: was },
-                })
-              : line}
-          </p>
-        </EuiText>
+      {delta && prev ? (
+        <DeltaLine delta={delta} prev={prev} />
+      ) : (
+        line && (
+          <EuiText size="xs" color="subdued">
+            <p>{line}</p>
+          </EuiText>
+        )
       )}
     </EuiPanel>
   </EuiFlexItem>
@@ -541,6 +615,15 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
       : []),
   ];
 
+  const previousRun: PreviousRun | undefined =
+    beforeId && lookup.before
+      ? {
+          label: runLabel({ runId: beforeId, name: names.get(beforeId)?.name }),
+          started: lookup.before.started,
+          onCompare: () => navigate({ page: 'compare', runA: beforeId, runB: runId }),
+        }
+      : undefined;
+
   // The run before is optional: a failed lookup leaves the run's figures, with a warning.
   const beforeError = lookup.error ?? beforeCases.error;
   return (
@@ -672,7 +755,15 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
           label={i18n.translate('agentTraces.evals.run.casesPassed', {
             defaultMessage: 'Cases passed',
           })}
-          was={prev ? `${prev.casesPassed} / ${prev.cases.length}` : undefined}
+          prev={previousRun}
+          delta={
+            prev && {
+              current: passed,
+              previous: prev.casesPassed,
+              previousText: `${prev.casesPassed} / ${prev.cases.length}`,
+              higherIsBetter: true,
+            }
+          }
           testId="agtEvlStatCases"
         />
         <RunStat
@@ -680,7 +771,15 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
           label={i18n.translate('agentTraces.evals.run.resultsPassed', {
             defaultMessage: 'Results passed',
           })}
-          was={prev ? `${prev.tally.pass} / ${prev.tally.pass + prev.tally.fail}` : undefined}
+          prev={previousRun}
+          delta={
+            prev && {
+              current: run.tally.pass,
+              previous: prev.tally.pass,
+              previousText: `${prev.tally.pass} / ${prev.tally.pass + prev.tally.fail}`,
+              higherIsBetter: true,
+            }
+          }
           testId="agtEvlStatResults"
         />
         <RunStat
@@ -688,7 +787,15 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
           label={i18n.translate('agentTraces.evals.run.evaluatorErrors', {
             defaultMessage: 'Evaluator errors',
           })}
-          was={prev ? String(prev.tally.error) : undefined}
+          prev={previousRun}
+          delta={
+            prev && {
+              current: run.tally.error,
+              previous: prev.tally.error,
+              previousText: String(prev.tally.error),
+              higherIsBetter: false,
+            }
+          }
           testId="agtEvlStatErrors"
         />
         <RunStat

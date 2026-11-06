@@ -5,7 +5,13 @@
 
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
-import { RunPage, buildRunEvaluatorsQuery, evaluatorDescriptionsOf, filterCases } from './run_page';
+import {
+  RunPage,
+  buildRunEvaluatorsQuery,
+  deltaOf,
+  evaluatorDescriptionsOf,
+  filterCases,
+} from './run_page';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
   buildCaseResultsQuery,
@@ -146,14 +152,25 @@ describe('RunPage', () => {
     expect(meta).toHaveTextContent('tp');
     expect(meta).toHaveTextContent('1 min 30 s');
     expect(within(meta).getByText('#77')).toBeInTheDocument();
-    const stat = (id: string, value: string, was: string) => {
+    const stat = (id: string, value: string, delta: string, kind: string) => {
       const el = screen.getByTestId(id);
       expect(el).toHaveTextContent(value);
-      expect(el).toHaveTextContent(`was ${was} in the run before`);
+      const line = within(el).getByTestId('agtEvlStatDelta');
+      expect(line).toHaveTextContent(delta);
+      expect(line).toHaveAttribute('data-delta', kind);
+      // Names the previous run (no run name: its short id) and its date.
+      expect(line).toHaveTextContent(/previous run \(bbbb2222, Oct 2\d, \d\d:\d\d\)/);
     };
-    stat('agtEvlStatCases', 'Cases passed 1 / 3', '2 / 3');
-    stat('agtEvlStatResults', 'Results passed 2 / 3', '3 / 4');
-    stat('agtEvlStatErrors', 'Evaluator errors 1', '0');
+    stat('agtEvlStatCases', 'Cases passed 1 / 3', '-1 vs previous run', 'down');
+    stat('agtEvlStatResults', 'Results passed 2 / 3', '-1 vs previous run', 'down');
+    // Errors were 0 in the previous run.
+    stat('agtEvlStatErrors', 'Evaluator errors 1', 'New since previous run', 'new');
+    // Fewer passes is bad (danger); a new error too.
+    expect(
+      within(screen.getByTestId('agtEvlStatCases')).getByTestId('agtEvlStatDelta').innerHTML
+    ).toContain('danger');
+    const ctx2 = screen.getAllByTestId('agtEvlStatDeltaCompare');
+    expect(ctx2).toHaveLength(3);
     expect(screen.getByTestId('agtEvlStatTotal')).toHaveTextContent(
       '3 cases × 2 evaluations: accuracy, tone'
     );
@@ -182,7 +199,8 @@ describe('RunPage', () => {
     renderWithContext(<RunPage runId={RUN} />);
     expect(mockPpl.queries).toContain(buildRunCasesQuery(TEST_INDEX, RUN));
     expect(screen.queryByTestId('agtEvlCompareRunBefore')).not.toBeInTheDocument();
-    expect(screen.getByTestId('agtEvlStatCases')).not.toHaveTextContent('run before');
+    expect(screen.getByTestId('agtEvlStatCases')).not.toHaveTextContent('previous run');
+    expect(screen.queryByTestId('agtEvlStatDelta')).not.toBeInTheDocument();
   });
 
   it('expands a case: input, output (root span), expected and its results', () => {
@@ -424,5 +442,25 @@ describe('RunPage', () => {
     );
     // The run id stays in the meta row.
     expect(screen.getByTestId('agtEvlRunMeta')).toHaveTextContent(RUN);
+  });
+
+  it('a delta opens Compare with the previous run', () => {
+    const { ctx } = renderWithContext(<RunPage runId={RUN} />);
+    fireEvent.click(
+      within(screen.getByTestId('agtEvlStatErrors')).getByTestId('agtEvlStatDeltaCompare')
+    );
+    expect(ctx.navigate).toHaveBeenCalledWith({ page: 'compare', runA: BEFORE, runB: RUN });
+  });
+
+  it('deltaOf: up, down, same and new since the previous run', () => {
+    expect(deltaOf({ current: 8, previous: 7, higherIsBetter: true })).toEqual({
+      kind: 'up',
+      diff: 1,
+    });
+    expect(deltaOf({ current: 6, previous: 7, higherIsBetter: true }).kind).toBe('down');
+    expect(deltaOf({ current: 7, previous: 7, higherIsBetter: true }).kind).toBe('same');
+    expect(deltaOf({ current: 0, previous: 0, higherIsBetter: false }).kind).toBe('same');
+    expect(deltaOf({ current: 2, previous: 0, higherIsBetter: false }).kind).toBe('new');
+    expect(deltaOf({ current: 2, higherIsBetter: false }).kind).toBe('new');
   });
 });
