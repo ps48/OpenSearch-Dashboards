@@ -169,7 +169,7 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
   // The flyout's lazy reads (judged span, case, judge trace) use the evaluations and span
   // indices of Agent Traces, from the start of the range to now (results land after traces).
   const context = useMemo(() => {
-    const ctx = defaultEvalContext(index ?? 'otel-v1-genai-evaluation-*', spansIndex, dataSource);
+    const ctx = defaultEvalContext(index ?? '', spansIndex, dataSource);
     const timefilter = services.data?.query.timefilter.timefilter;
     const from = timefilter?.calculateBounds(timefilter.getTime()).min?.toISOString();
     const hrefOf = (r: EvalResult) => {
@@ -182,6 +182,8 @@ export const TraceResultFlyout: React.FC<{ result: EvalResult; onClose: () => vo
     const range = { from, to: new Date().toISOString() };
     return { ...ctx, timeRange: range, browseRange: range, hrefOf };
   }, [index, spansIndex, services.data, application, dataSource]);
+  // No evaluations config: no result to show (the flyout opens from one only).
+  if (!index) return null;
   return (
     <EvalContext.Provider value={context}>
       <ResultFlyout

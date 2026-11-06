@@ -108,7 +108,23 @@ describe('RowEvaluationsProvider', () => {
     mockRunPpl.mockReset();
     seen = undefined;
     // Configured: the provider reads the config's index.
+    resetEvalsDatasetState({
+      status: 'ready',
+      config: {
+        configId: 'c1',
+        evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation-*' },
+        index: 'otel-v1-genai-evaluation-*',
+      },
+    });
+  });
+
+  it('runs no evaluation query without an Agent Evaluations config', async () => {
+    // Flag on, the workspace has no config: nothing is assumed about where results are.
     resetEvalsDatasetState({ status: 'ready' });
+    const { services } = makeServices(true);
+    renderProvider(services, ['t1', 't2']);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockRunPpl).not.toHaveBeenCalled();
   });
 
   it('runs no evaluation query and reads no config with Agent Evaluations off', async () => {

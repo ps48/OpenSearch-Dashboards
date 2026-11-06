@@ -10,7 +10,6 @@ import { useAgentEvalsEnabled } from './eval_feature_flag';
 import { SavedObjectsClientContract } from '../../../../../core/public';
 import { getWorkspaceIdFromUrl } from '../../../../../core/public/utils';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
-import { AGENT_EVALS_INDEX_PATTERN } from '../../../common';
 import { EVALS_TIME_FIELD } from './eval_ppl';
 
 /**
@@ -382,47 +381,36 @@ export const useEvalsDataset = (options: { force?: boolean } = {}) => {
 };
 
 /**
- * The index the Agent Traces surfaces (the Evaluations column, the trace and session flyouts)
- * read evaluation results from: the config's evaluations dataset, else the default pattern,
- * so results still show where no config was set up. Undefined while loading, so nothing
- * is queried twice.
+ * Whether Agent Traces shows evaluations (the Evaluations column, the flyout's Evaluations tab
+ * and marks, session results): the flag is on and the workspace has an Agent Evaluations
+ * config. Without one (not set up, still loading, or unreadable) nothing shows and no
+ * evaluation query runs: where results are is never assumed.
  */
-export const useEvalsIndexPattern = (): string | undefined => {
-  const { status, config, unavailable } = useEvalsDataset();
-  // Agent Evaluations off: no index, so no eval query runs anywhere in Agent Traces.
+export const useAgentTracesEvalsShown = (): boolean => {
+  const { status, config } = useEvalsDataset();
   const evalsEnabled = useAgentEvalsEnabled();
-  if (!evalsEnabled) return undefined;
-  if (unavailable) return AGENT_EVALS_INDEX_PATTERN;
-  if (status === 'ready' || status === 'error') return config?.index ?? AGENT_EVALS_INDEX_PATTERN;
-  return undefined;
+  return evalsEnabled && status === 'ready' && !!config;
 };
 
 /**
- * The data source the Agent Traces surfaces query evaluation results on: the config's, else
- * the data source of the dataset Agent Traces has open (results sit next to the spans).
+ * The index the Agent Traces surfaces read evaluation results from: the config's evaluations
+ * dataset. Undefined without a config (or with the flag off), so no evaluation query runs.
  */
+export const useEvalsIndexPattern = (): string | undefined => {
+  const { config } = useEvalsDataset();
+  return useAgentTracesEvalsShown() ? config?.index : undefined;
+};
+
+/** The data source the Agent Traces surfaces query evaluation results on: the config's. */
 export const useEvalsDataSource = (): DataSourceRef | undefined => {
   const { config } = useEvalsDataset();
-  const { services } = useOpenSearchDashboards<{
-    data?: {
-      query?: {
-        queryString?: { getQuery?: () => { dataset?: { dataSource?: Partial<DataSourceRef> } } };
-      };
-    };
-  }>();
-  const ds =
-    evalsDataSourceOf(config) ??
-    services?.data?.query?.queryString?.getQuery?.()?.dataset?.dataSource;
+  const ds = evalsDataSourceOf(config);
   const id = ds?.id;
   const title = ds?.title ?? id;
   const type = ds?.type ?? 'OpenSearch';
   // Stable while the data source is the same: callers use it as an effect dependency.
   return useMemo(() => (id ? { id, title: title ?? id, type } : undefined), [id, title, type]);
 };
-
-/** The same, read now (for callbacks): the default until the config is loaded. */
-export const currentEvalsIndexPattern = (): string =>
-  state$.getValue().config?.index ?? AGENT_EVALS_INDEX_PATTERN;
 
 /**
  * The data source the evaluation queries go to: the evaluations dataset's, else the traces

@@ -4,7 +4,6 @@
  */
 
 import {
-  currentEvalsIndexPattern,
   currentWorkspaceId,
   defaultEvalsDatasets,
   evalsConfigType,
@@ -224,14 +223,14 @@ describe('evaluations app config', () => {
 
   it('loads once into the store, and again when forced', async () => {
     const client = makeClient([evalsConfig]);
-    expect(currentEvalsIndexPattern()).toBe('otel-v1-genai-evaluation-*');
+    expect(getEvalsDatasetState().config).toBeUndefined();
     await Promise.all([
       loadEvalsDataset(client as never, { workspaceId: 'ws1' }),
       loadEvalsDataset(client as never, { workspaceId: 'ws1' }),
     ]);
     expect(client.find).toHaveBeenCalledTimes(1);
     expect(getEvalsDatasetState().status).toBe('ready');
-    expect(currentEvalsIndexPattern()).toBe('otel-v1-genai-evaluation*');
+    expect(getEvalsDatasetState().config?.index).toBe('otel-v1-genai-evaluation*');
     expect(getEvalsDatasetState().configId).toBe('c1');
     await loadEvalsDataset(client as never, { force: true });
     expect(client.find).toHaveBeenCalledTimes(2);
@@ -243,8 +242,6 @@ describe('evaluations app config', () => {
     const state = await loadEvalsDataset(client as never);
     expect(state).toMatchObject({ status: 'error', error: 'forbidden' });
     expect(state.config).toBeUndefined();
-    // Agent Traces surfaces keep reading the default pattern.
-    expect(currentEvalsIndexPattern()).toBe('otel-v1-genai-evaluation-*');
   });
 
   it('is the source of every evaluation query', () => {

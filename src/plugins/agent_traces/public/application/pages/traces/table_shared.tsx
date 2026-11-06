@@ -17,6 +17,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useSelector, useDispatch } from 'react-redux';
 import moment from 'moment-timezone';
 import { useAgentEvalsEnabled } from '../../evaluations/eval_feature_flag';
+import { useAgentTracesEvalsShown } from '../../evaluations/eval_dataset';
 import { useTabResults } from '../../utils/hooks/use_tab_results';
 import { useDatasetContext } from '../../context/dataset_context/dataset_context';
 import { useOpenSearchDashboards } from '../../../../../opensearch_dashboards_react/public';
@@ -265,11 +266,13 @@ export const useDataTableCore = ({ defaultColumns }: DataTableCoreOptions) => {
   const dispatch = useDispatch();
 
   const storedColumns = useSelector(selectColumns);
-  // Agent Evaluations off: no Evaluations column, whatever the saved column state says.
+  // The flag decides the stored columns (the Evaluations column is kept for when a config
+  // shows up); the column shows only with the flag on and an Agent Evaluations config.
   const evalsEnabled = useAgentEvalsEnabled();
+  const evalsShown = useAgentTracesEvalsShown();
   const columns = useMemo(
-    () => shownColumns(storedColumns, evalsEnabled),
-    [storedColumns, evalsEnabled]
+    () => shownColumns(storedColumns, evalsShown),
+    [storedColumns, evalsShown]
   );
   const { dataset } = useDatasetContext();
   const { results } = useTabResults();
@@ -322,7 +325,7 @@ export const useDataTableCore = ({ defaultColumns }: DataTableCoreOptions) => {
   // Initialize columns to defaults on mount if they don't contain any
   // agent traces virtual columns (e.g., first visit or migrating from old EuiTable columns).
   useEffect(() => {
-    const next = initialColumns(columns, defaultColumns, evalsEnabled);
+    const next = initialColumns(storedColumns, defaultColumns, evalsEnabled);
     if (next) dispatch(setColumns(next));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

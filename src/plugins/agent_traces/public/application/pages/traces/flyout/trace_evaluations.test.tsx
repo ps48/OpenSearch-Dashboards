@@ -15,10 +15,12 @@ import {
 } from './trace_evaluations';
 import { groupBySpan } from './use_trace_evaluations';
 import { indexRowTallies } from '../row_evaluations_context';
+import { resetEvalsDatasetState } from '../../../evaluations/eval_dataset';
 
 const mockNavigate = jest.fn();
-const mockServices: { application: unknown; data?: unknown } = {
+const mockServices: { application: unknown; data?: unknown; capabilities?: unknown } = {
   application: { navigateToApp: mockNavigate },
+  capabilities: { agentTraces: { agentTracesEnabled: true, agentEvalsEnabled: true } },
 };
 jest.mock('../../../../../../opensearch_dashboards_react/public', () => ({
   useOpenSearchDashboards: () => ({ services: mockServices }),
@@ -50,6 +52,19 @@ const result = (name: string, label: string | undefined, spanId?: string, extra 
 const wrap = (ui: React.ReactElement) => render(<I18nProvider>{ui}</I18nProvider>);
 
 describe('Agent Traces evaluation marks', () => {
+  // An Agent Evaluations config: the result flyout reads its index.
+  beforeEach(() =>
+    resetEvalsDatasetState({
+      status: 'ready',
+      config: {
+        configId: 'c1',
+        evaluationsDataset: { id: 'ev', title: 'otel-v1-genai-evaluation-*' },
+        index: 'otel-v1-genai-evaluation-*',
+      },
+    })
+  );
+  afterEach(() => resetEvalsDatasetState());
+
   it('a span shows the judge mark and a tally', () => {
     wrap(<SpanEvalMark results={[result('a', 'fail', 's1'), result('b', 'pass', 's1')]} />);
     expect(screen.getByTestId('agtEvlJudgeMark')).toHaveAttribute('data-state', 'mixed');

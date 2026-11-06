@@ -22,7 +22,7 @@ import {
   EuiBadge,
   EuiLink,
 } from '@elastic/eui';
-import { useAgentEvalsEnabled } from '../../../evaluations/eval_feature_flag';
+import { useAgentTracesEvalsShown } from '../../../evaluations/eval_dataset';
 import { TraceRow } from '../hooks/tree_utils';
 import { TraceFlowView } from '../flow/trace_flow_view';
 import { parseLatencyMs } from '../trace_details/utils/span_timerange_utils';
@@ -141,7 +141,8 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
     rootTrace.traceId,
     fullTree?.[0]?.spanId ?? rootTrace.spanId
   );
-  const evalsEnabled = useAgentEvalsEnabled();
+  // Evaluations show only with the flag on and an Agent Evaluations config in the workspace.
+  const evalsEnabled = useAgentTracesEvalsShown();
   const tabOf = (tab?: string) =>
     tab === 'evaluations' && !evalsEnabled ? 'trace-tree' : (tab ?? 'trace-tree');
   const [leftTabId, setLeftTabId] = useState(tabOf(initialTab));
