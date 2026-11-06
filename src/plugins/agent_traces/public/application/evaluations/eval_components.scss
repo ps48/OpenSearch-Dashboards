@@ -400,3 +400,10 @@
   min-width: 0;
   max-width: 100%;
 }
+
+.agtEvlRunTypeCell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: $euiFontSizeS;
+}

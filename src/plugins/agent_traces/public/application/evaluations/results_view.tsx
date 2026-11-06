@@ -275,11 +275,11 @@ export const RunTypeCell: React.FC<{
   onOpen: (runId: string) => void;
 }> = ({ runId, name, onOpen }) =>
   runId ? (
-    <span className="agtEvlTrunc" data-test-subj="agtEvlRunType-offline">
-      {OFFLINE_LABEL}
-      {' · '}
+    // Two lines: the run type, then the run (name or short id), so the name is not cut off.
+    <span className="agtEvlRunTypeCell" data-test-subj="agtEvlRunType-offline">
+      <span>{OFFLINE_LABEL}</span>
       <EuiLink
-        className={name ? undefined : 'agtEvlMono'}
+        className={name ? 'agtEvlTrunc' : 'agtEvlTrunc agtEvlMono'}
         title={name ? `${name} (${runId})` : runId}
         onClick={(e: React.MouseEvent) => {
           e.stopPropagation();

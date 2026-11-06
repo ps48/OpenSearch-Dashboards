@@ -74,10 +74,8 @@ describe('ResultsView', () => {
     );
     const table = screen.getByTestId('agtEvlResultsTable');
     expect(within(table).getByText('Why 1')).toBeInTheDocument();
-    // Run type: Offline with the run (no name: its short id), else Online.
-    expect(within(table).getByTestId('agtEvlRunType-offline')).toHaveTextContent(
-      'Offline · abcd1234'
-    );
+    // Run type: Offline over the run (no name: its short id), else Online.
+    expect(within(table).getByTestId('agtEvlRunType-offline')).toHaveTextContent('Offlineabcd1234');
     expect(within(table).getByTestId('agtEvlRunType-online')).toHaveTextContent('Online');
     expect(within(table).getByText('Fail')).toBeInTheDocument();
     expect(within(table).getByText('0.25')).toBeInTheDocument();
