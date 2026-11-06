@@ -335,6 +335,15 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
     setSortValue(next);
     setState({ resultsSort: next });
   };
+  // Back and Forward change the stored sort: sort by it, as for the search above.
+  const storedSort = state.resultsSort ?? DEFAULT_RESULTS_SORT;
+  useEffect(() => {
+    setSortValue((cur) =>
+      cur.field === storedSort.field && cur.direction === storedSort.direction ? cur : storedSort
+    );
+    // Only a change of the stored sort.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedSort.field, storedSort.direction]);
   const [pageIndex, setPageIndex] = useState(0);
   const filtersKey = JSON.stringify([filters, timeRange]);
   // New filters or a new range go back to page 1; Refresh (which resolves a relative range

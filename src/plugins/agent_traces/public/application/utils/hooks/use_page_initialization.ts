@@ -87,15 +87,23 @@ export const useInitPage = () => {
           try {
             const {
               title: visTitle,
+              description: visDescription,
               chartType,
               params,
               axesMapping,
+              splitField,
+              splitLayout,
+              showSplitLabel,
             } = JSON.parse(savedAgentTraces.visualization);
             getVisualizationBuilder().setVisConfig({
               type: chartType,
               title: visTitle,
+              description: visDescription,
               styles: params,
               axesMapping,
+              splitField,
+              splitLayout,
+              showSplitLabel,
             });
           } catch (e) {
             // eslint-disable-next-line no-console

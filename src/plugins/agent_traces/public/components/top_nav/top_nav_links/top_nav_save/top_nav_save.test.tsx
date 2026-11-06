@@ -22,13 +22,20 @@ jest.mock('../../../../../../saved_objects/public', () => ({
   showSaveModal: jest.fn(),
 }));
 
+const mockVisConfig: { value: unknown } = { value: undefined };
 jest.mock('../../../visualizations/visualization_builder_singleton', () => ({
-  getVisualizationBuilder: () => ({
-    visConfig$: {
-      value: { type: 'bar', axesMapping: { x: 'day', y: 'spans' }, styles: { addLegend: false } },
-    },
-  }),
+  getVisualizationBuilder: () => ({ visConfig$: mockVisConfig }),
 }));
+const barChart = {
+  type: 'bar',
+  title: 'Tokens',
+  description: 'Per model',
+  axesMapping: { x: 'day', y: 'spans' },
+  styles: { addLegend: false },
+  splitField: 'model',
+  splitLayout: 'grid',
+  showSplitLabel: true,
+};
 
 const mockServices = {
   core: {
@@ -125,17 +132,17 @@ describe('top_nav_save', () => {
       expect(showSaveModal).toHaveBeenCalled();
     });
 
-    it('saves the chart as configured (type, axes, styles)', async () => {
+    const saveWith = async (saved: unknown) => {
       const { showSaveModal } = jest.requireMock('../../../../../../saved_objects/public');
-      const { saveStateToSavedObject } = jest.requireMock(
-        '../../../../saved_agent_traces/transforms'
-      );
+      const { saveSavedAgentTraces } = jest.requireMock('../../../../helpers/save_agent_traces');
+      showSaveModal.mockClear();
+      saveSavedAgentTraces.mockClear();
       const run = getSaveButtonRun(
         mockServices,
         jest.fn(),
         mockSearchContext,
         mockSaveStateProps,
-        mockSavedAgentTraces
+        saved as typeof mockSavedAgentTraces
       );
       run(document.createElement('button'));
       const modal = showSaveModal.mock.calls[0][0];
@@ -145,11 +152,41 @@ describe('top_nav_save', () => {
         isTitleDuplicateConfirmed: false,
         onTitleDuplicate: jest.fn(),
       });
+      return saveSavedAgentTraces.mock.calls[0][0].savedAgentTraces;
+    };
+
+    it('saves the chart as configured (type, axes, styles, split, title, description)', async () => {
+      const { saveStateToSavedObject } = jest.requireMock(
+        '../../../../saved_agent_traces/transforms'
+      );
+      saveStateToSavedObject.mockClear();
+      mockVisConfig.value = barChart;
+      await saveWith({ ...mockSavedAgentTraces });
       expect(saveStateToSavedObject.mock.calls[0][3]).toEqual({
+        title: 'Tokens',
+        description: 'Per model',
         chartType: 'bar',
         axesMapping: { x: 'day', y: 'spans' },
         styleOptions: { addLegend: false },
+        splitField: 'model',
+        splitLayout: 'grid',
+        showSplitLabel: true,
       });
+    });
+
+    it('keeps the saved chart when saving from a tab without the chart', async () => {
+      // The Visualization tab is not mounted: the builder was reset and holds no chart.
+      const { saveStateToSavedObject } = jest.requireMock(
+        '../../../../saved_agent_traces/transforms'
+      );
+      saveStateToSavedObject.mockImplementationOnce((obj: Record<string, unknown>) => {
+        obj.visualization = '{"chartType":"line","params":{}}';
+        return obj;
+      });
+      mockVisConfig.value = undefined;
+      const chart = '{"chartType":"bar","axesMapping":{"x":"day"}}';
+      const saved = await saveWith({ ...mockSavedAgentTraces, visualization: chart });
+      expect(saved.visualization).toBe(chart);
     });
   });
 });

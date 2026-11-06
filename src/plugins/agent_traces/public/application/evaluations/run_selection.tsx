@@ -31,6 +31,10 @@ export const NOT_COMPARABLE_TIP = i18n.translate('agentTraces.evals.runSelection
   defaultMessage: 'Compare runs of the same test suite and agent',
 });
 
+export const NO_SUITE_TIP = i18n.translate('agentTraces.evals.runSelection.noSuite', {
+  defaultMessage: 'Only runs of a test suite can be compared',
+});
+
 export const TWO_PICKED_TIP = i18n.translate('agentTraces.evals.runSelection.twoPicked', {
   defaultMessage: 'Two runs are selected. Clear the selection to pick others.',
 });
@@ -73,7 +77,10 @@ export const useRunSelection = <T extends Pickable>(visible?: T[]): RunSelection
   );
   const clear = useCallback(() => setSelected([]), []);
   const blockedReason = (r: T) => {
-    if (isSelected(r) || selected.length === 0) return undefined;
+    if (isSelected(r)) return undefined;
+    // A run without a suite pairs with no other run: picking it would leave Compare unreachable.
+    if (r.suite === undefined) return NO_SUITE_TIP;
+    if (selected.length === 0) return undefined;
     const first = selected[0];
     if (!isCompatibleRun(first, r)) return NOT_COMPARABLE_TIP;
     if (selected.length >= 2) return TWO_PICKED_TIP;

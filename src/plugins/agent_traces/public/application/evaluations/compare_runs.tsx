@@ -135,7 +135,10 @@ const ChangeBadge: React.FC<{ change: CaseChange }> = ({ change }) =>
 const statusCell = (s?: CaseStatus) =>
   s ? <VerdictBadge verdict={s} /> : <span className="agtEvlDim">{NOT_IN_RUN}</span>;
 
-/** A side's results, failing first, with their scores and explanations. */
+/**
+ * A side's results by evaluation name, with their scores and explanations. Both sides share the
+ * grid's rows, so they must keep the same order: a verdict sort would misalign them.
+ */
 const SideResults: React.FC<{ results: EvalResult[]; inRun: boolean; testId: string }> = ({
   results,
   inRun,

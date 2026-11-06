@@ -75,18 +75,26 @@ describe('useInitPage', () => {
     mockSaved = {
       ...savedSearch('source = spans | stats count() by serviceName', 'visualization'),
       visualization: JSON.stringify({
-        title: '',
+        title: 'Spans',
+        description: 'Per service',
         chartType: 'line',
         params: { addLegend: true },
         axesMapping: { x: 'day', y: 'count()' },
+        splitField: 'serviceName',
+        splitLayout: 'grid',
+        showSplitLabel: true,
       }),
     };
     renderHook(() => useInitPage());
     expect(mockSetVisConfig).toHaveBeenCalledWith({
       type: 'line',
-      title: '',
+      title: 'Spans',
+      description: 'Per service',
       styles: { addLegend: true },
       axesMapping: { x: 'day', y: 'count()' },
+      splitField: 'serviceName',
+      splitLayout: 'grid',
+      showSplitLabel: true,
     });
   });
 

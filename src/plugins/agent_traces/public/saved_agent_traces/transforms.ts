@@ -17,9 +17,14 @@ export interface AgentTracesState {
 }
 
 interface VisState {
+  title?: string;
+  description?: string;
   chartType?: string;
   styleOptions?: Record<string, unknown>;
   axesMapping?: Record<string, string>;
+  splitField?: string;
+  splitLayout?: unknown;
+  showSplitLabel?: boolean;
 }
 
 export const saveStateToSavedObject = (
@@ -33,12 +38,14 @@ export const saveStateToSavedObject = (
   // Serialize the state into the saved object
   obj.type = flavorId;
   obj.visualization = JSON.stringify({
-    // TODO: Add title to saved object
-    // Visualization has an independent title?
-    title: '',
+    title: visState?.title ?? '',
+    description: visState?.description,
     chartType: visState?.chartType ?? 'line',
     params: visState?.styleOptions ?? {},
     axesMapping: visState?.axesMapping,
+    splitField: visState?.splitField,
+    splitLayout: visState?.splitLayout,
+    showSplitLabel: visState?.showSplitLabel,
   });
 
   obj.uiState = JSON.stringify({

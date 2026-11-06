@@ -4,7 +4,7 @@
  */
 
 import { act, renderHook } from '@testing-library/react';
-import { NOT_COMPARABLE_TIP, TWO_PICKED_TIP, useRunSelection } from './run_selection';
+import { NOT_COMPARABLE_TIP, NO_SUITE_TIP, TWO_PICKED_TIP, useRunSelection } from './run_selection';
 
 interface Run {
   runId: string;
@@ -30,10 +30,12 @@ describe('useRunSelection', () => {
     expect(result.current.blockedReason(run('e', 'g', 'tp'))).toBe(TWO_PICKED_TIP);
   });
 
-  it('does not pair two runs without a suite', () => {
+  it('blocks runs without a suite from the first pick, so Compare is never out of reach', () => {
     const { result } = renderHook(() => useRunSelection<Run>());
-    act(() => result.current.toggle(run('a')));
-    expect(result.current.blockedReason(run('b'))).toBe(NOT_COMPARABLE_TIP);
+    expect(result.current.blockedReason(run('a'))).toBe(NO_SUITE_TIP);
+    expect(result.current.blockedReason(run('b', 'g', 'tp'))).toBeUndefined();
+    act(() => result.current.toggle(run('b', 'g', 'tp')));
+    expect(result.current.blockedReason(run('c'))).toBe(NO_SUITE_TIP);
   });
 
   it('drops picked runs the table no longer lists, and keeps them while loading', () => {

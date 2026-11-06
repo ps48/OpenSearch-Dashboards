@@ -241,6 +241,23 @@ describe('ResultsView', () => {
     );
   });
 
+  it('follows the stored sort when Back or Forward changes it', () => {
+    const ctx = testContext();
+    const { rerender } = renderWithContext(<ResultsView />, ctx);
+    mockPpl.queries.length = 0;
+    const sorted = { field: 'score', direction: 'asc' } as const;
+    rerender(
+      <I18nProvider>
+        <EvalContext.Provider value={{ ...ctx, state: { ...ctx.state, resultsSort: sorted } }}>
+          <ResultsView />
+        </EvalContext.Provider>
+      </I18nProvider>
+    );
+    expect(mockPpl.queries).toContain(
+      buildResultsPageQuery(TEST_INDEX, EMPTY_RESULTS_FILTERS, sorted, 0)
+    );
+  });
+
   it('home: a titled panel with the total and what a row is; none on the agent page', () => {
     renderWithContext(<ResultsView />);
     const panel = screen.getByTestId('agtEvlResultsPanel');

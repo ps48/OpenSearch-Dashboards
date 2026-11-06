@@ -71,21 +71,32 @@ export const getSaveButtonRun =
       isTitleDuplicateConfirmed,
       onTitleDuplicate,
     }: OnSaveProps): Promise<SaveResult | undefined> => {
-      // The chart as configured (type, axes, styles), as Explore saves it; without it a saved
-      // visualization reopens as the default chart with no axes.
+      // The chart as configured (type, axes, styles, split, title and description), as Explore
+      // saves it; without it a saved visualization reopens as the default chart with no axes.
       const visConfig = getVisualizationBuilder().visConfig$.value;
+      const savedVisualization = savedAgentTraces.visualization;
       const savedAgentTracesWithState = saveStateToSavedObject(
         savedAgentTraces,
         saveStateProps.tabDefinition!,
         saveStateProps.flavorId ?? 'logs',
-        {
-          chartType: visConfig?.type,
-          axesMapping: visConfig?.axesMapping,
-          styleOptions: visConfig?.styles as unknown as Record<string, unknown> | undefined,
+        visConfig && {
+          title: visConfig.title,
+          description: visConfig.description,
+          chartType: visConfig.type,
+          axesMapping: visConfig.axesMapping,
+          styleOptions: visConfig.styles as unknown as Record<string, unknown> | undefined,
+          splitField: visConfig.splitField,
+          splitLayout: visConfig.splitLayout,
+          showSplitLabel: visConfig.showSplitLabel,
         },
         saveStateProps.dataset,
         saveStateProps.activeTabId
       );
+      // The builder holds a chart only while the Visualization tab is mounted (it resets on
+      // unmount): a save from another tab keeps the chart already saved.
+      if (!visConfig && savedVisualization) {
+        savedAgentTracesWithState.visualization = savedVisualization;
+      }
       const result = await saveSavedAgentTraces({
         savedAgentTraces: savedAgentTracesWithState,
         newTitle,
