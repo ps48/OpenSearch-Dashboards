@@ -16,6 +16,7 @@ import {
   buildFacetQuery,
   buildResultsCountQuery,
   buildResultsPageQuery,
+  buildRunNamesQuery,
 } from './eval_ppl';
 
 // jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
@@ -67,12 +68,17 @@ describe('ResultsView', () => {
       new Set([
         buildResultsPageQuery(TEST_INDEX, EMPTY_RESULTS_FILTERS, DEFAULT_RESULTS_SORT, 0),
         buildResultsCountQuery(TEST_INDEX, EMPTY_RESULTS_FILTERS),
+        // The offline result's run has no name on the result: one document of the run.
+        buildRunNamesQuery(TEST_INDEX, ['run_20261028_abcd1234']),
       ])
     );
     const table = screen.getByTestId('agtEvlResultsTable');
     expect(within(table).getByText('Why 1')).toBeInTheDocument();
-    expect(within(table).getByText('abcd1234')).toBeInTheDocument();
-    expect(within(table).getByText('online')).toBeInTheDocument();
+    // Run type: Offline with the run (no name: its short id), else Online.
+    expect(within(table).getByTestId('agtEvlRunType-offline')).toHaveTextContent(
+      'Offline · abcd1234'
+    );
+    expect(within(table).getByTestId('agtEvlRunType-online')).toHaveTextContent('Online');
     expect(within(table).getByText('Fail')).toBeInTheDocument();
     expect(within(table).getByText('0.25')).toBeInTheDocument();
   });
@@ -168,6 +174,58 @@ describe('ResultsView', () => {
         1
       )
     );
+  });
+
+  it('Run type shows the run name from the result, linking to the run', () => {
+    mockPpl.answer((q) =>
+      q.endsWith('stats count() as total')
+        ? [{ total: 1 }]
+        : [
+            doc(1, {
+              test: { suite: { name: 'g', run: { id: 'run_20261028_abcd1234' } } },
+              opensearch: { test: { suite: { run: { name: 'Shorter prompt' } } } },
+            }),
+          ]
+    );
+    const { ctx } = renderWithContext(<ResultsView />);
+    // The name is on the result: no lookup.
+    expect(mockPpl.queries.some((q) => q.includes('dedup'))).toBe(false);
+    const run = screen.getByTestId('agtEvlResultRun-run_20261028_abcd1234');
+    expect(run).toHaveTextContent('Shorter prompt');
+    fireEvent.click(run);
+    expect(ctx.navigate).toHaveBeenCalledWith({ page: 'run', runId: 'run_20261028_abcd1234' });
+    expect(ctx.openResult).not.toHaveBeenCalled();
+  });
+
+  it('Evaluation: truncated, run type right after Version, the evaluator in the tooltip', async () => {
+    mockPpl.answer((q) =>
+      q.endsWith('stats count() as total')
+        ? [{ total: 1 }]
+        : [
+            doc(1, {
+              opensearch: {
+                gen_ai: {
+                  evaluation: {
+                    evaluator: { name: 'llm_judge_v2', description: 'Checks the facts' },
+                  },
+                },
+              },
+            }),
+          ]
+    );
+    renderWithContext(<ResultsView />);
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent ?? '');
+    expect(headers.findIndex((h) => h.includes('Run type'))).toBe(
+      headers.findIndex((h) => h.includes('Version')) + 1
+    );
+    expect(headers.some((h) => h.includes('Evaluation'))).toBe(true);
+    const open = screen.getByTestId('agtEvlResultOpen');
+    expect(open.closest('.euiTableCellContent--truncateText')).toBeTruthy();
+    fireEvent.mouseOver(open.closest('.euiToolTipAnchor') as HTMLElement);
+    expect(
+      await screen.findByText('Evaluator: llm_judge_v2', undefined, { timeout: 5000 })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Checks the facts')).toBeInTheDocument();
   });
 
   it('opens with the stored sort', () => {
@@ -319,18 +377,23 @@ describe('ResultsView', () => {
     const headers = within(table)
       .getAllByRole('columnheader')
       .map((h) => h.textContent ?? '');
-    expect(headers.some((h) => h.includes('Judged'))).toBe(true);
+    expect(headers.some((h) => h.includes('Target'))).toBe(true);
+    expect(headers.some((h) => h.includes('Judged'))).toBe(false);
     const trace = within(table).getByTestId('agtEvlTarget-trace');
-    expect(trace).toHaveTextContent('Trace t1');
+    // The level word, the popout icon after it, one link to a new tab.
+    expect(trace).toHaveTextContent(/^Trace/);
+    expect(trace.querySelectorAll('[data-euiicon-type="popout"]')).toHaveLength(1);
     expect(trace).toHaveAttribute('href', 'https://osd/app/agentTraces#t1');
     expect(trace).toHaveAttribute('target', '_blank');
+    expect(trace).toHaveAttribute('rel', 'noopener noreferrer');
     // The link opens the target, not the result.
     fireEvent.click(trace);
     expect(ctx.openResult).not.toHaveBeenCalled();
     // No URL: the target as text.
     const span = within(table).getByTestId('agtEvlTarget-span');
     expect(span.tagName).toBe('SPAN');
-    expect(span).toHaveTextContent(`Span ${shortId('span-abcdef12')}`);
+    expect(span).toHaveTextContent(/^Span$/);
+    expect(span).not.toHaveTextContent(shortId('span-abcdef12'));
     expect(within(table).getByTestId('agtEvlTarget-session')).toHaveTextContent('Session');
   });
 

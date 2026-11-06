@@ -279,6 +279,11 @@ describe('TargetLink', () => {
     const link = screen.getByTestId('agtEvlTarget-trace');
     expect(link).toHaveAttribute('href', 'https://osd/x');
     expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    // The level word and the popout icon, not the id (it is in the tooltip).
+    expect(link).toHaveTextContent(/^Trace/);
+    expect(link).not.toHaveTextContent('abcdef01');
+    expect(link.querySelectorAll('[data-euiicon-type="popout"]')).toHaveLength(1);
     fireEvent.click(link);
     expect(onRow).not.toHaveBeenCalled();
   });

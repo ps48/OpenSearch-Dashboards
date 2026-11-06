@@ -25,6 +25,7 @@ import {
   EuiSpacer,
   EuiText,
   EuiTitle,
+  EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { TimeRange } from '../../../../data/common';
@@ -44,6 +45,7 @@ import {
 } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
+import { useRunNames } from './use_run_names';
 import { useDebounced } from './agents_home';
 import {
   DASH,
@@ -55,7 +57,7 @@ import {
   VersionBadge,
   agentLabel,
   formatTime,
-  ScoreBricks,
+  ScoreCell,
   TargetLink,
   shortId,
   sliceLabel,
@@ -259,6 +261,41 @@ const COLUMN_OF_SORT: Record<ResultsSortField, keyof EvalResult> = {
   score: 'value',
 };
 
+const ONLINE_LABEL = i18n.translate('agentTraces.evals.results.online', {
+  defaultMessage: 'Online',
+});
+const OFFLINE_LABEL = i18n.translate('agentTraces.evals.results.offline', {
+  defaultMessage: 'Offline',
+});
+
+/** Online (no `test.suite.run.id`), or Offline with the run (its name, else its short id). */
+export const RunTypeCell: React.FC<{
+  runId?: string;
+  name?: string;
+  onOpen: (runId: string) => void;
+}> = ({ runId, name, onOpen }) =>
+  runId ? (
+    <span className="agtEvlTrunc" data-test-subj="agtEvlRunType-offline">
+      {OFFLINE_LABEL}
+      {' · '}
+      <EuiLink
+        className={name ? undefined : 'agtEvlMono'}
+        title={name ? `${name} (${runId})` : runId}
+        onClick={(e: React.MouseEvent) => {
+          e.stopPropagation();
+          onOpen(runId);
+        }}
+        data-test-subj={`agtEvlResultRun-${runId}`}
+      >
+        {name ?? shortId(runId)}
+      </EuiLink>
+    </span>
+  ) : (
+    <span className="agtEvlDim" data-test-subj="agtEvlRunType-online">
+      {ONLINE_LABEL}
+    </span>
+  );
+
 /**
  * Results: filters pushed into the query, sorted and paged on the server (25 a page), the
  * total from `stats count()`. `lockAgent`: the agent page's Results tab.
@@ -324,6 +361,19 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
   );
   const count = usePplRows(dataset, buildResultsCountQuery(index, filters), timeRange, refreshKey);
   const results = useMemo(() => recordsToResults(page.rows), [page.rows]);
+  // Offline results name their run: read from the result itself, else one document per run.
+  const runIds = useMemo(
+    () => [...new Set(results.flatMap((r) => (r.runId && !r.runName ? [r.runId] : [])))],
+    [results]
+  );
+  const looked = useRunNames(runIds);
+  const runNames = useMemo(() => {
+    const m = new Map(looked);
+    results.forEach((r) => {
+      if (r.runId && r.runName) m.set(r.runId, { name: r.runName });
+    });
+    return m;
+  }, [looked, results]);
   const total = num(count.rows[0]?.total) ?? 0;
 
   const chips: Array<{ facet: Facet; value: string }> = FACETS.filter(
@@ -345,49 +395,94 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
             field: 'agentName',
             name: FACET_LABEL.agents,
             sortable: true,
-            render: (a?: string) => (a ? a : <span className="agtEvlDim">{NO_AGENT_LABEL}</span>),
+            truncateText: true,
+            render: (a?: string) =>
+              a ? (
+                <span className="agtEvlTrunc" title={a}>
+                  {a}
+                </span>
+              ) : (
+                <span className="agtEvlDim">{NO_AGENT_LABEL}</span>
+              ),
           } as EuiBasicTableColumn<EvalResult>,
         ]),
     {
       field: 'agentVersion',
       name: i18n.translate('agentTraces.evals.results.version', { defaultMessage: 'Version' }),
+      width: '96px',
       render: (v?: string) => <VersionBadge version={v} />,
+    },
+    {
+      field: 'runId',
+      name: i18n.translate('agentTraces.evals.results.runType', { defaultMessage: 'Run type' }),
+      width: '150px',
+      truncateText: true,
+      render: (runId: string | undefined) => (
+        <RunTypeCell
+          runId={runId}
+          name={runId ? runNames.get(runId)?.name : undefined}
+          onOpen={(id) => navigate({ page: 'run', runId: id })}
+        />
+      ),
     },
     {
       field: 'name',
       name: FACET_LABEL.names,
       sortable: true,
+      truncateText: true,
       // A link, so the result opens from the keyboard too (the row click is mouse only).
       render: (n: string, r: EvalResult) => (
-        <EuiLink
-          onClick={(e: React.MouseEvent) => {
-            e.stopPropagation();
-            openResult(r);
-          }}
-          data-test-subj="agtEvlResultOpen"
+        <EuiToolTip
+          anchorClassName="agtEvlTruncAnchor"
+          content={
+            <>
+              <div>
+                <strong>{n}</strong>
+              </div>
+              {r.evaluatorName && (
+                <div>
+                  {i18n.translate('agentTraces.evals.results.evaluatorTip', {
+                    defaultMessage: 'Evaluator: {evaluator}',
+                    values: { evaluator: r.evaluatorName },
+                  })}
+                </div>
+              )}
+              {r.evaluatorDescription && <div>{r.evaluatorDescription}</div>}
+            </>
+          }
         >
-          <strong>{n}</strong>
-        </EuiLink>
+          <EuiLink
+            className="agtEvlTrunc"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              openResult(r);
+            }}
+            data-test-subj="agtEvlResultOpen"
+          >
+            <strong>{n}</strong>
+          </EuiLink>
+        </EuiToolTip>
       ),
     },
     {
       field: 'verdict',
       name: FACET_LABEL.verdicts,
+      width: '120px',
       render: (v: Verdict) => <VerdictBadge verdict={v} />,
     },
     {
       field: 'value',
       name: i18n.translate('agentTraces.evals.results.score', { defaultMessage: 'Score' }),
       sortable: true,
-      align: 'right',
-      render: (_: unknown, r: EvalResult) => <ScoreBricks r={r} />,
+      width: '140px',
+      render: (_: unknown, r: EvalResult) => <ScoreCell r={r} />,
     },
     {
       field: 'explanation',
       name: i18n.translate('agentTraces.evals.results.explanation', {
         defaultMessage: 'Explanation',
       }),
-      width: '32%',
+      width: '28%',
       render: (e: string | undefined, r: EvalResult) =>
         r.errorType && !e ? (
           // An evaluator error: its error.type is the reason.
@@ -402,29 +497,9 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
     },
     {
       field: 'level',
-      name: i18n.translate('agentTraces.evals.results.judged', { defaultMessage: 'Judged' }),
+      name: i18n.translate('agentTraces.evals.results.target', { defaultMessage: 'Target' }),
+      width: '96px',
       render: (_: unknown, r: EvalResult) => <TargetLink r={r} href={hrefOf?.(r)} />,
-    },
-    {
-      field: 'runId',
-      name: i18n.translate('agentTraces.evals.results.run', { defaultMessage: 'Run' }),
-      render: (runId?: string) =>
-        runId ? (
-          <EuiLink
-            className="agtEvlMono"
-            title={runId}
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
-              navigate({ page: 'run', runId });
-            }}
-          >
-            {shortId(runId)}
-          </EuiLink>
-        ) : (
-          <span className="agtEvlDim">
-            {i18n.translate('agentTraces.evals.results.online', { defaultMessage: 'online' })}
-          </span>
-        ),
     },
   ];
 

@@ -371,3 +371,30 @@
   max-width: 1200px;
   margin: $euiSizeL auto 0;
 }
+
+// A results table's score: the bricks fill one width, the value has one width.
+.agtEvlScoreCell {
+  display: inline-block;
+
+  .agtEvlBricks__row {
+    width: $euiSizeXXL * 2;
+  }
+
+  .agtEvlBricks__brick {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  .agtEvlMono {
+    display: inline-block;
+    min-width: 4ch;
+    text-align: right;
+  }
+}
+
+// A truncated cell's tooltip anchor: a block that keeps the cell's width, for the ellipsis.
+.agtEvlTruncAnchor {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}

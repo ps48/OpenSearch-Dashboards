@@ -522,36 +522,67 @@ const TARGET_OPEN_TIP: Record<ResultTarget['kind'], string> = {
   }),
 };
 
+const TARGET_ID_LABEL: Record<ResultTarget['kind'], string> = {
+  session: 'gen_ai.conversation.id',
+  trace: 'traceId',
+  span: 'spanId',
+};
+
 /**
- * What a result judged (session, trace or span, with its short id) and a link that opens it in
- * Agent Traces in a new tab. Clicks do not reach the row (which opens the result).
+ * What a result judged: its level ("Span", "Trace", "Session") as a link that opens it in
+ * Agent Traces in a new tab, the popout icon after the word (EuiLink's own), one control. The id is in the
+ * tooltip. Clicks do not reach the row (which opens the result).
  */
 export const TargetLink: React.FC<{ r: EvalResult; href?: string }> = ({ r, href }) => {
   const target = targetOf(r);
   if (!target) return <span className="agtEvlDim">{DASH}</span>;
   const id =
     target.kind === 'session' ? target.id : target.kind === 'span' ? target.spanId : target.traceId;
-  const label = (
-    <>
-      <span className="agtEvlDim">{TARGET_LABEL[target.kind]}</span>{' '}
-      <span className="agtEvlMono">{shortId(id)}</span>
-    </>
+  const idLine = (
+    <span className="agtEvlMono">
+      {TARGET_ID_LABEL[target.kind]}: {id}
+    </span>
   );
-  if (!href) return <span data-test-subj={`agtEvlTarget-${target.kind}`}>{label}</span>;
+  if (!href)
+    return (
+      <EuiToolTip content={idLine}>
+        <span data-test-subj={`agtEvlTarget-${target.kind}`}>{TARGET_LABEL[target.kind]}</span>
+      </EuiToolTip>
+    );
   return (
-    <EuiToolTip content={TARGET_OPEN_TIP[target.kind]}>
+    <EuiToolTip
+      content={
+        <>
+          {TARGET_OPEN_TIP[target.kind]}
+          <br />
+          {idLine}
+        </>
+      }
+    >
       <EuiLink
         href={href}
         target="_blank"
-        external
+        rel="noopener noreferrer"
+        className="agtEvlNoWrap"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
         data-test-subj={`agtEvlTarget-${target.kind}`}
       >
-        {label}
+        {/* A new-tab EuiLink draws the popout icon after its text itself. */}
+        {TARGET_LABEL[target.kind]}
       </EuiLink>
     </EuiToolTip>
   );
 };
+
+/**
+ * A score cell of a results table: the bricks at one width whatever their number, and the
+ * value at one width, so the bars of a column line up.
+ */
+export const ScoreCell: React.FC<{ r: EvalResult }> = ({ r }) => (
+  <span className="agtEvlScoreCell">
+    <ScoreBricks r={r} />
+  </span>
+);
 
 /** A labelled block of text (input, output, expected output). */
 export const IOBlock: React.FC<{
