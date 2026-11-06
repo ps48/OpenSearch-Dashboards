@@ -235,7 +235,7 @@ export const RunsView: React.FC = () => {
         <p>
           {i18n.translate('agentTraces.evals.runs.description', {
             defaultMessage:
-              'One row per test suite run in the time range, newest first. Click a run to see its cases, or compare it with another run of the same suite and agent.',
+              'Offline test runs: one row per run of a test suite (evaluate() or a Benchmark), newest first. Online evaluations of live traffic are under Agents. Click a run to see its cases, or check two runs of the same test suite and agent to compare them.',
           })}
         </p>
       </EuiText>

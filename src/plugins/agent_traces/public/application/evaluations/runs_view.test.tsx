@@ -133,6 +133,10 @@ describe('RunsView', () => {
     // 6 passed, 2 failed results.
     expect(r).toHaveTextContent('75%');
     expect(screen.getByText('Eval runs')).toBeInTheDocument();
+    // Offline only: the description says so and points online evaluations to Agents.
+    expect(
+      screen.getByText(/^Offline test runs: one row per run of a test suite/)
+    ).toHaveTextContent('Online evaluations of live traffic are under Agents.');
   });
 
   it('links a run to its page and a suite to its page', () => {
