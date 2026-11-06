@@ -31,7 +31,7 @@ import {
 } from '../../../../opensearch_dashboards_utils/public';
 import { syncQueryStateWithUrl } from '../../../../data/public';
 import { TimeRange } from '../../../../data/common';
-import { EvalResult, parseTime } from './eval_model';
+import { EvalResult, parseTime, runNamesOf } from './eval_model';
 import {
   AGENTS_ROUTE,
   APP_STATE_KEY,
@@ -45,7 +45,7 @@ import {
 } from './eval_routes';
 import { EvalContext, EvalScreenContext } from './eval_context';
 import { evalsDataset, evalsLookupDataset, spansDataset, usePplRows } from './use_ppl_rows';
-import { buildRunWindowQuery } from './eval_ppl';
+import { buildRunNamesQuery, buildRunWindowQuery } from './eval_ppl';
 import {
   EvalsDatasetConfig,
   evalsDataSourceOf,
@@ -212,17 +212,20 @@ const useTimeRange = (services: EvaluationsServices) => {
   };
 };
 
-const titleOf = (route: EvalRoute): string => {
+const titleOf = (route: EvalRoute, runName?: string): string => {
   switch (route.page) {
     case 'agent':
       return agentLabel(route.agent);
     case 'suite':
       return route.suite;
     case 'run':
-      return i18n.translate('agentTraces.evalsPage.runTitle', {
-        defaultMessage: 'Run {id}',
-        values: { id: shortId(route.runId) },
-      });
+      return (
+        runName ??
+        i18n.translate('agentTraces.evalsPage.runTitle', {
+          defaultMessage: 'Run {id}',
+          values: { id: shortId(route.runId) },
+        })
+      );
     case 'compare':
       return i18n.translate('agentTraces.evalsPage.compareTitle', {
         defaultMessage: 'Compare runs',
@@ -303,6 +306,49 @@ export const RUN_LOOKBACK_MS = 30 * 24 * 3600e3;
 export const runsOfRoute = (route: EvalRoute): string[] =>
   route.page === 'run' ? [route.runId] : route.page === 'compare' ? [route.runA, route.runB] : [];
 
+/** The home tab a screen belongs to, for its breadcrumb: Agents or Eval runs. */
+export const parentTabOf = (route: EvalRoute): HomePage | undefined => {
+  switch (route.page) {
+    case 'agent':
+      return 'agents';
+    case 'suite':
+    case 'run':
+    case 'compare':
+      return 'runs';
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * The breadcrumbs of a screen: always "Evaluations > <home tab>", then the screen's own title
+ * on the screens below a tab (an agent under Agents; a suite, a run or Compare runs under Eval
+ * runs). "Evaluations" opens Agents, the default tab.
+ */
+export const breadcrumbsOf = (
+  route: EvalRoute,
+  runName?: string
+): Array<{ text: string; to?: EvalRoute }> => {
+  const home = (HOME_PAGES as string[]).includes(route.page) ? (route.page as HomePage) : undefined;
+  const tab = home ?? parentTabOf(route);
+  const crumbs: Array<{ text: string; to?: EvalRoute }> = [{ text: CRUMB_HOME, to: AGENTS_ROUTE }];
+  if (tab) crumbs.push({ text: HOME_TAB_LABEL[tab], to: home ? undefined : { page: tab } });
+  if (!home) crumbs.push({ text: titleOf(route, runName) });
+  return crumbs;
+};
+
+/** The run page's run name (`opensearch.test.suite.run.name`), when it has one. */
+const useRouteRunName = (config: EvalsDatasetConfig | undefined, route: EvalRoute) => {
+  const dataset = useMemo(
+    () => (config ? evalsLookupDataset(config.index, evalsDataSourceOf(config)) : undefined),
+    [config]
+  );
+  const runId = route.page === 'run' ? route.runId : undefined;
+  const query = config && runId ? buildRunNamesQuery(config.index, [runId]) : undefined;
+  const { rows } = usePplRows(dataset, query);
+  return runId ? runNamesOf(rows).get(runId)?.name : undefined;
+};
+
 /**
  * The run and compare pages read the runs' own window (first to last result, padded), found
  * with one filtered single-row query; other pages read the global range.
@@ -345,6 +391,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
   const [setupOpen, setSetupOpen] = useState(false);
 
   const [result, setResult] = useState<EvalResult>();
+  const runName = useRouteRunName(config, route);
 
   // A new screen closes the result flyout.
   useEffect(() => setResult(undefined), [route]);
@@ -398,13 +445,11 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
           }
         : {}),
     });
-    const crumbs = [crumb(CRUMB_HOME, route.page === 'agents' ? undefined : AGENTS_ROUTE)];
-    if (route.page !== 'agents') crumbs.push(crumb(titleOf(route)));
-    services.chrome.setBreadcrumbs(crumbs);
+    services.chrome.setBreadcrumbs(breadcrumbsOf(route, runName).map((c) => crumb(c.text, c.to)));
     services.chrome.docTitle.change(
-      route.page === 'agents' ? PAGE_TITLE : [titleOf(route), PAGE_TITLE]
+      route.page === 'agents' ? PAGE_TITLE : [titleOf(route, runName), PAGE_TITLE]
     );
-  }, [services.chrome, route, navigate]);
+  }, [services.chrome, route, navigate, runName]);
 
   const quickRanges = useMemo(
     () =>
