@@ -5,11 +5,9 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  EuiAccordion,
   EuiBadge,
   EuiButtonEmpty,
   EuiButtonIcon,
-  EuiCodeBlock,
   EuiDescriptionList,
   EuiFlexGroup,
   EuiFlexItem,
@@ -46,6 +44,7 @@ import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { useRootSpans, useSessionTurns, useSpan } from './eval_spans';
 import { useRunBefore } from './run_page';
+import { JsonAccordion } from './json_viewer';
 import { SpanIOView } from './span_io_view';
 import { getEvalTimezone } from './eval_time';
 import { SpanList, TraceCompareFlyout, flattenSpans } from './trace_compare_flyout';
@@ -562,8 +561,6 @@ export const ResultFlyout: React.FC<{
 }> = ({ result: r, onClose, links = {}, onOpenResult }) => {
   const [judge, setJudge] = useState(false);
   const [compare, setCompare] = useState<{ a: string; b: string; versionA?: string }>();
-  const [rawOpen, setRawOpen] = useState(false);
-  const rawJson = useMemo(() => (rawOpen ? JSON.stringify(r.raw, null, 2) : ''), [rawOpen, r.raw]);
   const at = scalePosition(r);
   const online = !r.runId;
   const items = [
@@ -765,22 +762,16 @@ export const ResultFlyout: React.FC<{
               )}
               <EuiDescriptionList type="column" compressed listItems={items} />
               <EuiSpacer size="m" />
-              <EuiAccordion
+              {/* Built and highlighted only once open. */}
+              <JsonAccordion
                 id="agtEvlRawEvent"
-                buttonContent={i18n.translate('agentTraces.evals.flyout.rawEvent', {
+                label={i18n.translate('agentTraces.evals.flyout.rawEvent', {
                   defaultMessage: 'Raw event',
                 })}
-                onToggle={setRawOpen}
-                data-test-subj="agtEvlRawEvent"
-              >
-                {/* Built and highlighted only while open (the accordion renders its children
-                    even when closed). */}
-                {rawOpen && (
-                  <EuiCodeBlock language="json" fontSize="s" paddingSize="s" isCopyable>
-                    {rawJson}
-                  </EuiCodeBlock>
-                )}
-              </EuiAccordion>
+                read={() => r.raw}
+                overflowHeight={480}
+                testId="agtEvlRawEvent"
+              />
             </>
           )}
         </EuiFlyoutBody>
