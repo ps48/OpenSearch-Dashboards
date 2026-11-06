@@ -156,6 +156,68 @@ describe('countEvaluationResults and detectEvals', () => {
     expect(found.results).toBe(3);
     expect(mockRunPpl.mock.calls[0][1]).toMatchObject({ dataSource: { id: 'ds-1' } });
   });
+
+  const twoDataSources = [
+    {
+      id: 'ip-ds2',
+      attributes: { title: 'otel-v1-apm-span*' },
+      references: [{ id: 'ds-2', name: 'dataSource', type: 'data-source' }],
+    },
+    {
+      id: 'ip-ds1',
+      attributes: { title: 'logs-*' },
+      references: [{ id: 'ds-1', name: 'dataSource', type: 'data-source' }],
+    },
+  ];
+  const dsOf = (call: unknown[]) => (call[1] as { dataSource?: { id: string } }).dataSource?.id;
+
+  it('with several data sources, counts on each until one has results', async () => {
+    // The first pattern reads ds-2, which has no evaluation index; the results are on ds-1.
+    mockRunPpl.mockImplementation(async (_d: unknown, dataset: { dataSource?: { id: string } }) => {
+      if (dataset.dataSource?.id === 'ds-2') throw new Error('index_not_found_exception');
+      return [{ n: 5 }];
+    });
+    const { services } = makeServices({
+      withEvals: false,
+      withTraces: false,
+      extra: twoDataSources,
+    });
+    const found = await detectEvals(asServices(services));
+    expect(found.results).toBe(5);
+    expect(found.resultsDataSource?.id).toBe('ds-1');
+    expect(mockRunPpl.mock.calls.map(dsOf)).toEqual(['ds-2', 'ds-1']);
+  });
+
+  it('skips a data source that fails when another can be read, and fails when none can', async () => {
+    mockRunPpl.mockImplementation(async (_d: unknown, dataset: { dataSource?: { id: string } }) => {
+      if (dataset.dataSource?.id === 'ds-2') throw new Error('No Living connections');
+      return [{ n: 0 }];
+    });
+    const { services } = makeServices({
+      withEvals: false,
+      withTraces: false,
+      extra: twoDataSources,
+    });
+    const found = await detectEvals(asServices(services));
+    // The index exists on ds-1, with no results yet.
+    expect(found.results).toBe(0);
+    expect(found.resultsDataSource?.id).toBe('ds-1');
+    mockRunPpl.mockReset();
+    mockRunPpl.mockRejectedValue(new Error('No Living connections'));
+    await expect(detectEvals(asServices(services))).rejects.toThrow('No Living connections');
+  });
+
+  it('stops at the first data source with results', async () => {
+    mockRunPpl.mockResolvedValue([{ n: 2 }]);
+    const { services } = makeServices({
+      withEvals: false,
+      withTraces: false,
+      extra: twoDataSources,
+    });
+    const found = await detectEvals(asServices(services));
+    expect(found.resultsDataSource?.id).toBe('ds-2');
+    expect(mockRunPpl).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('EvalSetupWizard', () => {
@@ -347,6 +409,38 @@ describe('EvalSetupWizard', () => {
     expect(screen.queryByTestId('agtEvlSetupTraces')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('agtEvlSetupStep-create'));
     expect(screen.getByTestId('agtEvlSetupCreate')).toBeDisabled();
+  });
+
+  it('creates the evaluations dataset on the data source the results were counted on', async () => {
+    mockRunPpl.mockImplementation(async (_d: unknown, dataset: { dataSource?: { id: string } }) => {
+      if (dataset.dataSource?.id === 'ds-1') return [{ n: 9 }];
+      throw new Error('index_not_found_exception');
+    });
+    // The traces dataset reads ds-2; the results are on ds-1.
+    const { services, createAndSave } = makeServices({
+      withEvals: false,
+      withTraces: false,
+      extra: [
+        {
+          id: 'tr-ds2',
+          attributes: { title: 'otel-v1-apm-span*', signalType: 'traces' },
+          references: [{ id: 'ds-2', name: 'dataSource', type: 'data-source' }],
+        },
+        {
+          id: 'ip-ds1',
+          attributes: { title: 'logs-*' },
+          references: [{ id: 'ds-1', name: 'dataSource', type: 'data-source' }],
+        },
+      ],
+    });
+    const { onClose } = renderWizard(services);
+    await waitFor(() => expect(mockRunPpl).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByTestId('agtEvlSetupStep-create'));
+    fireEvent.click(screen.getByTestId('agtEvlSetupCreate'));
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
+    expect(createAndSave).toHaveBeenCalledWith(
+      expect.objectContaining({ dataSourceRef: expect.objectContaining({ id: 'ds-1' }) })
+    );
   });
 
   it('shows a detection error', async () => {

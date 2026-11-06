@@ -27,6 +27,7 @@ import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import {
+  DataSourceRef,
   DatasetRef,
   EVALS_DATASET_TIME_FIELD,
   EVALS_DATASET_TITLE,
@@ -62,9 +63,44 @@ export interface EvalsDetection {
   tracesDataset?: DatasetRef;
   /** Results in the evaluation indices (any time); undefined: no such index. */
   results?: number;
+  /** The data source the results were counted on (undefined: local). */
+  resultsDataSource?: DataSourceRef;
 }
 
 export { countEvaluationResults };
+
+/**
+ * Counts the results on each candidate data source in turn and keeps the first that has some,
+ * else the first where the index exists. With several data sources the evaluation indices may
+ * be on any of them, so one that can't be read (no local cluster, say) only fails the detection
+ * when none of the others could be read either.
+ */
+const countOnDataSources = async (
+  services: EvaluationsServices,
+  index: string,
+  candidates: Array<DataSourceRef | undefined>
+): Promise<{ results?: number; dataSource?: DataSourceRef }> => {
+  const seen = new Set<string>();
+  let exists: { results: number; dataSource?: DataSourceRef } | undefined;
+  let failure: unknown;
+  let read = false;
+  for (const dataSource of candidates) {
+    const key = dataSource?.id ?? '';
+    if (seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const results = await countEvaluationResults(services, index, dataSource);
+      read = true;
+      if (results !== undefined && results > 0) return { results, dataSource };
+      if (results !== undefined && !exists) exists = { results, dataSource };
+    } catch (e) {
+      failure = failure ?? e;
+    }
+  }
+  if (exists) return exists;
+  if (!read && failure) throw failure;
+  return { results: undefined, dataSource: candidates[0] };
+};
 
 /** Auto-detect: the workspace's datasets and the evaluation indices' results. */
 export const detectEvals = async (services: EvaluationsServices): Promise<EvalsDetection> => {
@@ -86,21 +122,28 @@ export const detectEvals = async (services: EvaluationsServices): Promise<EvalsD
         (d.dataSource?.id ?? '') === (defaults.traces?.dataSource?.id ?? '')
     );
   const index = sameTitle?.title ?? EVALS_DATASET_TITLE;
+  // The results sit on the evaluations dataset's data source when there is one. Else they are
+  // looked for next to the spans, then on each data source the workspace's index patterns read:
+  // with multiple data sources (as on a workspace without a traces dataset yet) there may be no
+  // local cluster to ask, and the first pattern's data source may not hold the results.
+  const candidates: Array<DataSourceRef | undefined> = sameTitle
+    ? [sameTitle.dataSource]
+    : [
+        ...(defaults.traces ? [defaults.traces.dataSource] : []),
+        ...all.filter((d) => d.dataSource).map((d) => d.dataSource),
+      ];
+  const { results, dataSource } = await countOnDataSources(
+    services,
+    index,
+    candidates.length ? candidates : [undefined]
+  );
   return {
     traces,
     logs,
     evaluationsDataset: sameTitle,
     tracesDataset: defaults.traces,
-    // The results sit on the evaluations dataset's data source, else next to the spans, else on
-    // the data source the workspace's other index patterns read: with multiple data sources (as
-    // on a workspace without a traces dataset yet) there may be no local cluster to ask.
-    results: await countEvaluationResults(
-      services,
-      index,
-      defaults.evaluations?.dataSource ??
-        defaults.traces?.dataSource ??
-        all.find((d) => d.dataSource)?.dataSource
-    ),
+    results,
+    resultsDataSource: dataSource,
   };
 };
 
@@ -164,15 +207,19 @@ export const EvalSetupWizard: React.FC<{
     setCreating(true);
     setCreateError(undefined);
     try {
+      // The evaluations dataset goes on the data source the results were counted on; with no
+      // evaluation index found, next to the spans.
+      const evalsDataSource =
+        detection?.results !== undefined ? detection.resultsDataSource : traces.dataSource;
       const reusable =
-        createdEvals && (createdEvals.dataSource?.id ?? '') === (traces.dataSource?.id ?? '')
+        createdEvals && (createdEvals.dataSource?.id ?? '') === (evalsDataSource?.id ?? '')
           ? createdEvals
           : undefined;
       let evaluations = detection?.evaluationsDataset ?? reusable;
       if (!evaluations) {
         // No index yet (nothing detected): save the pattern without reading its fields.
         evaluations = (
-          await createEvalsDataset(services, traces.dataSource, {
+          await createEvalsDataset(services, evalsDataSource, {
             indexExists: detection?.results !== undefined,
           })
         ).dataset;
