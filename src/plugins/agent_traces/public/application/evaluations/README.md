@@ -1,7 +1,7 @@
 # Agent Evaluations (P0 and P0.5)
 
-Read-only screens over `gen_ai.evaluation.result` events in the evaluations index
-(`otel-v1-genai-evaluation-*`, or the workspace's evaluations dataset). Shown only when both
+Read-only screens over `gen_ai.evaluation.result` events in the workspace's evaluations dataset
+(set up by the setup assist, which proposes `otel-v1-genai-evaluation*`). Shown only when both
 `explore.agentTraces.enabled` and `explore.agentTraces.evaluations.enabled` are on
 (`eval_feature_flag.ts`).
 
@@ -40,7 +40,9 @@ the root span) for "What the judge saw", offline the case's results in this run 
 before, and the judge trace (`opensearch.gen_ai.evaluation.judge.trace_id`) only when clicked.
 Agent Traces integration: the Evaluations column (`pages/traces/row_evaluations_context.tsx`),
 span marks and the Evaluations tab of the trace flyout (`pages/traces/flyout/trace_evaluations.tsx`),
-and the session view's session evaluations. A "failing evaluations only" traces filter is P1.
+and the session view's session evaluations. They show, and query, only with the flag on and an
+Agent Evaluations config in the workspace (`useAgentTracesEvalsShown`), reading the config's
+index and data source. A "failing evaluations only" traces filter is P1.
 
 App state (`_a`): the filters, the version pair compared on each agent page (`versionPick`) and
 a chart slice (`slice`, cleared by a new range or "Back to ...").

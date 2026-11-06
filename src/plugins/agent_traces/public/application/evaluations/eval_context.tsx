@@ -67,8 +67,8 @@ export const defaultEvalContext = (
   openTrace: noop,
 });
 
-export const EvalContext = createContext<EvalScreenContext>(
-  defaultEvalContext('otel-v1-genai-evaluation-*', 'otel-v1-apm-span-*')
-);
+// No index by default: the app and the Agent Traces flyouts provide the configured ones, and
+// nothing reads evaluation results without a config.
+export const EvalContext = createContext<EvalScreenContext>(defaultEvalContext('', ''));
 
 export const useEvalContext = () => useContext(EvalContext);
