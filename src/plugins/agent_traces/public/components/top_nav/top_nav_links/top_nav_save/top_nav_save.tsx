@@ -26,6 +26,7 @@ import { saveSavedAgentTraces } from '../../../../helpers/save_agent_traces';
 import { TabState } from '../../../../application/utils/state_management/slices';
 import { TabDefinition } from '../../../../services/tab_registry/tab_registry_service';
 import { saveStateToSavedObject } from '../../../../saved_agent_traces/transforms';
+import { getVisualizationBuilder } from '../../../visualizations/visualization_builder_singleton';
 
 // One label for both the tooltip and the aria-label: "Save" alone was too easily confused with
 // the query panel's "Save query" control, which persists something different.
@@ -70,11 +71,18 @@ export const getSaveButtonRun =
       isTitleDuplicateConfirmed,
       onTitleDuplicate,
     }: OnSaveProps): Promise<SaveResult | undefined> => {
+      // The chart as configured (type, axes, styles), as Explore saves it; without it a saved
+      // visualization reopens as the default chart with no axes.
+      const visConfig = getVisualizationBuilder().visConfig$.value;
       const savedAgentTracesWithState = saveStateToSavedObject(
         savedAgentTraces,
         saveStateProps.tabDefinition!,
         saveStateProps.flavorId ?? 'logs',
-        {},
+        {
+          chartType: visConfig?.type,
+          axesMapping: visConfig?.axesMapping,
+          styleOptions: visConfig?.styles as unknown as Record<string, unknown> | undefined,
+        },
         saveStateProps.dataset,
         saveStateProps.activeTabId
       );
@@ -97,11 +105,12 @@ export const getSaveButtonRun =
         onClose={() => {}}
         title={savedAgentTraces.title ?? ''}
         showCopyOnSave={!!savedAgentTraces.id}
-        // TODO: Does this need to be type "agentTraces"?
-        objectType="discover"
+        objectType={i18n.translate('agentTraces.localMenu.saveObjectType', {
+          defaultMessage: 'search',
+        })}
         description={i18n.translate('agentTraces.localMenu.saveSaveSearchDescription', {
           defaultMessage:
-            'Save your Discover search so you can use it in visualizations and dashboards',
+            'Save your Agent Traces search so you can use it in visualizations and dashboards',
         })}
         showDescription={false}
       />

@@ -22,6 +22,14 @@ jest.mock('../../../../../../saved_objects/public', () => ({
   showSaveModal: jest.fn(),
 }));
 
+jest.mock('../../../visualizations/visualization_builder_singleton', () => ({
+  getVisualizationBuilder: () => ({
+    visConfig$: {
+      value: { type: 'bar', axesMapping: { x: 'day', y: 'spans' }, styles: { addLegend: false } },
+    },
+  }),
+}));
+
 const mockServices = {
   core: {
     i18n: {
@@ -115,6 +123,33 @@ describe('top_nav_save', () => {
       run(mockElement);
 
       expect(showSaveModal).toHaveBeenCalled();
+    });
+
+    it('saves the chart as configured (type, axes, styles)', async () => {
+      const { showSaveModal } = jest.requireMock('../../../../../../saved_objects/public');
+      const { saveStateToSavedObject } = jest.requireMock(
+        '../../../../saved_agent_traces/transforms'
+      );
+      const run = getSaveButtonRun(
+        mockServices,
+        jest.fn(),
+        mockSearchContext,
+        mockSaveStateProps,
+        mockSavedAgentTraces
+      );
+      run(document.createElement('button'));
+      const modal = showSaveModal.mock.calls[0][0];
+      await modal.props.onSave({
+        newTitle: 'Tokens per day',
+        newCopyOnSave: false,
+        isTitleDuplicateConfirmed: false,
+        onTitleDuplicate: jest.fn(),
+      });
+      expect(saveStateToSavedObject.mock.calls[0][3]).toEqual({
+        chartType: 'bar',
+        axesMapping: { x: 'day', y: 'spans' },
+        styleOptions: { addLegend: false },
+      });
     });
   });
 });

@@ -27,6 +27,7 @@ import { AGENT_TRACES_VISUALIZATION_TAB_ID, AgentTracesFlavor } from '../../../.
 import { hasStatsPipe } from '../state_management/actions/detect_optimal_tab/detect_optimal_tab';
 import { useSetEditorText } from '../../hooks';
 import { EditorMode } from '../state_management/types';
+import { getVisualizationBuilder } from '../../../components/visualizations/visualization_builder_singleton';
 
 export const useInitPage = () => {
   const dispatch = useDispatch();
@@ -79,6 +80,28 @@ export const useInitPage = () => {
           savedAgentTraces.id,
           { type: 'agentTraces' }
         );
+
+        // Restore the saved chart (type, axes, styles), as Explore does; without it a saved
+        // visualization reopens as the default chart.
+        if (savedAgentTraces.visualization) {
+          try {
+            const {
+              title: visTitle,
+              chartType,
+              params,
+              axesMapping,
+            } = JSON.parse(savedAgentTraces.visualization);
+            getVisualizationBuilder().setVisConfig({
+              type: chartType,
+              title: visTitle,
+              styles: params,
+              axesMapping,
+            });
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to parse saved visualization:', e);
+          }
+        }
 
         // Restore sort and columns from saved search so the executeQueries
         // cache key matches what useTabResults will compute once the table

@@ -16,6 +16,10 @@ jest.mock('./use_saved_agent_traces', () => ({
   useSavedAgentTraces: () => ({ savedAgentTraces: mockSaved, error: undefined }),
 }));
 jest.mock('../../hooks', () => ({ useSetEditorText: () => jest.fn() }));
+const mockSetVisConfig = jest.fn();
+jest.mock('../../../components/visualizations/visualization_builder_singleton', () => ({
+  getVisualizationBuilder: () => ({ setVisConfig: mockSetVisConfig }),
+}));
 jest.mock('../state_management/actions/query_actions', () => ({
   executeQueries: () => ({ type: 'executeQueries' }),
 }));
@@ -50,7 +54,10 @@ const activeTabs = () =>
     .map((action) => action.payload);
 
 describe('useInitPage', () => {
-  beforeEach(() => mockDispatch.mockClear());
+  beforeEach(() => {
+    mockDispatch.mockClear();
+    mockSetVisConfig.mockClear();
+  });
 
   it('opens a saved search on the tab it was saved on', () => {
     mockSaved = savedSearch('source = spans | where status = 2', 'sessions');
@@ -62,5 +69,30 @@ describe('useInitPage', () => {
     mockSaved = savedSearch('source = spans | stats count() by serviceName', 'traces');
     renderHook(() => useInitPage());
     expect(activeTabs()).toEqual([AGENT_TRACES_VISUALIZATION_TAB_ID]);
+  });
+
+  it('restores the saved chart: type, axes and styles', () => {
+    mockSaved = {
+      ...savedSearch('source = spans | stats count() by serviceName', 'visualization'),
+      visualization: JSON.stringify({
+        title: '',
+        chartType: 'line',
+        params: { addLegend: true },
+        axesMapping: { x: 'day', y: 'count()' },
+      }),
+    };
+    renderHook(() => useInitPage());
+    expect(mockSetVisConfig).toHaveBeenCalledWith({
+      type: 'line',
+      title: '',
+      styles: { addLegend: true },
+      axesMapping: { x: 'day', y: 'count()' },
+    });
+  });
+
+  it('leaves the chart alone for a saved search without one', () => {
+    mockSaved = savedSearch('source = spans', 'traces');
+    renderHook(() => useInitPage());
+    expect(mockSetVisConfig).not.toHaveBeenCalled();
   });
 });
