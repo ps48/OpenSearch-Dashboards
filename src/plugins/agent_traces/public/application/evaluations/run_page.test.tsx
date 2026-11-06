@@ -9,6 +9,7 @@ import {
   RunPage,
   buildRunEvaluatorsQuery,
   deltaOf,
+  passedDelta,
   evaluatorDescriptionsOf,
   filterCases,
 } from './run_page';
@@ -25,6 +26,7 @@ import { CaseRow, emptyTally } from './eval_model';
 
 const SUITE = 'attributes.test.suite.name';
 const RUN_ID = 'attributes.test.suite.run.id';
+const AGENT = 'attributes.gen_ai.agent.name';
 // jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
 jest.mock('react-virtualized-auto-sizer', () => ({
   __esModule: true,
@@ -73,8 +75,10 @@ describe('RunPage', () => {
     mockPpl.answer((q) => {
       if (q.includes('stats min(`@timestamp`) as started'))
         return [
-          { started: '2026-10-27 07:00:00', [SUITE]: 'golden', [RUN_ID]: BEFORE },
-          { started: '2026-10-28 07:00:00', [SUITE]: 'golden', [RUN_ID]: RUN },
+          { started: '2026-10-27 07:00:00', [SUITE]: 'golden', [AGENT]: 'tp', [RUN_ID]: BEFORE },
+          { started: '2026-10-28 07:00:00', [SUITE]: 'golden', [AGENT]: 'tp', [RUN_ID]: RUN },
+          // Another agent's later run of the suite: not the run before.
+          { started: '2026-10-27 09:00:00', [SUITE]: 'golden', [AGENT]: 'bot', [RUN_ID]: 'r_bot' },
         ];
       if (q.includes('stats count() as n, min(`@timestamp`) as t0')) {
         const before = '2026-10-27 07:00:00';
@@ -128,6 +132,7 @@ describe('RunPage', () => {
             n: 1,
             started: '2026-10-27 07:00:00',
             'attributes.test.suite.run.id': BEFORE,
+            'attributes.gen_ai.agent.name': 'tp',
             'attributes.gen_ai.agent.version': 'v1',
             verdict: 'pass',
           },
@@ -135,7 +140,15 @@ describe('RunPage', () => {
             n: 1,
             started: '2026-10-28 07:00:00',
             'attributes.test.suite.run.id': RUN,
+            'attributes.gen_ai.agent.name': 'tp',
             'attributes.gen_ai.agent.version': 'v2',
+            verdict: 'pass',
+          },
+          {
+            n: 1,
+            started: '2026-10-27 09:00:00',
+            'attributes.test.suite.run.id': 'r_bot',
+            'attributes.gen_ai.agent.name': 'bot',
             verdict: 'pass',
           },
         ];
@@ -161,9 +174,10 @@ describe('RunPage', () => {
       expect(line).toHaveTextContent(/previous run \(bbbb2222, Oct 2\d, \d\d:\d\d\)/);
     };
     stat('agtEvlStatCases', 'Cases passed 1 / 3', '-1 vs previous run', 'down');
-    stat('agtEvlStatResults', 'Results passed 2 / 3', '-1 vs previous run', 'down');
-    // Errors were 0 in the previous run.
-    stat('agtEvlStatErrors', 'Evaluator errors 1', 'New since previous run', 'new');
+    // 2 / 3 after 3 / 4: another total, so the pass rate's change (67% from 75%).
+    stat('agtEvlStatResults', 'Results passed 2 / 3', '-8 pts vs previous run', 'down');
+    // Errors were 0 in the previous run: a value, so +1 (and worse), not new.
+    stat('agtEvlStatErrors', 'Evaluator errors 1', '+1 vs previous run', 'up');
     // Fewer passes is bad (danger); a new error too.
     expect(
       within(screen.getByTestId('agtEvlStatCases')).getByTestId('agtEvlStatDelta').innerHTML
@@ -246,14 +260,18 @@ describe('RunPage', () => {
     expect(mockPpl.ranges.get(buildRunCasesQuery(TEST_INDEX, RUN))).toEqual(browseRange);
     expect(mockPpl.ranges.get(buildRunCasesQuery(TEST_INDEX, BEFORE))).toEqual(browseRange);
     expect(mockPpl.ranges.get(buildSuiteRunsQuery(TEST_INDEX, 'golden'))).toEqual(browseRange);
+    // The run before is outside the run's own window: its name is read over the browse range.
+    expect(mockPpl.ranges.get(buildRunNamesQuery(TEST_INDEX, [RUN, BEFORE]))).toEqual(browseRange);
   });
 
   it('Compare with… is disabled with a tooltip when the suite has no other run', async () => {
     mockPpl.answer((q) =>
       q.includes('stats min(`@timestamp`) as started')
         ? [
-            { started: '2026-10-28 07:00:00', [SUITE]: 'golden', [RUN_ID]: RUN },
-            { started: '2026-10-27 07:00:00', [SUITE]: 'other', [RUN_ID]: 'x' },
+            { started: '2026-10-28 07:00:00', [SUITE]: 'golden', [AGENT]: 'tp', [RUN_ID]: RUN },
+            { started: '2026-10-27 07:00:00', [SUITE]: 'other', [AGENT]: 'tp', [RUN_ID]: 'x' },
+            // Another agent's run of the suite does not compare.
+            { started: '2026-10-27 08:00:00', [SUITE]: 'golden', [AGENT]: 'bot', [RUN_ID]: 'y' },
           ]
         : q.includes('as t0')
           ? [caseRow('c1', 'accuracy', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05')]
@@ -267,9 +285,13 @@ describe('RunPage', () => {
     // EUI opens the tooltip after a delay and a queued state change (real timers).
     fireEvent.mouseOver(button.closest('.euiToolTipAnchor') as HTMLElement);
     expect(
-      await screen.findByText(/^No other run of this test suite in Last 7 days/, undefined, {
-        timeout: 5000,
-      })
+      await screen.findByText(
+        /^No other run of this test suite and agent in Last 7 days/,
+        undefined,
+        {
+          timeout: 5000,
+        }
+      )
     ).toBeInTheDocument();
   });
 
@@ -321,6 +343,8 @@ describe('RunPage', () => {
     const list = screen.getByTestId('agtEvlCompareWithList');
     // The other runs of the suite only, searchable; the run before is marked.
     expect(within(list).queryByTestId(`agtEvlRunOption-${RUN}`)).not.toBeInTheDocument();
+    // Another agent's run of the suite is not offered.
+    expect(within(list).queryByTestId('agtEvlRunOption-r_bot')).not.toBeInTheDocument();
     const item = within(list).getByTestId('agtEvlRunOption-run_20261027_bbbb2222');
     expect(item).toHaveTextContent('Run before');
     expect(item).toHaveTextContent('bbbb2222');
@@ -477,7 +501,25 @@ describe('RunPage', () => {
     expect(deltaOf({ current: 6, previous: 7, higherIsBetter: true }).kind).toBe('down');
     expect(deltaOf({ current: 7, previous: 7, higherIsBetter: true }).kind).toBe('same');
     expect(deltaOf({ current: 0, previous: 0, higherIsBetter: false }).kind).toBe('same');
-    expect(deltaOf({ current: 2, previous: 0, higherIsBetter: false }).kind).toBe('new');
+    expect(deltaOf({ current: 2, previous: 0, higherIsBetter: false })).toEqual({
+      kind: 'up',
+      diff: 2,
+    });
     expect(deltaOf({ current: 2, higherIsBetter: false }).kind).toBe('new');
+  });
+
+  it('passedDelta: counts on the same total, else pass rate points', () => {
+    expect(passedDelta(7, 8, 8, 8)).toEqual({
+      current: 7,
+      previous: 8,
+      previousText: '8 / 8',
+      higherIsBetter: true,
+    });
+    // 5 / 5 then 9 / 12: 3 fail now, a drop (not +4).
+    expect(passedDelta(9, 12, 5, 5)).toMatchObject({ current: 75, previous: 100, points: true });
+    expect(deltaOf(passedDelta(9, 12, 5, 5)!)).toEqual({ kind: 'down', diff: -25 });
+    // 8 / 8 then 8 / 10: not the same.
+    expect(deltaOf(passedDelta(8, 10, 8, 8)!).kind).toBe('down');
+    expect(passedDelta(0, 0, 3, 4)).toBeUndefined();
   });
 });

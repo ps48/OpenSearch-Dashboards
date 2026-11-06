@@ -310,21 +310,14 @@ export const buildRunsFacetQuery = (index: string, filters: RunsFilters, facet: 
 // ---------------------------------------------------------------------- Run page
 
 /**
- * The runs of a suite in the range with their start, latest first: finds the run before a run
- * (the cap drops the oldest runs, not the recent ones). Without a suite: every run, by agent
- * too, so the Eval runs tab finds the runs of the same suite and agent whatever its filters.
+ * The runs of a suite in the range with their agent and start, latest first: finds the run
+ * before a run of the same suite and agent (the cap drops the oldest runs, not the recent ones).
  */
-export const buildRunsLookupQuery = (index: string, suite?: string): string =>
+export const buildRunsLookupQuery = (index: string, suite: string): string =>
   join([
     ...base(index),
-    suite !== undefined
-      ? `where ${fld(F.suiteName)} = ${quote(suite)}`
-      : `where isnotnull(${fld(F.runId)})`,
-    `stats min(${fld(F.time)}) as started by ${[
-      F.suiteName,
-      ...(suite !== undefined ? [] : [F.agentName]),
-      F.runId,
-    ]
+    `where ${fld(F.suiteName)} = ${quote(suite)}`,
+    `stats min(${fld(F.time)}) as started by ${[F.suiteName, F.agentName, F.runId]
       .map(fld)
       .join(', ')}`,
     'sort - started',

@@ -207,7 +207,7 @@ const EvaluationsSummary: React.FC<{ runId: string }> = ({ runId }) => {
 };
 
 /**
- * The run before a run (same suite, started last before it), from the suite's runs in the
+ * The run before a run (same suite and agent, started last before it), from the suite's runs in the
  * range, latest first. Runs once the run's suite is known (`suite`: undefined while unknown,
  * `null` for a run without a suite, which has no run before).
  */
@@ -233,8 +233,8 @@ export const useRunBefore = (runId?: string, suite?: string | null) => {
 };
 
 /**
- * "Compare with…": the suite's other runs, read when the menu opens (the run page, and each
- * row of the Eval runs tab with `sameAgent`). The older run of the two is A.
+ * The run page's "Compare with…": the other runs of its suite and agent, read when the menu
+ * opens. The older run of the two is A.
  */
 export const CompareWithMenu: React.FC<{
   runId: string;
@@ -246,13 +246,8 @@ export const CompareWithMenu: React.FC<{
   unavailable?: boolean;
   /** The runs lookup has not answered yet. */
   pending?: boolean;
-  /** Only the runs of the same agent (`agent`, undefined for no agent name). */
-  sameAgent?: boolean;
+  /** The run's agent (undefined for no agent name): only its runs compare. */
   agent?: string;
-  /** Why there is nothing to compare with (the run page's text by default). */
-  noOthersTip?: string;
-  /** A table row's action: a small "Compare" button. */
-  compact?: boolean;
   testId?: string;
 }> = ({
   runId,
@@ -261,10 +256,7 @@ export const CompareWithMenu: React.FC<{
   others: otherCount,
   unavailable,
   pending,
-  sameAgent,
   agent,
-  noOthersTip,
-  compact,
   testId = 'agtEvlCompareWith',
 }) => {
   const { dataset, index, browseRange, refreshKey, rangeLabel, navigate } = useEvalContext();
@@ -276,8 +268,8 @@ export const CompareWithMenu: React.FC<{
     refreshKey
   );
   const runs = useMemo(
-    () => suiteRuns(rows).filter((r) => r.runId === runId || !sameAgent || r.agent === agent),
-    [rows, runId, sameAgent, agent]
+    () => suiteRuns(rows).filter((r) => r.runId === runId || r.agent === agent),
+    [rows, runId, agent]
   );
   const self = runs.find((r) => r.runId === runId);
   const before = runs.filter((r) => r.started < started).pop();
@@ -296,28 +288,25 @@ export const CompareWithMenu: React.FC<{
                   defaultMessage: 'The runs of this test suite could not be read.',
                 })
               : otherCount === 0 && !pending
-                ? (noOthersTip ??
-                  i18n.translate('agentTraces.evals.run.noOtherRuns', {
+                ? i18n.translate('agentTraces.evals.run.noOtherRuns', {
                     defaultMessage:
-                      'No other run of this test suite in {range} or the 30 days before this run.',
+                      'No other run of this test suite and agent in {range} or the 30 days before this run.',
                     values: { range: rangeLabel },
-                  }))
+                  })
                 : undefined
           }
         >
           <EuiButtonEmpty
-            size={compact ? 'xs' : 's'}
+            size="s"
             iconType="arrowDown"
             iconSide="right"
             isDisabled={!suite || unavailable || pending || otherCount === 0}
             onClick={() => setOpen(!open)}
             data-test-subj={testId}
           >
-            {compact
-              ? i18n.translate('agentTraces.evals.run.compare', { defaultMessage: 'Compare' })
-              : i18n.translate('agentTraces.evals.run.compareWith', {
-                  defaultMessage: 'Compare with…',
-                })}
+            {i18n.translate('agentTraces.evals.run.compareWith', {
+              defaultMessage: 'Compare with…',
+            })}
           </EuiButtonEmpty>
         </EuiToolTip>
       }
@@ -362,17 +351,45 @@ export interface StatDelta {
   previous?: number;
   /** The previous run's figure as shown (e.g. `7 / 8`), for the tooltip. */
   previousText?: string;
+  /** Pass rates in percent: the change reads in points (`-25 pts`). */
+  points?: boolean;
   /** More is better (passes), or worse (errors). */
   higherIsBetter: boolean;
 }
 
-/** How a figure moved: up / down with its health color, the same, or new since that run. */
+/**
+ * How a figure moved: up / down with its health color, the same, or new since that run (the
+ * previous run has no such figure; a previous 0 is a value, so 0 to 2 is up).
+ */
 export const deltaOf = (d: StatDelta): { kind: 'up' | 'down' | 'same' | 'new'; diff: number } => {
-  if ((d.previous === undefined || d.previous === 0) && d.current > 0) {
-    return { kind: 'new', diff: d.current };
-  }
-  const diff = d.current - (d.previous ?? 0);
+  if (d.previous === undefined) return { kind: 'new', diff: d.current };
+  const diff = d.current - d.previous;
   return { kind: diff > 0 ? 'up' : diff < 0 ? 'down' : 'same', diff };
+};
+
+/**
+ * A "passed of total" figure's change: the passed count when both runs have the same total,
+ * else the pass rate in points (5 / 5 then 9 / 12 is -25 pts, not +4). None without a total.
+ */
+export const passedDelta = (
+  passed: number,
+  total: number,
+  prevPassed: number,
+  prevTotal: number
+): StatDelta | undefined => {
+  const previousText = `${prevPassed} / ${prevTotal}`;
+  if (total === prevTotal) {
+    return { current: passed, previous: prevPassed, previousText, higherIsBetter: true };
+  }
+  if (!total || !prevTotal) return undefined;
+  const pct = (p: number, t: number) => Math.round((p / t) * 100);
+  return {
+    current: pct(passed, total),
+    previous: pct(prevPassed, prevTotal),
+    previousText,
+    higherIsBetter: true,
+    points: true,
+  };
 };
 
 const DeltaLine: React.FC<{ delta: StatDelta; prev: PreviousRun }> = ({ delta, prev }) => {
@@ -395,6 +412,13 @@ const DeltaLine: React.FC<{ delta: StatDelta; prev: PreviousRun }> = ({ delta, p
             defaultMessage: '{diff} vs previous run ({run})',
             values: { diff: diff > 0 ? `+${diff}` : String(diff), run },
           });
+  const shown =
+    delta.points && kind !== 'new' && kind !== 'same'
+      ? i18n.translate('agentTraces.evals.run.deltaPoints', {
+          defaultMessage: '{diff} pts vs previous run ({run})',
+          values: { diff: diff > 0 ? `+${diff}` : String(diff), run },
+        })
+      : text;
   return (
     <EuiText size="xs" data-test-subj="agtEvlStatDelta" data-delta={kind}>
       <p>
@@ -410,7 +434,7 @@ const DeltaLine: React.FC<{ delta: StatDelta; prev: PreviousRun }> = ({ delta, p
         >
           <EuiTextColor color={color}>
             {kind === 'up' && <EuiIcon type="sortUp" size="s" color={color} />}
-            {kind === 'down' && <EuiIcon type="sortDown" size="s" color={color} />} {text}
+            {kind === 'down' && <EuiIcon type="sortDown" size="s" color={color} />} {shown}
           </EuiTextColor>
         </EuiToolTip>{' '}
         <EuiLink onClick={prev.onCompare} data-test-subj="agtEvlStatDeltaCompare">
@@ -471,8 +495,11 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
     [beforeId, beforeCases.rows]
   );
   // The run's and the run before's names (each falls back to its short id).
+  // Read over the browse range, where the run before was found (the page's own range is this
+  // run's window, which the run before is outside of).
   const names = useRunNames(
-    useMemo(() => (beforeId ? [runId, beforeId] : [runId]), [runId, beforeId])
+    useMemo(() => (beforeId ? [runId, beforeId] : [runId]), [runId, beforeId]),
+    browseRange
   );
   const own = names.get(runId);
   const [status, setStatus] = useState<StatusFilter>('all');
@@ -736,6 +763,7 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
             runId={runId}
             suite={run.suite}
             started={run.started}
+            agent={run.agent}
             others={lookup.others}
             unavailable={!!lookup.error}
             pending={!lookup.loaded}
@@ -749,14 +777,7 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
             defaultMessage: 'Cases passed',
           })}
           prev={previousRun}
-          delta={
-            prev && {
-              current: passed,
-              previous: prev.casesPassed,
-              previousText: `${prev.casesPassed} / ${prev.cases.length}`,
-              higherIsBetter: true,
-            }
-          }
+          delta={prev && passedDelta(passed, cases.length, prev.casesPassed, prev.cases.length)}
           testId="agtEvlStatCases"
         />
         <RunStat
@@ -766,12 +787,13 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
           })}
           prev={previousRun}
           delta={
-            prev && {
-              current: run.tally.pass,
-              previous: prev.tally.pass,
-              previousText: `${prev.tally.pass} / ${prev.tally.pass + prev.tally.fail}`,
-              higherIsBetter: true,
-            }
+            prev &&
+            passedDelta(
+              run.tally.pass,
+              run.tally.pass + run.tally.fail,
+              prev.tally.pass,
+              prev.tally.pass + prev.tally.fail
+            )
           }
           testId="agtEvlStatResults"
         />

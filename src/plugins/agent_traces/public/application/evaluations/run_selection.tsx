@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   EuiBasicTableColumn,
   EuiButton,
@@ -16,7 +16,7 @@ import {
   EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { RunRow } from './eval_model';
+import { RunRow, isCompatibleRun } from './eval_model';
 import { runLabel, shortId } from './eval_components';
 
 /** Two runs in time order: the older is A, the baseline. */
@@ -46,10 +46,19 @@ export interface RunSelection<T extends Pickable> {
 
 /**
  * Up to two runs to compare. After the first pick, only runs of the same test suite and agent
- * can be picked (as Compare runs requires).
+ * can be picked (as Compare runs requires). `visible`: the runs the table lists once loaded
+ * (undefined while loading); a picked run they no longer list (another filter, search or range)
+ * is dropped, so the selection never holds a run the user cannot see.
  */
-export const useRunSelection = <T extends Pickable>(): RunSelection<T> => {
+export const useRunSelection = <T extends Pickable>(visible?: T[]): RunSelection<T> => {
   const [selected, setSelected] = useState<T[]>([]);
+  useEffect(() => {
+    if (!visible) return;
+    const ids = new Set(visible.map((r) => r.runId));
+    setSelected((cur) =>
+      cur.every((s) => ids.has(s.runId)) ? cur : cur.filter((s) => ids.has(s.runId))
+    );
+  }, [visible]);
   const isSelected = useCallback((r: T) => selected.some((s) => s.runId === r.runId), [selected]);
   const toggle = useCallback(
     (r: T) =>
@@ -66,7 +75,7 @@ export const useRunSelection = <T extends Pickable>(): RunSelection<T> => {
   const blockedReason = (r: T) => {
     if (isSelected(r) || selected.length === 0) return undefined;
     const first = selected[0];
-    if (r.suite !== first.suite || r.agent !== first.agent) return NOT_COMPARABLE_TIP;
+    if (!isCompatibleRun(first, r)) return NOT_COMPARABLE_TIP;
     if (selected.length >= 2) return TWO_PICKED_TIP;
     return undefined;
   };

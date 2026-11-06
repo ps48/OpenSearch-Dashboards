@@ -139,7 +139,7 @@ export const RunsView: React.FC = () => {
   const cases = useMemo(() => runCases(casesQuery.rows), [casesQuery.rows]);
   const truncated = isTruncated(runsQuery.rows);
 
-  const sel = useRunSelection<RunRow & RunName>();
+  const sel = useRunSelection<RunRow & RunName>(runsQuery.loaded ? runs : undefined);
 
   const columns: Array<EuiBasicTableColumn<RunRow & RunName>> = [
     runSelectColumn(sel),

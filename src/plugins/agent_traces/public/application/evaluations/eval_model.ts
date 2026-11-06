@@ -611,47 +611,38 @@ export const runDetail = (runId: string, allRows: PplRecord[]): RunDetail | unde
 export interface RunRef {
   runId: string;
   suite?: string;
-  /** Read by the lookup without a suite only. */
   agent?: string;
   started: number;
-  /** From `withRunNames`. */
-  name?: string;
-  description?: string;
 }
 
-/** The runs of `buildRunsLookupQuery` rows. */
-export const runRefsOf = (rows: PplRecord[]): RunRef[] =>
-  rows
-    .map((row) => ({
-      runId: str(get(row, F.runId)) ?? '',
-      suite: str(get(row, F.suiteName)),
-      agent: str(get(row, F.agentName)),
-      started: parseTime(row.started),
-    }))
-    .filter((r) => r.runId);
-
-/** From `buildRunsLookupQuery`: the run of the same suite that started last before `runId`. */
-export const runBefore = (rows: PplRecord[], runId: string): RunRef | undefined => {
-  const runs: RunRef[] = rows.map((row) => ({
+const runRefsOf = (rows: PplRecord[]): RunRef[] =>
+  rows.map((row) => ({
     runId: str(get(row, F.runId)) ?? '',
     suite: str(get(row, F.suiteName)),
+    agent: str(get(row, F.agentName)),
     started: parseTime(row.started),
   }));
+
+/** `buildRunsLookupQuery` runs other than `runId` of its suite and agent, and `runId`'s own. */
+const sameSuiteAndAgent = (rows: PplRecord[], runId: string) => {
+  const runs = runRefsOf(rows);
   const self = runs.find((r) => r.runId === runId);
-  if (!self) return undefined;
-  return runs
-    .filter((r) => r.runId !== runId && r.suite === self.suite && r.started < self.started)
-    .sort((a, b) => b.started - a.started)[0];
+  return { self, others: self ? runs.filter((r) => isCompatibleRun(self, r)) : [] };
 };
 
-/** The number of other runs of a run's suite in `buildRunsLookupQuery` rows. */
-export const otherRunsOfSuite = (rows: PplRecord[], runId: string): number => {
-  const suiteOf = (row: PplRecord) => str(get(row, F.suiteName));
-  const self = rows.find((row) => str(get(row, F.runId)) === runId);
-  if (!self) return 0;
-  return rows.filter((row) => str(get(row, F.runId)) !== runId && suiteOf(row) === suiteOf(self))
-    .length;
+/**
+ * From `buildRunsLookupQuery`: the run of the same suite and agent that started last before
+ * `runId` (another agent's run of the suite does not compare).
+ */
+export const runBefore = (rows: PplRecord[], runId: string): RunRef | undefined => {
+  const { self, others } = sameSuiteAndAgent(rows, runId);
+  if (!self) return undefined;
+  return others.filter((r) => r.started < self.started).sort((a, b) => b.started - a.started)[0];
 };
+
+/** The number of other runs of a run's suite and agent in `buildRunsLookupQuery` rows. */
+export const otherRunsOfSuite = (rows: PplRecord[], runId: string): number =>
+  sameSuiteAndAgent(rows, runId).others.length;
 
 // ---------------------------------------------------------------------- Run names
 

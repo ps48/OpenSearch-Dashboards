@@ -265,22 +265,13 @@ describe('evaluation PPL', () => {
   });
 
   it('Run: the runs in the range, to find the run before', () => {
-    // Every run, by agent too (the Eval runs tab's compatible runs), latest first.
-    expect(buildRunsLookupQuery(I)).toBe(
-      [
-        ...BASE,
-        'where isnotnull(`attributes.test.suite.run.id`)',
-        'stats min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.test.suite.run.id`',
-        'sort - started',
-        'head 10000',
-      ].join(' | ')
-    );
-    // One suite's runs, latest first: the cap drops the oldest runs.
+    // One suite's runs by agent (only the same agent's run is the run before), latest first:
+    // the cap drops the oldest runs.
     expect(buildRunsLookupQuery(I, "it's")).toBe(
       [
         ...BASE,
         "where `attributes.test.suite.name` = 'it\\'s'",
-        'stats min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.test.suite.run.id`',
+        'stats min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.test.suite.run.id`',
         'sort - started',
         'head 10000',
       ].join(' | ')

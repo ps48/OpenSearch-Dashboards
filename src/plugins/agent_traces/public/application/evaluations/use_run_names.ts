@@ -4,6 +4,7 @@
  */
 
 import { useMemo } from 'react';
+import { TimeRange } from '../../../../data/common';
 import { RunName, runNamesOf } from './eval_model';
 import { RUN_NAMES_LIMIT, buildRunNamesQuery } from './eval_ppl';
 import { useEvalContext } from './eval_context';
@@ -14,15 +15,16 @@ const NONE = new Map<string, RunName>();
 /**
  * The optional names and descriptions of runs (the first `RUN_NAMES_LIMIT` ids), read from one
  * result document per run. Runs without a name (or before it answers, or on an error) are
- * missing from the map: screens fall back to the short run id.
+ * missing from the map: screens fall back to the short run id. `range`: where to look (the
+ * screen's range by default); the run page passes one that covers the run before it too.
  */
-export const useRunNames = (runIds: string[]): Map<string, RunName> => {
+export const useRunNames = (runIds: string[], range?: TimeRange): Map<string, RunName> => {
   const { dataset, index, timeRange, refreshKey } = useEvalContext();
   const key = runIds.slice(0, RUN_NAMES_LIMIT).join('\n');
   const query = useMemo(
     () => (key ? buildRunNamesQuery(index, key.split('\n')) : undefined),
     [index, key]
   );
-  const { rows } = usePplRows(dataset, query, timeRange, refreshKey);
+  const { rows } = usePplRows(dataset, query, range ?? timeRange, refreshKey);
   return useMemo(() => (rows.length ? runNamesOf(rows) : NONE), [rows]);
 };

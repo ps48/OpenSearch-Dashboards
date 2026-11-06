@@ -5,7 +5,6 @@
 
 import {
   isCompatibleRun,
-  runRefsOf,
   runNamesOf,
   withRunNames,
   agentEvaluations,
@@ -406,6 +405,22 @@ describe('suites and runs', () => {
     expect(runBefore(lookup, 'missing')).toBeUndefined();
   });
 
+  it('finds the run before of the same agent only', () => {
+    const lookup = [
+      { started: '2026-10-26 07:00:00', [SUITE]: 'g', [A]: 'tp', [RUN]: 'r0' },
+      { started: '2026-10-27 07:00:00', [SUITE]: 'g', [A]: 'bot', [RUN]: 'b1' },
+      { started: '2026-10-28 07:00:00', [SUITE]: 'g', [A]: 'tp', [RUN]: 'r2' },
+      { started: '2026-10-28 08:00:00', [SUITE]: 'g', [RUN]: 'n1' },
+      { started: '2026-10-28 09:00:00', [SUITE]: 'g', [RUN]: 'n2' },
+    ];
+    // The other agent's later run is skipped; runs without an agent name pair with each other.
+    expect(runBefore(lookup, 'r2')?.runId).toBe('r0');
+    expect(runBefore(lookup, 'b1')).toBeUndefined();
+    expect(runBefore(lookup, 'n2')?.runId).toBe('n1');
+    expect(otherRunsOfSuite(lookup, 'r2')).toBe(1);
+    expect(otherRunsOfSuite(lookup, 'b1')).toBe(0);
+  });
+
   it('reads cases and cases passed per run', () => {
     const m = runCases([
       { [RUN]: 'r1', cases: 12, passed: 7 },
@@ -617,19 +632,5 @@ describe('Eval runs compatibility', () => {
     // Runs without an agent name compare with each other; runs without a suite do not.
     expect(isCompatibleRun(run('a', 'g'), run('b', 'g'))).toBe(true);
     expect(isCompatibleRun(run('a'), run('b'))).toBe(false);
-  });
-
-  it('reads the runs lookup rows, agent included', () => {
-    expect(
-      runRefsOf([
-        {
-          started: '2026-10-28 07:00:00',
-          'attributes.test.suite.run.id': 'r1',
-          'attributes.test.suite.name': 'g',
-          'attributes.gen_ai.agent.name': 'tp',
-        },
-        { started: '2026-10-28 07:00:00' },
-      ])
-    ).toEqual([{ runId: 'r1', suite: 'g', agent: 'tp', started: Date.UTC(2026, 9, 28, 7) }]);
   });
 });

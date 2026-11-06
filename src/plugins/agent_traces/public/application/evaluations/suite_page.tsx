@@ -83,14 +83,16 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
     refreshKey
   );
   const cases = useMemo(() => runCases(casesQuery.rows), [casesQuery.rows]);
-  const plainRuns = useMemo(() => suiteRuns(rows), [rows]);
+  // The page's suite on each run (the query filters on it, it does not group by it): the
+  // selection pairs runs of the same suite.
+  const plainRuns = useMemo(() => suiteRuns(rows).map((r) => ({ ...r, suite })), [rows, suite]);
   // The latest runs first: the names are read for the most recent ones.
   const names = useRunNames(useMemo(() => plainRuns.map((r) => r.runId).reverse(), [plainRuns]));
   const runs: Array<RunRow & RunName> = useMemo(
     () => withRunNames(plainRuns, names),
     [plainRuns, names]
   );
-  const sel = useRunSelection<RunRow & RunName>();
+  const sel = useRunSelection<RunRow & RunName>(loaded ? runs : undefined);
   const agent = runs.map((r) => r.agent).find(Boolean);
 
   const columns: Array<EuiBasicTableColumn<RunRow & RunName>> = [
