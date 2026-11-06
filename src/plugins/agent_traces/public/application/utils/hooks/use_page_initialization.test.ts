@@ -31,8 +31,9 @@ const mockServices = {
     recentlyAccessed: { add: jest.fn() },
   },
   data: { query: { queryString: {} } },
-  osdUrlStateStorage: { get: () => undefined },
+  osdUrlStateStorage: { get: (key: string) => (key === '_q' ? mockUrlQuery : undefined) },
 };
+let mockUrlQuery: Record<string, unknown> | undefined;
 jest.mock('../../../../../opensearch_dashboards_react/public', () => ({
   ...jest.requireActual('../../../../../opensearch_dashboards_react/public'),
   useOpenSearchDashboards: () => ({ services: mockServices }),
@@ -47,6 +48,12 @@ const savedSearch = (query: string, activeTab: string) => ({
   },
 });
 
+const queryStates = () =>
+  mockDispatch.mock.calls
+    .map(([action]: any) => action)
+    .filter((action) => action?.type?.endsWith('setQueryState'))
+    .map((action) => action.payload.query);
+
 const activeTabs = () =>
   mockDispatch.mock.calls
     .map(([action]: any) => action)
@@ -57,6 +64,23 @@ describe('useInitPage', () => {
   beforeEach(() => {
     mockDispatch.mockClear();
     mockSetVisConfig.mockClear();
+    mockUrlQuery = undefined;
+  });
+
+  it('loads the saved query over the empty one the app wrote to the URL, and its tab', () => {
+    // Opening #/view/<id>: the app has written its default (empty) query to the URL already.
+    mockUrlQuery = { query: '', language: 'PPL' };
+    mockSaved = savedSearch('source = spans | stats count() by serviceName', 'traces');
+    renderHook(() => useInitPage());
+    expect(queryStates()).toEqual(['source = spans | stats count() by serviceName']);
+    expect(activeTabs()).toEqual([AGENT_TRACES_VISUALIZATION_TAB_ID]);
+  });
+
+  it('keeps a query the URL carries (a shared or reloaded edit)', () => {
+    mockUrlQuery = { query: 'source = spans | head 5', language: 'PPL' };
+    mockSaved = savedSearch('source = spans | stats count() by serviceName', 'traces');
+    renderHook(() => useInitPage());
+    expect(queryStates()).toEqual(['source = spans | head 5']);
   });
 
   it('opens a saved search on the tab it was saved on', () => {

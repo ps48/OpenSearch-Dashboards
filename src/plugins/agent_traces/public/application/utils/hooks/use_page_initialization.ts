@@ -57,8 +57,10 @@ export const useInitPage = () => {
           const query = {
             ...queryFromSavedSearch,
             ...queryFromUrl,
+            // The URL's query wins when it has one (a shared or reloaded edit). An empty one is the
+            // default the app writes to the URL before the saved search loads: the saved query wins.
             // @ts-expect-error TS2339 TODO(ts-error): fixme
-            query: queryFromUrl.query ?? queryFromSavedSearch.query,
+            query: queryFromUrl.query || queryFromSavedSearch.query,
           };
           if (query) {
             dispatch(setQueryState(query));
