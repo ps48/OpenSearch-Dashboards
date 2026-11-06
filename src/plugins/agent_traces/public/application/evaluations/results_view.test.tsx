@@ -145,9 +145,12 @@ describe('ResultsView', () => {
     expect(ctx.setState).toHaveBeenCalledWith({ slice: undefined });
   });
 
-  it('sorts and pages on the server', () => {
-    renderWithContext(<ResultsView />);
+  it('sorts and pages on the server, the sort kept in the app state', () => {
+    const { ctx } = renderWithContext(<ResultsView />);
     fireEvent.click(screen.getAllByRole('button', { name: /^Score/ })[0]);
+    expect(ctx.setState).toHaveBeenCalledWith({
+      resultsSort: { field: 'score', direction: 'asc' },
+    });
     expect(mockPpl.queries).toContain(
       buildResultsPageQuery(
         TEST_INDEX,
@@ -165,6 +168,35 @@ describe('ResultsView', () => {
         1
       )
     );
+  });
+
+  it('opens with the stored sort', () => {
+    const ctx = testContext({
+      state: { ...testContext().state, resultsSort: { field: 'agent', direction: 'asc' } },
+    });
+    renderWithContext(<ResultsView />, ctx);
+    expect(mockPpl.queries).toContain(
+      buildResultsPageQuery(
+        TEST_INDEX,
+        EMPTY_RESULTS_FILTERS,
+        { field: 'agent', direction: 'asc' },
+        0
+      )
+    );
+  });
+
+  it('home: a titled panel with the total and what a row is; none on the agent page', () => {
+    renderWithContext(<ResultsView />);
+    const panel = screen.getByTestId('agtEvlResultsPanel');
+    expect(panel).toHaveTextContent('Eval results');
+    expect(panel).toHaveTextContent(
+      'Every evaluation result, online and offline: one row per verdict on a span, trace or session'
+    );
+  });
+
+  it('agent page: no panel of its own (the page has its header)', () => {
+    renderWithContext(<ResultsView lockAgent="tp" />);
+    expect(screen.queryByTestId('agtEvlResultsPanel')).not.toBeInTheDocument();
   });
 
   it('opens a result on a row click', () => {

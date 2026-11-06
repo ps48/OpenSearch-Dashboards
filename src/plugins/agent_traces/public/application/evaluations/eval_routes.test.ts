@@ -90,4 +90,17 @@ describe('evaluation routes', () => {
     expect(normalizeAppState({ slice: { from: 0, to: 9e15 } }).slice).toBeUndefined();
     expect(normalizeAppState({ slice: { from: NaN, to: 1 } }).slice).toBeUndefined();
   });
+
+  it('keeps a valid Results sort, else none', () => {
+    expect(
+      normalizeAppState({ resultsSort: { field: 'score', direction: 'asc' } }).resultsSort
+    ).toEqual({ field: 'score', direction: 'asc' });
+    expect(
+      normalizeAppState({ resultsSort: { field: 'bogus', direction: 'asc' } }).resultsSort
+    ).toBeUndefined();
+    expect(
+      normalizeAppState({ resultsSort: { field: 'time', direction: 'up' } }).resultsSort
+    ).toBeUndefined();
+    expect(normalizeAppState({}).resultsSort).toBeUndefined();
+  });
 });

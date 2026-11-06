@@ -8,6 +8,8 @@ import {
   EMPTY_RUNS_FILTERS,
   EvalSource,
   ResultsFilters,
+  ResultsSort,
+  ResultsSortField,
   RunsFilters,
 } from './eval_ppl';
 
@@ -116,6 +118,8 @@ export interface EvalAppState {
   agentSource: EvalSource;
   /** Results view filters (the agent page locks the agent itself). */
   results: Omit<ResultsFilters, 'lockAgent'>;
+  /** Results view sort (the server sorts), kept like the filters. Default: newest first. */
+  resultsSort?: ResultsSort;
   /** Eval runs tab filters. */
   runs: RunsFilters;
   /** Agent page: the two versions compared (B against A), remembered per agent. */
@@ -147,6 +151,16 @@ const source = (v: unknown): EvalSource =>
 const strings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
 const optString = (v: unknown) => (typeof v === 'string' ? v : undefined);
+
+const SORT_FIELDS: ResultsSortField[] = ['time', 'agent', 'evaluation', 'score'];
+const resultsSort = (v: unknown): ResultsSort | undefined => {
+  if (!v || typeof v !== 'object') return undefined;
+  const { field, direction } = v as Record<string, unknown>;
+  return SORT_FIELDS.includes(field as ResultsSortField) &&
+    (direction === 'asc' || direction === 'desc')
+    ? { field: field as ResultsSortField, direction }
+    : undefined;
+};
 
 const versionPicks = (v: unknown): Record<string, VersionPick> | undefined => {
   if (!v || typeof v !== 'object') return undefined;
@@ -189,6 +203,7 @@ export const normalizeAppState = (raw: unknown): EvalAppState => {
       source: source(res.source),
       q: typeof res.q === 'string' ? res.q : '',
     },
+    resultsSort: resultsSort(r.resultsSort),
     runs: {
       agents: strings(runs.agents),
       suites: strings(runs.suites),

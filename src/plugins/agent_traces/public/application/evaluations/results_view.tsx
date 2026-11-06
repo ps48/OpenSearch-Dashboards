@@ -24,6 +24,7 @@ import {
   EuiSelectableOption,
   EuiSpacer,
   EuiText,
+  EuiTitle,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { TimeRange } from '../../../../data/common';
@@ -291,7 +292,12 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
   const update = (patch: Partial<ResultsFilters>) =>
     setState({ results: { ...stored, q, ...patch } });
 
-  const [sort, setSort] = useState<ResultsSort>(DEFAULT_RESULTS_SORT);
+  // The sort is kept in the app state (the URL), so the tab comes back sorted as it was left.
+  const [sort, setSortValue] = useState<ResultsSort>(state.resultsSort ?? DEFAULT_RESULTS_SORT);
+  const setSort = (next: ResultsSort) => {
+    setSortValue(next);
+    setState({ resultsSort: next });
+  };
   const [pageIndex, setPageIndex] = useState(0);
   const filtersKey = JSON.stringify([filters, timeRange]);
   // New filters or a new range go back to page 1; Refresh (which resolves a relative range
@@ -434,7 +440,59 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
     if (p) setPageIndex(p.index);
   };
 
-  return (
+  const table = page.error ? (
+    <QueryErrorCallout message={page.error} />
+  ) : (
+    <EuiBasicTable<EvalResult>
+      items={results}
+      itemId="id"
+      columns={columns}
+      loading={page.loading || count.loading}
+      sorting={{
+        sort: { field: COLUMN_OF_SORT[sort.field], direction: sort.direction },
+      }}
+      pagination={{
+        pageIndex,
+        pageSize: RESULTS_PAGE_SIZE,
+        totalItemCount: total,
+        pageSizeOptions: [RESULTS_PAGE_SIZE],
+        hidePerPageOptions: true,
+      }}
+      onChange={onTableChange}
+      rowProps={(r: EvalResult) => ({
+        className: 'agtEvlClickRow',
+        onClick: () => openResult(r),
+      })}
+      noItemsMessage={
+        page.loaded && !page.loading ? (
+          <span data-test-subj="agtEvlResultsEmpty">
+            {i18n.translate('agentTraces.evals.results.empty', {
+              defaultMessage: 'No results match these filters in the range.',
+            })}
+            {(chips.length > 0 || !!filters.q) && (
+              <>
+                {' '}
+                <EuiLink
+                  onClick={() => {
+                    setSearch('');
+                    update({ agents: [], names: [], versions: [], verdicts: [], q: '' });
+                  }}
+                  data-test-subj="agtEvlResultsEmptyClear"
+                >
+                  {i18n.translate('agentTraces.evals.results.clearFilters', {
+                    defaultMessage: 'Clear filters',
+                  })}
+                </EuiLink>
+              </>
+            )}
+          </span>
+        ) : undefined
+      }
+      data-test-subj="agtEvlResultsTable"
+    />
+  );
+
+  const body = (
     <>
       <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false} wrap>
         <EuiFlexItem grow={false}>
@@ -541,59 +599,39 @@ export const ResultsView: React.FC<{ lockAgent?: string }> = ({ lockAgent }) => 
           <EuiSpacer size="s" />
         </>
       )}
-      {page.error ? (
-        <QueryErrorCallout message={page.error} />
-      ) : (
+      {lockAgent && !page.error ? (
         <EuiPanel paddingSize="s" hasShadow={false} hasBorder>
-          <EuiBasicTable<EvalResult>
-            items={results}
-            itemId="id"
-            columns={columns}
-            loading={page.loading || count.loading}
-            sorting={{
-              sort: { field: COLUMN_OF_SORT[sort.field], direction: sort.direction },
-            }}
-            pagination={{
-              pageIndex,
-              pageSize: RESULTS_PAGE_SIZE,
-              totalItemCount: total,
-              pageSizeOptions: [RESULTS_PAGE_SIZE],
-              hidePerPageOptions: true,
-            }}
-            onChange={onTableChange}
-            rowProps={(r: EvalResult) => ({
-              className: 'agtEvlClickRow',
-              onClick: () => openResult(r),
-            })}
-            noItemsMessage={
-              page.loaded && !page.loading ? (
-                <span data-test-subj="agtEvlResultsEmpty">
-                  {i18n.translate('agentTraces.evals.results.empty', {
-                    defaultMessage: 'No results match these filters in the range.',
-                  })}
-                  {(chips.length > 0 || !!filters.q) && (
-                    <>
-                      {' '}
-                      <EuiLink
-                        onClick={() => {
-                          setSearch('');
-                          update({ agents: [], names: [], versions: [], verdicts: [], q: '' });
-                        }}
-                        data-test-subj="agtEvlResultsEmptyClear"
-                      >
-                        {i18n.translate('agentTraces.evals.results.clearFilters', {
-                          defaultMessage: 'Clear filters',
-                        })}
-                      </EuiLink>
-                    </>
-                  )}
-                </span>
-              ) : undefined
-            }
-            data-test-subj="agtEvlResultsTable"
-          />
+          {table}
         </EuiPanel>
+      ) : (
+        table
       )}
     </>
+  );
+
+  // The agent page's Results tab sits under the page's own header; the home tab has its own.
+  if (lockAgent) return body;
+  return (
+    <EuiPanel paddingSize="m" hasShadow={false} hasBorder data-test-subj="agtEvlResultsPanel">
+      <EuiTitle size="s">
+        <h3>
+          {i18n.translate('agentTraces.evals.results.title', { defaultMessage: 'Eval results' })}
+          {count.loaded && !count.error && (
+            <span className="agtEvlDim"> ({total.toLocaleString()})</span>
+          )}
+        </h3>
+      </EuiTitle>
+      <EuiSpacer size="xs" />
+      <EuiText size="s" color="subdued">
+        <p>
+          {i18n.translate('agentTraces.evals.results.description', {
+            defaultMessage:
+              'Every evaluation result, online and offline: one row per verdict on a span, trace or session, newest first. Click a row to see the result.',
+          })}
+        </p>
+      </EuiText>
+      <EuiSpacer size="m" />
+      {body}
+    </EuiPanel>
   );
 };
