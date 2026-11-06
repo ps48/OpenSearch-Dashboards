@@ -95,6 +95,14 @@ describe('Agent Traces evaluation marks', () => {
     expect(onOpen).toHaveBeenCalled();
   });
 
+  it('an agent-run row says how many of the trace results sit on no run', () => {
+    const onOpen = jest.fn();
+    wrap(<EvalTallyCell tally={undefined} outsideRuns={2} onOpen={onOpen} />);
+    expect(screen.getByTestId('agentTracesEvalOutsideRuns').textContent).toBe('+2 on trace');
+    fireEvent.click(screen.getByTestId('agentTracesEvalTally'));
+    expect(onOpen).toHaveBeenCalled();
+  });
+
   it('the Trace Map outlines a span with a failed result', () => {
     expect(flowEvalDecoration([result('a', 'fail', 's1')])?.className).toContain('--fail');
     expect(flowEvalDecoration([result('a', 'pass', 's1')])?.className).toBe('agtEvlFlowNode');

@@ -58,9 +58,12 @@ const AgentTracesEvaluationsCell: React.FC<{
       : value.splitTraceIds.has(traceRow.traceId)
         ? value.byRunSpanId.get(traceRow.spanId)
         : value.byTraceId.get(traceRow.traceId);
+  const outsideRuns =
+    value.mode === 'trace' ? value.outsideRunsByTraceId.get(traceRow.traceId) : undefined;
   return (
     <EvalTallyCell
       tally={tally}
+      outsideRuns={outsideRuns}
       onOpen={
         ctx?.onRowClick ? () => ctx.onRowClick?.(hitId, { initialTab: 'evaluations' }) : undefined
       }

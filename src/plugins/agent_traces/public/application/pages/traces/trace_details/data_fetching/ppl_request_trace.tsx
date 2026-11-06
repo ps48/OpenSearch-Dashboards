@@ -23,6 +23,9 @@ export interface PPLSpanQueryParams {
   limit?: number;
 }
 
+/** Spans `fetchSpanParents` reads by default; more means the answer was cut. */
+export const SPAN_PARENTS_LIMIT = 10000;
+
 export class TracePPLService extends PPLService {
   constructor(dataService: DataPublicPluginStart) {
     super(dataService);
@@ -74,20 +77,21 @@ export class TracePPLService extends PPLService {
 
   /**
    * traceId, spanId and parentSpanId of the spans of the given traces, in one query and without
-   * a time bound (like `fetchTraceSpans`).
+   * a time bound (like `fetchTraceSpans`). Reads up to `limit + 1` spans, so a caller can tell
+   * a complete answer (`limit` or fewer) from a truncated one.
    */
   async fetchSpanParents(
     traceIds: string[],
     dataset: Dataset,
     signal?: AbortSignal,
-    limit = 10000
+    limit = SPAN_PARENTS_LIMIT
   ): Promise<any> {
     if (traceIds.length === 0 || !dataset) {
       throw new Error('Missing required parameters: traceIds and dataset');
     }
     const pplQuery = `source = ${dataset.title} | where traceId in (${traceIds
       .map(escapePPLValue)
-      .join(', ')}) | fields traceId, spanId, parentSpanId | head ${limit}`;
+      .join(', ')}) | fields traceId, spanId, parentSpanId | head ${limit + 1}`;
     const datasetWithoutTime = {
       id: dataset.id,
       title: dataset.title,

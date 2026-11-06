@@ -9,7 +9,10 @@ import { OpenSearchDashboardsContextProvider } from '../../../../../opensearch_d
 import {
   RowEvaluationsProvider,
   TRACE_IDS_PER_QUERY,
+  allRows,
   chunkTraceIds,
+  completeSpanParents,
+  outsideRunsOf,
   settledRows,
   splitTraceIdsOf,
   tallyByRun,
@@ -158,6 +161,8 @@ describe('RowEvaluationsProvider', () => {
     expect(fetchSpanParents.mock.calls[0][0]).toEqual(['tp']);
     expect(seen?.byRunSpanId.get('a')).toMatchObject({ pass: 1, fail: 2 });
     expect(seen?.byRunSpanId.get('b')).toMatchObject({ pass: 3, fail: 0 });
+    // The 5 results on the shared root count toward neither run; the rows say so.
+    expect(seen?.outsideRunsByTraceId.get('tp')).toBe(5);
     // A trace listed once keeps its whole-trace tally.
     expect(seen?.splitTraceIds.has('ts')).toBe(false);
     expect(seen?.byTraceId.get('ts')).toMatchObject({ pass: 1 });
@@ -173,6 +178,62 @@ describe('RowEvaluationsProvider', () => {
     await waitFor(() => expect(seen?.byTraceId.get('tp')).toBeDefined());
     expect(seen?.splitTraceIds.size).toBe(0);
     expect(seen?.byTraceId.get('tp')).toMatchObject({ pass: 9, fail: 2 });
+  });
+
+  it('falls back to the whole-trace tally when one per-span chunk fails', async () => {
+    const runs = ids(TRACE_IDS_PER_QUERY + 1).flatMap((traceId) => [
+      { traceId, spanId: 'a' },
+      { traceId, spanId: 'b' },
+    ]);
+    let spanCalls = 0;
+    mockRunPpl.mockImplementation(async (_data, _dataset, query: string) => {
+      if (!query.includes('`spanId`')) return [{ traceId: 't0000', verdict: 'pass', n: 2 }];
+      spanCalls += 1;
+      if (spanCalls === 2) throw new Error('throttled');
+      return [{ traceId: 't0000', spanId: 'a', verdict: 'pass', n: 1 }];
+    });
+    const fetchSpanParents = jest.fn(async (traceIds: string[]) =>
+      traceIds.flatMap((traceId) => [
+        { traceId, spanId: 'a', parentSpanId: '' },
+        { traceId, spanId: 'b', parentSpanId: '' },
+      ])
+    );
+    const { services } = makeServices(true);
+    renderWithRuns(services, runs, fetchSpanParents);
+    await waitFor(() => expect(spanCalls).toBe(2));
+    await waitFor(() => expect(seen?.byTraceId.get('t0000')).toBeDefined());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(seen?.splitTraceIds.size).toBe(0);
+    // The parents are read per chunk of traces too.
+    expect(fetchSpanParents).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not repeat the per-trace lookup when only the listed runs change', async () => {
+    mockRunPpl.mockImplementation(parallelTallies);
+    const fetchSpanParents = jest.fn(async () => PARALLEL_PARENTS);
+    const { services } = makeServices(true);
+    const { rerender } = renderWithRuns(services, PARALLEL_RUNS, fetchSpanParents);
+    await waitFor(() => expect(seen?.splitTraceIds.has('tp')).toBe(true));
+    const traceQueries = () =>
+      mockRunPpl.mock.calls.filter(([, , q]) => !String(q).includes('`spanId`')).length;
+    expect(traceQueries()).toBe(1);
+    // A nested run dropped from the rows (same traces): only the per-run lookup runs again.
+    const fewer = [...PARALLEL_RUNS, { traceId: 'tp', spanId: 'a1' }];
+    rerender(
+      <OpenSearchDashboardsContextProvider services={services}>
+        <RowEvaluationsProvider
+          traceIds={fewer.map((r) => r.traceId)}
+          mode="trace"
+          agentRuns={fewer}
+          fetchSpanParents={fetchSpanParents}
+        >
+          <Probe />
+        </RowEvaluationsProvider>
+      </OpenSearchDashboardsContextProvider>
+    );
+    await waitFor(() => expect(seen?.byRunSpanId.get('a1')).toBeDefined());
+    expect(traceQueries()).toBe(1);
+    expect(fetchSpanParents).toHaveBeenCalledTimes(2);
   });
 
   it('reads no span parents when every trace is listed once', async () => {
@@ -247,6 +308,40 @@ describe('settledRows', () => {
 });
 
 describe('chunkTraceIds', () => {
+  it('allRows rejects when any chunk failed', async () => {
+    await expect(
+      allRows([Promise.resolve([{ n: 1 }]), Promise.reject(new Error('x'))])
+    ).rejects.toThrow('x');
+    await expect(
+      allRows([Promise.resolve([{ n: 1 }]), Promise.resolve([{ n: 2 }])])
+    ).resolves.toEqual([{ n: 1 }, { n: 2 }]);
+  });
+
+  it('completeSpanParents rejects a truncated or empty answer', () => {
+    const span = { traceId: 't', spanId: 's', parentSpanId: 'p' };
+    expect(() => completeSpanParents([], 2)).toThrow();
+    expect(() => completeSpanParents([span, span, span], 2)).toThrow();
+    expect(completeSpanParents([{ traceId: 't', spanId: 's' }], 2)).toEqual([
+      { traceId: 't', spanId: 's', parentSpanId: '' },
+    ]);
+  });
+
+  it('outsideRunsOf counts the results of a split trace that sit on no run', () => {
+    const byTrace = new Map([['tp', { pass: 9, fail: 2, error: 0, scored: 0, n: 11 }]]);
+    const byRun = new Map([
+      ['a', { pass: 1, fail: 2, error: 0, scored: 0, n: 3 }],
+      ['b', { pass: 3, fail: 0, error: 0, scored: 0, n: 3 }],
+    ]);
+    const runs = [
+      { traceId: 'tp', spanId: 'a' },
+      { traceId: 'tp', spanId: 'b' },
+    ];
+    expect(outsideRunsOf(byTrace, runs, byRun).get('tp')).toBe(5);
+    expect(outsideRunsOf(byTrace, runs, new Map([['a', byTrace.get('tp')!]])).has('tp')).toBe(
+      false
+    );
+  });
+
   it('dedups, sorts and chunks the ids', () => {
     expect(chunkTraceIds(['b', 'a', 'b', '', 'c'], 2)).toEqual([['a', 'b'], ['c']]);
     expect(chunkTraceIds([])).toEqual([]);

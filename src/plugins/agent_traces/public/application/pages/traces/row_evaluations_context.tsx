@@ -3,7 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useOpenSearchDashboards } from '../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../types';
 import {
@@ -33,6 +41,11 @@ export interface RowEvaluations {
   splitTraceIds: Set<string>;
   /** Tally per agent-run row of a split trace, by the row's span id: the results in its subtree. */
   byRunSpanId: Map<string, Tally>;
+  /**
+   * Per split trace, its results that count toward none of its runs (on the trace, or on the
+   * shared root), so the run rows can say they exist.
+   */
+  outsideRunsByTraceId: Map<string, number>;
 }
 
 /** A level-0 row of the Traces table: an agent run, or the whole trace. */
@@ -54,6 +67,7 @@ const EMPTY: RowEvaluations = {
   mode: 'trace',
   splitTraceIds: new Set(),
   byRunSpanId: new Map(),
+  outsideRunsByTraceId: new Map(),
 };
 
 /** The traces listed as more than one agent-run row. */
@@ -110,6 +124,44 @@ export const tallyByRun = (
   return byRun;
 };
 
+/**
+ * Per split trace, how many of its results (`byTraceId`) count toward none of its runs
+ * (`byRun`). Traces where every result sits under a run are left out.
+ */
+export const outsideRunsOf = (
+  byTraceId: Map<string, Tally>,
+  runs: AgentRunRow[],
+  byRun: Map<string, Tally>
+): Map<string, number> => {
+  const placed = new Map<string, number>();
+  runs.forEach(({ traceId, spanId }) =>
+    placed.set(traceId, (placed.get(traceId) ?? 0) + (byRun.get(spanId)?.n ?? 0))
+  );
+  const outside = new Map<string, number>();
+  placed.forEach((n, traceId) => {
+    const rest = (byTraceId.get(traceId)?.n ?? 0) - n;
+    if (rest > 0) outside.set(traceId, rest);
+  });
+  return outside;
+};
+
+/**
+ * The span parents of a `fetchSpanParents` answer read with `head limit + 1`, or a rejection when
+ * the answer was cut (more than `limit` spans) or empty (the traces' spans are not readable).
+ */
+export const completeSpanParents = (
+  spans: Array<{ traceId: string; spanId: string; parentSpanId?: string }>,
+  limit: number
+): SpanParent[] => {
+  if (spans.length === 0) throw new Error('No span parents');
+  if (spans.length > limit) throw new Error('Span parents truncated');
+  return spans.map(({ traceId, spanId, parentSpanId }) => ({
+    traceId,
+    spanId,
+    parentSpanId: parentSpanId ?? '',
+  }));
+};
+
 const RowEvaluationsContext = createContext<RowEvaluations>(EMPTY);
 
 export const useRowEvaluations = () => useContext(RowEvaluationsContext);
@@ -128,6 +180,10 @@ export const chunkTraceIds = (ids: string[], size = TRACE_IDS_PER_QUERY): string
   for (let i = 0; i < distinct.length; i += size) chunks.push(distinct.slice(i, i + size));
   return chunks;
 };
+
+/** The rows of every chunk, or a rejection when any chunk failed (nothing partial). */
+export const allRows = async (chunks: Array<Promise<PplRecord[]>>): Promise<PplRecord[]> =>
+  (await Promise.all(chunks)).flat();
 
 /**
  * The rows of the chunks that answered: one failed chunk (a throttle, a shard failure) does not
@@ -171,8 +227,11 @@ export const indexRowTallies = (
  *
  * In trace mode, a trace listed as several agent-run rows (`agentRuns`) gets one tally per run:
  * its results are counted by span and placed under the run each span descends from, using the
- * spans' parents (`fetchSpanParents`, one query per chunk of such traces). If that lookup fails,
- * those rows fall back to the whole trace's tally.
+ * spans' parents (`fetchSpanParents`, one query per chunk of such traces). These lookups run in
+ * their own effect, so a change in the listed runs does not repeat the per-trace lookup. If any
+ * of them fails (or `fetchSpanParents` rejects because the parents are incomplete), every split
+ * row falls back to the whole trace's tally: per-run tallies are never built from part of the
+ * results or part of the tree.
  */
 export const RowEvaluationsProvider: React.FC<{
   traceIds: string[];
@@ -183,7 +242,8 @@ export const RowEvaluationsProvider: React.FC<{
   const { services } = useOpenSearchDashboards<AgentTracesServices>();
   const index = useEvalsIndexPattern();
   const dataSource = useEvalsDataSource();
-  const [value, setValue] = useState<RowEvaluations>(EMPTY);
+  const [traceTallies, setTraceTallies] = useState<RowEvaluations>(EMPTY);
+  const [runTallies, setRunTallies] = useState<{ key: string; byRun: Map<string, Tally> }>();
   const key = useMemo(() => Array.from(new Set(traceIds)).sort().join(','), [traceIds]);
   // The runs of split traces only: other traces' rows do not change the lookups.
   const splitRuns = useMemo(() => {
@@ -202,50 +262,68 @@ export const RowEvaluationsProvider: React.FC<{
   const fetchParentsRef = useRef(fetchSpanParents);
   fetchParentsRef.current = fetchSpanParents;
 
+  const rangeOf = useCallback(() => {
+    const timefilter = services.data.query.timefilter.timefilter;
+    const from = timefilter.calculateBounds(timefilter.getTime()).min?.toISOString() ?? 'now-7d';
+    return { from, to: new Date().toISOString() };
+  }, [services?.data]);
+  const tally = useCallback(
+    (ids: string[], bySpan: boolean, signal: AbortSignal) =>
+      runPpl(
+        services.data,
+        evalsDataset(index ?? '', dataSource),
+        buildTracesTallyQuery(index ?? '', ids, bySpan),
+        rangeOf(),
+        signal
+      ),
+    [services?.data, index, dataSource, rangeOf]
+  );
+
+  // The per-trace (or per-span) tallies of the listed rows.
   useEffect(() => {
     if (!key || !services?.data || !index) {
-      setValue({ ...EMPTY, mode });
+      setTraceTallies({ ...EMPTY, mode });
       return;
     }
     const controller = new AbortController();
-    const timefilter = services.data.query.timefilter.timefilter;
-    const from = timefilter.calculateBounds(timefilter.getTime()).min?.toISOString() ?? 'now-7d';
-    const range = { from, to: new Date().toISOString() };
-    const tally = (ids: string[], bySpan: boolean) =>
-      runPpl(
-        services.data,
-        evalsDataset(index, dataSource),
-        buildTracesTallyQuery(index, ids, bySpan),
-        range,
-        controller.signal
-      );
+    settledRows(
+      chunkTraceIds(key.split(',')).map((ids) => tally(ids, mode === 'span', controller.signal))
+    )
+      .then((rows) => !controller.signal.aborted && setTraceTallies(indexRowTallies(rows, mode)))
+      .catch(() => !controller.signal.aborted && setTraceTallies({ ...EMPTY, mode }));
+    return () => controller.abort();
+  }, [key, mode, services?.data, index, tally]);
+
+  // The per-run tallies of split traces.
+  useEffect(() => {
+    setRunTallies(undefined);
     const fetchParents = fetchParentsRef.current;
-    const split = fetchParents ? splitTraceIdsOf(splitRuns) : new Set<string>();
-    const runTallies: Promise<Map<string, Tally> | undefined> =
-      split.size > 0 && fetchParents
-        ? Promise.all([
-            settledRows(chunkTraceIds(Array.from(split)).map((ids) => tally(ids, true))),
-            fetchParents(Array.from(split), controller.signal),
-          ])
-            .then(([rows, parents]) => tallyByRun(rows, splitRuns, parents))
-            .catch(() => undefined)
-        : Promise.resolve(undefined);
+    if (!splitKey || !fetchParents || !services?.data || !index) return;
+    const controller = new AbortController();
+    const chunks = chunkTraceIds(splitRuns.map((r) => r.traceId));
     Promise.all([
-      settledRows(chunkTraceIds(key.split(',')).map((ids) => tally(ids, mode === 'span'))),
-      runTallies,
+      allRows(chunks.map((ids) => tally(ids, true, controller.signal))),
+      Promise.all(chunks.map((ids) => fetchParents(ids, controller.signal))),
     ])
-      .then(([rows, byRun]) => {
+      .then(([rows, parents]) => {
         if (controller.signal.aborted) return;
-        setValue({
-          ...indexRowTallies(rows, mode),
-          ...(byRun ? { splitTraceIds: split, byRunSpanId: byRun } : {}),
-        });
+        setRunTallies({ key: splitKey, byRun: tallyByRun(rows, splitRuns, parents.flat()) });
       })
-      .catch(() => !controller.signal.aborted && setValue({ ...EMPTY, mode }));
+      .catch(() => undefined);
     return () => controller.abort();
     // splitRuns is read through splitKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, mode, services?.data, index, dataSource, splitKey]);
+  }, [splitKey, services?.data, index, tally]);
+
+  const value = useMemo<RowEvaluations>(() => {
+    if (!runTallies || runTallies.key !== splitKey) return traceTallies;
+    return {
+      ...traceTallies,
+      splitTraceIds: splitTraceIdsOf(splitRuns),
+      byRunSpanId: runTallies.byRun,
+      outsideRunsByTraceId: outsideRunsOf(traceTallies.byTraceId, splitRuns, runTallies.byRun),
+    };
+  }, [traceTallies, runTallies, splitKey, splitRuns]);
 
   return <RowEvaluationsContext.Provider value={value}>{children}</RowEvaluationsContext.Provider>;
 };

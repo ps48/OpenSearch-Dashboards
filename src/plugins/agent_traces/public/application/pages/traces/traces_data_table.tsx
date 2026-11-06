@@ -10,7 +10,13 @@ import { AGENT_TRACES_DEFAULT_COLUMNS } from '../../../../common';
 import { DocViewFilterFn, OpenSearchSearchHit } from '../../../types/doc_views_types';
 import { TraceExpansionProvider, RowMeta } from './trace_expansion_context';
 import { useTraceFlyout } from './flyout/trace_flyout_context';
-import { AgentRunRow, RowEvaluationsProvider, SpanParent } from './row_evaluations_context';
+import {
+  AgentRunRow,
+  RowEvaluationsProvider,
+  SpanParent,
+  completeSpanParents,
+} from './row_evaluations_context';
+import { SPAN_PARENTS_LIMIT } from './trace_details/data_fetching/ppl_request_trace';
 import { BaseRow, LoadingState, buildFullSpanTree, hitsToAgentSpans } from './hooks/tree_utils';
 import { transformPPLDataToTraceHits } from './trace_details/traces/ppl_to_trace_hits';
 import { usePPLQueryDeps } from './hooks/use_ppl_query_deps';
@@ -99,13 +105,11 @@ export const TracesDataTable: React.FC = () => {
   );
   const fetchSpanParents = useCallback(
     async (traceIds: string[], signal: AbortSignal): Promise<SpanParent[]> => {
-      if (!pplService || !datasetParam) return [];
+      // Rejecting (not an empty or partial list) makes the rows fall back to the trace tally:
+      // a run's tally from part of the tree would silently undercount.
+      if (!pplService || !datasetParam) throw new Error('No spans dataset');
       const response = await pplService.fetchSpanParents(traceIds, datasetParam, signal);
-      return transformPPLDataToTraceHits(response).map(({ traceId, spanId, parentSpanId }) => ({
-        traceId,
-        spanId,
-        parentSpanId,
-      }));
+      return completeSpanParents(transformPPLDataToTraceHits(response), SPAN_PARENTS_LIMIT);
     },
     [pplService, datasetParam]
   );

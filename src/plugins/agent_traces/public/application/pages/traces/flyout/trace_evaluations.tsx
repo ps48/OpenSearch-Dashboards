@@ -13,6 +13,7 @@ import {
   EuiLink,
   EuiLoadingContent,
   EuiText,
+  EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
@@ -64,12 +65,47 @@ export const EvalHeaderSummary: React.FC<{ results: EvalResult[]; onClick: () =>
   </EuiLink>
 );
 
-/** A table cell's tally (Agent Traces Evaluations column); opens the trace's Evaluations. */
-export const EvalTallyCell: React.FC<{ tally?: Tally; onOpen?: () => void }> = ({
-  tally,
-  onOpen,
-}) => {
-  if (!tally || tally.n === 0) return <>{DASH}</>;
+/**
+ * A table cell's tally (Agent Traces Evaluations column); opens the trace's Evaluations.
+ * `outsideRuns`: on an agent-run row of a trace listed as several runs, how many of the trace's
+ * results count toward none of its runs (on the trace or its shared root), shown as a hint.
+ */
+export const EvalTallyCell: React.FC<{
+  tally?: Tally;
+  onOpen?: () => void;
+  outsideRuns?: number;
+}> = ({ tally, onOpen, outsideRuns }) => {
+  const hint = outsideRuns ? (
+    <EuiToolTip
+      content={i18n.translate('agentTraces.evaluations.outsideRunsTooltip', {
+        defaultMessage:
+          "{count, plural, one {# result is} other {# results are}} on the whole trace or its shared root, not on one agent run. The trace's Evaluations tab lists {count, plural, one {it} other {them}}.",
+        values: { count: outsideRuns },
+      })}
+    >
+      <EuiText
+        size="xs"
+        color="subdued"
+        className="agtEvlOutsideRuns"
+        data-test-subj="agentTracesEvalOutsideRuns"
+      >
+        {i18n.translate('agentTraces.evaluations.outsideRuns', {
+          defaultMessage: '+{count} on trace',
+          values: { count: outsideRuns },
+        })}
+      </EuiText>
+    </EuiToolTip>
+  ) : null;
+  const own = !tally || tally.n === 0 ? <>{DASH}</> : <TallyCell tally={tally} />;
+  const body = hint ? (
+    <span className="agtEvlTallyWithHint">
+      {own}
+      {hint}
+    </span>
+  ) : (
+    own
+  );
+  if ((!tally || tally.n === 0) && !hint) return body;
   return onOpen ? (
     <EuiLink
       onClick={(e: React.MouseEvent) => {
@@ -78,10 +114,10 @@ export const EvalTallyCell: React.FC<{ tally?: Tally; onOpen?: () => void }> = (
       }}
       data-test-subj="agentTracesEvalTally"
     >
-      <TallyCell tally={tally} />
+      {body}
     </EuiLink>
   ) : (
-    <TallyCell tally={tally} />
+    body
   );
 };
 

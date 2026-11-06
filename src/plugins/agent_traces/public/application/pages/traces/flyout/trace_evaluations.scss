@@ -23,3 +23,10 @@
   background: $euiColorEmptyShade;
   font-size: $euiFontSizeXS;
 }
+
+// An agent-run row's tally, then the trace's results that sit on no run.
+.agtEvlTallyWithHint {
+  display: inline-flex;
+  align-items: center;
+  gap: $euiSizeXS;
+}

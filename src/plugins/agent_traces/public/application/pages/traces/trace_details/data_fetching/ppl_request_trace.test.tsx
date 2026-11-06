@@ -268,12 +268,12 @@ describe('ppl_request_trace', () => {
   });
 
   describe('fetchSpanParents', () => {
-    it('reads the parents of all the given traces in one query, without a time field', async () => {
+    it('reads the parents of all the given traces in one query, one span past the cap, without a time field', async () => {
       const signal = new AbortController().signal;
       await tracePPLService.fetchSpanParents(['t1', 'a"b'], createMockDataset(), signal);
       expect(mockBuildPPLQueryRequest).toHaveBeenCalledWith(
         { id: 'test-dataset-id', title: 'test-index', type: 'INDEX_PATTERN' },
-        'source = test-index | where traceId in ("t1", "a\\"b") | fields traceId, spanId, parentSpanId | head 10000'
+        'source = test-index | where traceId in ("t1", "a\\"b") | fields traceId, spanId, parentSpanId | head 10001'
       );
       expect(mockExecutePPLQuery).toHaveBeenCalledWith(
         mockDataService,
