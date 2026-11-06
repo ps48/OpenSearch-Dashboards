@@ -20,7 +20,7 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { RunRef, RunRow, evalRuns, isCompatibleRun, runCases, runRefsOf } from './eval_model';
+import { RunName, RunRow, evalRuns, runCases, withRunNames } from './eval_model';
 import {
   F,
   NO_AGENT,
@@ -30,14 +30,19 @@ import {
   buildEvalRunCasesQuery,
   buildEvalRunsQuery,
   buildRunsFacetQuery,
-  buildRunsLookupQuery,
   isTruncated,
 } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { useDebounced } from './agents_home';
 import { FacetMenu } from './results_view';
-import { CompareWithMenu } from './run_page';
+import { useRunNames } from './use_run_names';
+import {
+  CompareSelectionBar,
+  RunNameCell,
+  runSelectColumn,
+  useRunSelection,
+} from './run_selection';
 import {
   DASH,
   PassRateCell,
@@ -74,10 +79,6 @@ const NO_SUITE_LABEL = i18n.translate('agentTraces.evals.runs.noSuite', {
 
 const facetValueLabel = (facet: RunsFacet, value: string) =>
   facet === 'agents' ? agentLabel(value) : value === NO_AGENT ? NO_SUITE_LABEL : value;
-
-const NO_COMPATIBLE_RUN = i18n.translate('agentTraces.evals.runs.noCompatibleRun', {
-  defaultMessage: 'No other run of this suite and agent',
-});
 
 const EmptyBody: React.FC = () => (
   <p>
@@ -127,38 +128,29 @@ export const RunsView: React.FC = () => {
     timeRange,
     refreshKey
   );
-  const runs = useMemo(() => evalRuns(runsQuery.rows), [runsQuery.rows]);
+  const plainRuns = useMemo(() => evalRuns(runsQuery.rows), [runsQuery.rows]);
+  const names = useRunNames(useMemo(() => plainRuns.map((r) => r.runId), [plainRuns]));
+  const runs: Array<RunRow & RunName> = useMemo(
+    () => withRunNames(plainRuns, names),
+    [plainRuns, names]
+  );
   const cases = useMemo(() => runCases(casesQuery.rows), [casesQuery.rows]);
   const truncated = isTruncated(runsQuery.rows);
 
-  // The runs to compare with: the table's own when it holds every run of the range, else (the
-  // table is filtered or cut off) the runs lookup over the range.
-  const needLookup = filtered || truncated;
-  const lookup = usePplRows(
-    dataset,
-    needLookup ? buildRunsLookupQuery(index) : undefined,
-    timeRange,
-    refreshKey
-  );
-  const pool: Array<Pick<RunRef, 'runId' | 'suite' | 'agent'>> = useMemo(
-    () => (needLookup ? runRefsOf(lookup.rows) : runs),
-    [needLookup, lookup.rows, runs]
-  );
-  const compatible = (r: RunRow) => pool.filter((p) => isCompatibleRun(p, r)).length;
+  const sel = useRunSelection<RunRow & RunName>();
 
-  const columns: Array<EuiBasicTableColumn<RunRow>> = [
+  const columns: Array<EuiBasicTableColumn<RunRow & RunName>> = [
+    runSelectColumn(sel),
     {
       field: 'runId',
       name: i18n.translate('agentTraces.evals.runs.run', { defaultMessage: 'Run' }),
-      render: (id: string) => (
-        <EuiLink
-          className="agtEvlMono"
-          title={id}
-          onClick={() => navigate({ page: 'run', runId: id })}
-          data-test-subj={`agtEvlRunsRunLink-${id}`}
-        >
-          {shortId(id)}
-        </EuiLink>
+      sortable: (r: RunRow & RunName) => r.name ?? shortId(r.runId),
+      render: (_: string, r: RunRow & RunName) => (
+        <RunNameCell
+          run={r}
+          onOpen={() => navigate({ page: 'run', runId: r.runId })}
+          testId={`agtEvlRunsRunLink-${r.runId}`}
+        />
       ),
     },
     {
@@ -226,28 +218,6 @@ export const RunsView: React.FC = () => {
       sortable: true,
       render: (t: number) => <span className="agtEvlDim">{formatTime(t)}</span>,
     },
-    {
-      name: '',
-      align: 'right',
-      render: (r: RunRow) => (
-        // The menu's clicks (also in its popover) do not reach the row, which opens the run.
-        <span onClick={(e) => e.stopPropagation()} role="presentation">
-          <CompareWithMenu
-            compact
-            sameAgent
-            runId={r.runId}
-            suite={r.suite}
-            agent={r.agent}
-            started={r.started}
-            others={compatible(r)}
-            unavailable={needLookup && !!lookup.error}
-            pending={needLookup && !lookup.loaded}
-            noOthersTip={NO_COMPATIBLE_RUN}
-            testId={`agtEvlRunsCompare-${r.runId}`}
-          />
-        </span>
-      ),
-    },
   ];
 
   return (
@@ -299,6 +269,12 @@ export const RunsView: React.FC = () => {
             data-test-subj="agtEvlRunsSearch"
           />
         </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <CompareSelectionBar
+            sel={sel}
+            onCompare={(runA, runB) => navigate({ page: 'compare', runA, runB })}
+          />
+        </EuiFlexItem>
       </EuiFlexGroup>
       <EuiSpacer size="m" />
       {truncated && (
@@ -317,7 +293,7 @@ export const RunsView: React.FC = () => {
       {runsQuery.error ? (
         <QueryErrorCallout message={runsQuery.error} />
       ) : (
-        <EuiInMemoryTable<RunRow>
+        <EuiInMemoryTable<RunRow & RunName>
           items={runs}
           itemId="runId"
           columns={columns}
@@ -329,7 +305,7 @@ export const RunsView: React.FC = () => {
           rowProps={(r: RunRow) => ({
             className: 'agtEvlClickRow',
             onClick: (e: React.MouseEvent) => {
-              if ((e.target as HTMLElement).closest('a,button')) return;
+              if ((e.target as HTMLElement).closest('input,label,a,button')) return;
               navigate({ page: 'run', runId: r.runId });
             },
             'data-test-subj': `agtEvlRunsRow-${r.runId}`,

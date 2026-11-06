@@ -13,8 +13,7 @@ import {
   buildEvalRunCasesQuery,
   buildEvalRunsQuery,
   buildRunsFacetQuery,
-  buildRunsLookupQuery,
-  buildSuiteRunsQuery,
+  buildRunNamesQuery,
 } from './eval_ppl';
 import { PplRecord } from './eval_model';
 
@@ -69,13 +68,6 @@ const CASES: PplRecord[] = [
   { [RUN_ID]: 'run_g_tp_2', cases: 4, passed: 4 },
 ];
 
-const lookupRow = (runId: string, suite: string, agent: string, day: number): PplRecord => ({
-  started: `2026-10-${day} 07:00:00`,
-  [RUN_ID]: runId,
-  [SUITE]: suite,
-  [AGENT]: agent,
-});
-
 const filtersOf = (patch: Partial<RunsFilters>) => ({ ...EMPTY_RUNS_FILTERS, ...patch });
 
 const contextWith = (runs: Partial<RunsFilters> = {}) =>
@@ -88,9 +80,6 @@ const answerDefault = (q: string): PplRecord[] => {
       { n: 4, [SUITE]: 'golden' },
       { n: 1, [SUITE]: 'refunds' },
     ];
-  // The suite runs the Compare menu reads when it opens: golden only.
-  if (q === buildSuiteRunsQuery(TEST_INDEX, 'golden'))
-    return RUNS.filter((r) => r[SUITE] === 'golden');
   if (q.includes('as started by')) return RUNS;
   return [];
 };
@@ -106,13 +95,20 @@ describe('RunsView', () => {
     mockPpl.answer(answerDefault);
   });
 
-  it('runs the runs and cases queries, bounded by the range, and nothing else', () => {
+  it('runs the runs, cases and run names queries, bounded by the range, and nothing else', () => {
     const ctx = contextWith();
     renderWithContext(<RunsView />, ctx);
     expect(new Set(mockPpl.queries)).toEqual(
       new Set([
         buildEvalRunsQuery(TEST_INDEX, EMPTY_RUNS_FILTERS),
         buildEvalRunCasesQuery(TEST_INDEX, EMPTY_RUNS_FILTERS),
+        buildRunNamesQuery(TEST_INDEX, [
+          'run_g_tp_3',
+          'run_g_bot_1',
+          'run_g_tp_2',
+          'run_r_tp_1',
+          'run_g_tp_1',
+        ]),
       ])
     );
     expect(mockPpl.ranges.get(buildEvalRunsQuery(TEST_INDEX, EMPTY_RUNS_FILTERS))).toEqual(
@@ -180,84 +176,80 @@ describe('RunsView', () => {
     });
   });
 
-  it('Compare lists only the other runs of the same suite and agent, newest first', () => {
-    const ctx = contextWith();
-    renderWithContext(<RunsView />, ctx);
-    // Unfiltered: compatibility comes from the table's own rows, no lookup.
-    expect(mockPpl.queries).not.toContain(buildRunsLookupQuery(TEST_INDEX));
-    fireEvent.click(screen.getByTestId('agtEvlRunsCompare-run_g_tp_2'));
-    expect(mockPpl.queries).toContain(buildSuiteRunsQuery(TEST_INDEX, 'golden'));
-    const list = screen.getByTestId('agtEvlRunsCompare-run_g_tp_2List');
-    const options = within(list)
-      .getAllByRole('option')
-      .map((o) => o.getAttribute('data-test-subj'));
-    // Not itself, not golden by bot, not refunds by tp.
-    expect(options).toEqual(['agtEvlRunOption-run_g_tp_3', 'agtEvlRunOption-run_g_tp_1']);
-    // The row does not open the run when the menu is used.
-    expect(ctx.navigate).not.toHaveBeenCalled();
-  });
+  const box = (runId: string) => screen.getByTestId(`agtEvlSelectRun-${runId}`);
 
-  it('Compare goes to the compare page, the older run as A', () => {
+  it('compares two checked runs of the same suite and agent, the older run as A', () => {
     const ctx = contextWith();
     renderWithContext(<RunsView />, ctx);
-    fireEvent.click(screen.getByTestId('agtEvlRunsCompare-run_g_tp_2'));
-    const list = screen.getByTestId('agtEvlRunsCompare-run_g_tp_2List');
-    fireEvent.click(within(list).getByTestId('agtEvlRunOption-run_g_tp_3'));
+    const button = screen.getByTestId('agtEvlCompareButton');
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent('Compare 2 runs');
+    // At most two runs: no select-all checkbox in the header.
+    expect(screen.getAllByRole('checkbox').filter((b) => b.closest('thead'))).toHaveLength(0);
+    fireEvent.click(box('run_g_tp_2'));
+    // The row does not open the run when its checkbox is used.
+    expect(ctx.navigate).not.toHaveBeenCalled();
+    // Another suite or another agent: disabled. The same suite and agent: enabled.
+    expect(box('run_r_tp_1')).toBeDisabled();
+    expect(box('run_g_bot_1')).toBeDisabled();
+    expect(box('run_g_tp_3')).toBeEnabled();
+    expect(box('run_g_tp_1')).toBeEnabled();
+    expect(button).toBeDisabled();
+    fireEvent.click(box('run_g_tp_3'));
+    expect(button).toBeEnabled();
+    // Two picked: the other runs wait for a Clear.
+    expect(box('run_g_tp_1')).toBeDisabled();
+    fireEvent.click(button);
     expect(ctx.navigate).toHaveBeenCalledWith({
       page: 'compare',
       runA: 'run_g_tp_2',
       runB: 'run_g_tp_3',
     });
-    (ctx.navigate as jest.Mock).mockClear();
-    fireEvent.click(screen.getByTestId('agtEvlRunsCompare-run_g_tp_2'));
-    fireEvent.click(
-      within(screen.getByTestId('agtEvlRunsCompare-run_g_tp_2List')).getByTestId(
-        'agtEvlRunOption-run_g_tp_1'
-      )
-    );
-    expect(ctx.navigate).toHaveBeenCalledWith({
-      page: 'compare',
-      runA: 'run_g_tp_1',
-      runB: 'run_g_tp_2',
-    });
   });
 
-  it('disables Compare without another run of the suite and agent, with a tooltip', async () => {
+  it('Clear resets the selection', () => {
     renderWithContext(<RunsView />, contextWith());
-    const button = screen.getByTestId('agtEvlRunsCompare-run_g_bot_1');
-    expect(button).toBeDisabled();
-    expect(screen.getByTestId('agtEvlRunsCompare-run_r_tp_1')).toBeDisabled();
-    expect(screen.getByTestId('agtEvlRunsCompare-run_g_tp_3')).toBeEnabled();
+    expect(screen.queryByTestId('agtEvlCompareClear')).not.toBeInTheDocument();
+    fireEvent.click(box('run_g_bot_1'));
+    expect(box('run_g_tp_3')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('agtEvlCompareClear'));
+    expect(box('run_g_bot_1')).not.toBeChecked();
+    expect(box('run_g_tp_3')).toBeEnabled();
+    expect(screen.queryByTestId('agtEvlCompareClear')).not.toBeInTheDocument();
+  });
+
+  it('explains a disabled checkbox in a tooltip', async () => {
+    renderWithContext(<RunsView />, contextWith());
+    fireEvent.click(box('run_g_tp_2'));
     // EUI opens the tooltip after a delay and a queued state change (real timers).
-    fireEvent.mouseOver(button.closest('.euiToolTipAnchor') as HTMLElement);
+    fireEvent.mouseOver(box('run_r_tp_1').closest('.euiToolTipAnchor') as HTMLElement);
     expect(
-      await screen.findByText('No other run of this suite and agent', undefined, {
+      await screen.findByText('Compare runs of the same test suite and agent', undefined, {
         timeout: 5000,
       })
     ).toBeInTheDocument();
   });
 
-  it('filtered: compatible runs come from the runs lookup over the range', () => {
-    mockPpl.answer((q) => {
-      if (q === buildRunsLookupQuery(TEST_INDEX))
-        return [
-          lookupRow('run_r_tp_1', 'refunds', 'tp', 25),
-          lookupRow('run_r_tp_0', 'refunds', 'tp', 20),
-          lookupRow('run_g_bot_1', 'golden', 'bot', 27),
-        ];
-      if (q.includes('as cases')) return [];
-      // The table shows the filtered runs: refunds, and golden by bot.
-      if (q.includes('as started by'))
-        return RUNS.filter((r) => r[RUN_ID] === 'run_r_tp_1' || r[RUN_ID] === 'run_g_bot_1');
-      return [];
-    });
-    const ctx = contextWith({ q: 'run_' });
-    renderWithContext(<RunsView />, ctx);
-    expect(mockPpl.queries).toContain(buildRunsLookupQuery(TEST_INDEX));
-    expect(mockPpl.ranges.get(buildRunsLookupQuery(TEST_INDEX))).toEqual(ctx.timeRange);
-    // refunds by tp has an older run outside the filtered table; golden by bot has none.
-    expect(screen.getByTestId('agtEvlRunsCompare-run_r_tp_1')).toBeEnabled();
-    expect(screen.getByTestId('agtEvlRunsCompare-run_g_bot_1')).toBeDisabled();
+  it('shows a run name (the short id under it) and falls back to the short id', () => {
+    mockPpl.answer((q) =>
+      q.includes('dedup')
+        ? [
+            {
+              attributes: {
+                test: { suite: { run: { id: 'run_g_tp_3' } } },
+                opensearch: {
+                  test: { suite: { run: { name: 'Shorter prompt', description: 'Trimmed' } } },
+                },
+              },
+            },
+          ]
+        : answerDefault(q)
+    );
+    renderWithContext(<RunsView />, contextWith());
+    expect(screen.getByTestId('agtEvlRunsRunLink-run_g_tp_3')).toHaveTextContent('Shorter prompt');
+    expect(screen.getByTestId('agtEvlRunsRow-run_g_tp_3')).toHaveTextContent('3');
+    expect(screen.getByTestId('agtEvlRunsRunLink-run_g_tp_2')).toHaveTextContent('2');
+    expect(screen.getByTestId('agtEvlRunsRunLink-run_g_tp_2')).not.toHaveTextContent('Shorter');
   });
 
   it('empty range: says when runs appear, with the docs', () => {
@@ -292,7 +284,5 @@ describe('RunsView', () => {
     );
     renderWithContext(<RunsView />, contextWith());
     expect(screen.getByTestId('agtEvlTruncated')).toBeInTheDocument();
-    // Cut off: compatible runs come from the lookup.
-    expect(mockPpl.queries).toContain(buildRunsLookupQuery(TEST_INDEX));
   });
 });

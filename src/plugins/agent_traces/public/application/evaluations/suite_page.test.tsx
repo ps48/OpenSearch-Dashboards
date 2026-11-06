@@ -7,7 +7,7 @@ import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { SuitePage, ciLabel, compareOrder, runVersionMarkers } from './suite_page';
 import { TEST_INDEX, fakePpl, renderWithContext } from './eval_test_utils';
-import { buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './eval_ppl';
+import { buildRunNamesQuery, buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './eval_ppl';
 import { RunRow, emptyTally } from './eval_model';
 
 const mockPpl = fakePpl();
@@ -67,12 +67,18 @@ describe('SuitePage', () => {
     );
   });
 
-  it('runs two queries and lists runs with errors and CI links', () => {
+  it('runs the runs, cases and run names queries and lists runs with errors and CI links', () => {
     renderWithContext(<SuitePage suite="golden" />);
     expect(new Set(mockPpl.queries)).toEqual(
       new Set([
         buildSuiteRunsQuery(TEST_INDEX, 'golden'),
         buildSuiteRunCasesQuery(TEST_INDEX, 'golden'),
+        // The latest runs first.
+        buildRunNamesQuery(TEST_INDEX, [
+          'run_20261028_cccc3333',
+          'run_20261027_bbbb2222',
+          'run_20261026_aaaa1111',
+        ]),
       ])
     );
     expect(screen.getByTestId('agtEvlSuiteMeta')).toHaveTextContent('tp');
@@ -111,7 +117,9 @@ describe('SuitePage', () => {
     fireEvent.click(boxes[0]);
     fireEvent.click(boxes[2]);
     expect(button).not.toBeDisabled();
-    expect(button).toHaveTextContent('Compare 2/2');
+    expect(button).toHaveTextContent('Compare 2 runs');
+    // Two picked: the third waits for a Clear.
+    expect(screen.getByTestId('agtEvlSelectRun-run_20261027_bbbb2222')).toBeDisabled();
     fireEvent.click(button);
     expect(ctx.navigate).toHaveBeenCalledWith({
       page: 'compare',

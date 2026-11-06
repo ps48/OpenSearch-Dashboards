@@ -3,11 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   EuiBadge,
   EuiBasicTableColumn,
-  EuiButton,
   EuiFlexGroup,
   EuiFlexItem,
   EuiInMemoryTable,
@@ -17,14 +16,20 @@ import {
   EuiSpacer,
   EuiText,
   EuiTitle,
-  EuiCheckbox,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { RunRow, runCases, suiteRuns } from './eval_model';
+import { RunName, RunRow, runCases, suiteRuns, withRunNames } from './eval_model';
 import { buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './eval_ppl';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { PassRateChart } from './pass_rate_chart';
+import { useRunNames } from './use_run_names';
+import {
+  CompareSelectionBar,
+  RunNameCell,
+  runSelectColumn,
+  useRunSelection,
+} from './run_selection';
 import {
   DASH,
   MetaItem,
@@ -60,11 +65,7 @@ export const runVersionMarkers = (runs: RunRow[]) =>
     .filter((r, i) => i > 0 && r.version !== runs[i - 1].version)
     .map((r) => ({ t: r.started, label: r.version ?? DASH }));
 
-/** Two runs in time order: the older is A, the baseline. */
-export const compareOrder = (runs: RunRow[]): [string, string] => {
-  const [x, y] = [...runs].sort((p, q) => p.started - q.started);
-  return [x.runId, y.runId];
-};
+export { compareOrder } from './run_selection';
 
 /** A suite: pass rate by run, its runs; select two to compare. */
 export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
@@ -82,49 +83,28 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
     refreshKey
   );
   const cases = useMemo(() => runCases(casesQuery.rows), [casesQuery.rows]);
-  const runs = useMemo(() => suiteRuns(rows), [rows]);
-  const [selected, setSelected] = useState<RunRow[]>([]);
+  const plainRuns = useMemo(() => suiteRuns(rows), [rows]);
+  // The latest runs first: the names are read for the most recent ones.
+  const names = useRunNames(useMemo(() => plainRuns.map((r) => r.runId).reverse(), [plainRuns]));
+  const runs: Array<RunRow & RunName> = useMemo(
+    () => withRunNames(plainRuns, names),
+    [plainRuns, names]
+  );
+  const sel = useRunSelection<RunRow & RunName>();
   const agent = runs.map((r) => r.agent).find(Boolean);
-  const canCompare = selected.length === 2;
 
-  const isSelected = (r: RunRow) => selected.some((s) => s.runId === r.runId);
-  const toggle = (r: RunRow) =>
-    setSelected((cur) =>
-      cur.some((s) => s.runId === r.runId)
-        ? cur.filter((s) => s.runId !== r.runId)
-        : [...cur, r].slice(-2)
-    );
-
-  const columns: Array<EuiBasicTableColumn<RunRow>> = [
-    {
-      // At most two runs can be compared, so there is no select-all.
-      name: '',
-      width: '32px',
-      render: (r: RunRow) => (
-        <EuiCheckbox
-          id={`agtEvlSelect-${r.runId}`}
-          checked={isSelected(r)}
-          disabled={!isSelected(r) && selected.length >= 2}
-          onChange={() => toggle(r)}
-          aria-label={i18n.translate('agentTraces.evals.suite.select', {
-            defaultMessage: 'Select run {id}',
-            values: { id: shortId(r.runId) },
-          })}
-          data-test-subj={`agtEvlSelectRun-${r.runId}`}
-        />
-      ),
-    },
+  const columns: Array<EuiBasicTableColumn<RunRow & RunName>> = [
+    runSelectColumn(sel),
     {
       field: 'runId',
       name: i18n.translate('agentTraces.evals.suite.run', { defaultMessage: 'Run' }),
-      render: (id: string) => (
-        <EuiLink
-          className="agtEvlMono"
-          title={id}
-          onClick={() => navigate({ page: 'run', runId: id })}
-        >
-          {shortId(id)}
-        </EuiLink>
+      sortable: (r: RunRow & RunName) => r.name ?? shortId(r.runId),
+      render: (_: string, r: RunRow & RunName) => (
+        <RunNameCell
+          run={r}
+          onOpen={() => navigate({ page: 'run', runId: r.runId })}
+          testId={`agtEvlSuiteRunLink-${r.runId}`}
+        />
       ),
     },
     {
@@ -201,16 +181,6 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
       render: (url?: string) => <CiLink url={url} />,
     },
   ];
-
-  const hint = canCompare
-    ? ''
-    : selected.length === 1
-      ? i18n.translate('agentTraces.evals.suite.selectOneMore', {
-          defaultMessage: 'Select one more run',
-        })
-      : i18n.translate('agentTraces.evals.suite.selectTwo', {
-          defaultMessage: 'Select two runs to compare',
-        });
 
   return (
     <>
@@ -293,30 +263,14 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
             </EuiText>
           </EuiFlexItem>
           <EuiFlexItem grow={false}>
-            <EuiText size="xs" color="subdued">
-              {hint}
-            </EuiText>
-          </EuiFlexItem>
-          <EuiFlexItem grow={false}>
-            <EuiButton
-              size="s"
-              fill={canCompare}
-              isDisabled={!canCompare}
-              onClick={() => {
-                const [runA, runB] = compareOrder(selected);
-                navigate({ page: 'compare', runA, runB });
-              }}
-              data-test-subj="agtEvlCompareButton"
-            >
-              {i18n.translate('agentTraces.evals.suite.compare', {
-                defaultMessage: 'Compare {n}/2',
-                values: { n: selected.length },
-              })}
-            </EuiButton>
+            <CompareSelectionBar
+              sel={sel}
+              onCompare={(runA, runB) => navigate({ page: 'compare', runA, runB })}
+            />
           </EuiFlexItem>
         </EuiFlexGroup>
         <EuiSpacer size="s" />
-        <EuiInMemoryTable<RunRow>
+        <EuiInMemoryTable<RunRow & RunName>
           items={runs}
           itemId="runId"
           columns={columns}
@@ -326,7 +280,7 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
           rowProps={(r: RunRow) => ({
             className: 'agtEvlClickRow',
             onClick: (e: React.MouseEvent) => {
-              if ((e.target as HTMLElement).closest('input,a,button')) return;
+              if ((e.target as HTMLElement).closest('input,label,a,button')) return;
               navigate({ page: 'run', runId: r.runId });
             },
             'data-test-subj': `agtEvlRunRow-${r.runId}`,
