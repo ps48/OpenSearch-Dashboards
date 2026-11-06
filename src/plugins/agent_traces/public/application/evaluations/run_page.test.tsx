@@ -13,6 +13,7 @@ import {
   buildRunCasesQuery,
   buildRunsLookupQuery,
   buildSuiteRunsQuery,
+  buildTraceSpansQuery,
 } from './eval_ppl';
 import { CaseRow, emptyTally } from './eval_model';
 
@@ -186,7 +187,11 @@ describe('RunPage', () => {
     fireEvent.click(screen.getByTestId('agtEvlCaseRow-c1'));
     expect(mockPpl.queries).toContain(buildCaseResultsQuery(TEST_INDEX, RUN, 'c1'));
     expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', ['trace-c1']));
+    // The case log: one bounded spans query for the case's trace, only once it opens.
+    expect(mockPpl.queries).toContain(buildTraceSpansQuery('spans-*', ['trace-c1']));
+    expect(mockPpl.queries).not.toContain(buildTraceSpansQuery('spans-*', ['trace-c2']));
     const results = screen.getByTestId('agtEvlCaseResults-c1');
+    expect(within(results).getByTestId('agtEvlCaseLog-c1')).toBeInTheDocument();
     const io = within(results).getByTestId('agtEvlCaseIO');
     const section = (key: string) => within(io).getByTestId(`agtEvlIO-${key}`);
     expect(
