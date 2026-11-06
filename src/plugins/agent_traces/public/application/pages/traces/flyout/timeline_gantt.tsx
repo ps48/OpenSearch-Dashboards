@@ -21,6 +21,19 @@ import { formatMs } from '../trace_details/utils/span_timerange_utils';
 import { TimelineSpan } from './tree_helpers';
 import './timeline_gantt.scss';
 
+/** Optional per-row additions a host (for example Evaluations) draws on the Gantt. */
+export interface TimelineRowDecoration {
+  /** Extra class names on the row. */
+  className?: string;
+  /** Content before the category badge (for example a judge mark). */
+  before?: React.ReactNode;
+  /** Content after the span name (for example a pass tally). */
+  after?: React.ReactNode;
+  /** A tooltip on the span name. */
+  title?: string;
+  'data-test-subj'?: string;
+}
+
 export interface TimelineGanttProps {
   timelineVisibleSpans: TimelineSpan[];
   timelineRange: { minMs: number; maxMs: number; durationMs: number };
@@ -30,6 +43,7 @@ export interface TimelineGanttProps {
   fullTreeError?: string;
   onSelectNode: (nodeId: string) => void;
   onToggleExpanded: (nodeId: string) => void;
+  decorateRow?: (span: TimelineSpan) => TimelineRowDecoration | undefined;
 }
 
 export const TimelineGantt: React.FC<TimelineGanttProps> = ({
@@ -41,6 +55,7 @@ export const TimelineGantt: React.FC<TimelineGanttProps> = ({
   fullTreeError,
   onSelectNode,
   onToggleExpanded,
+  decorateRow,
 }) => {
   return (
     <div className="agentTracesFlyout__timelineWrapper">
@@ -96,13 +111,15 @@ export const TimelineGantt: React.FC<TimelineGanttProps> = ({
                 ((span.startMs - timelineRange.minMs) / timelineRange.durationMs) * 100;
               const widthPct = (span.durationMs / timelineRange.durationMs) * 100;
               const hasValidTiming = span.startMs > 0 && span.endMs > 0;
+              const decoration = decorateRow?.(span);
 
               return (
                 <div
                   key={span.node.id}
                   className={`agentTracesFlyout__timelineRow agentTracesFlyout__timelineRowHeight${
                     isTimelineSelected ? ' agentTracesFlyout__timelineRow--selected' : ''
-                  }`}
+                  }${decoration?.className ? ` ${decoration.className}` : ''}`}
+                  data-test-subj={decoration?.['data-test-subj']}
                   onClick={() => onSelectNode(span.node.id)}
                   role="button"
                   tabIndex={0}
@@ -128,6 +145,7 @@ export const TimelineGantt: React.FC<TimelineGanttProps> = ({
                     ) : (
                       <span className="agentTracesFlyout__timelineSpacer" />
                     )}
+                    {decoration?.before}
                     {(() => {
                       const meta = getCategoryMeta(span.category);
                       return (
@@ -140,7 +158,10 @@ export const TimelineGantt: React.FC<TimelineGanttProps> = ({
                         </EuiBadge>
                       );
                     })()}
-                    <span className="agentTracesFlyout__timelineLabelText" title={span.node.label}>
+                    <span
+                      className="agentTracesFlyout__timelineLabelText"
+                      title={decoration?.title ?? span.node.label}
+                    >
                       <span className="agentTracesFlyout__timelineLabelName">
                         {span.node.label}
                       </span>
@@ -160,6 +181,7 @@ export const TimelineGantt: React.FC<TimelineGanttProps> = ({
                         </EuiToolTip>
                       )}
                     </span>
+                    {decoration?.after}
                   </div>
 
                   <div

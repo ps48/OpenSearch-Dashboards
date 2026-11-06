@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   EuiFlexGroup,
   EuiFlexItem,
@@ -17,7 +17,6 @@ import {
   EuiTabs,
   EuiText,
   EuiTitle,
-  EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { DataPublicPluginStart } from '../../../../data/public';
@@ -26,6 +25,16 @@ import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_requ
 import { transformPPLDataToTraceHits } from '../pages/traces/trace_details/traces/ppl_to_trace_hits';
 import { TraceFlowView } from '../pages/traces/flow/trace_flow_view';
 import { flowEvalDecoration } from '../pages/traces/flyout/trace_evaluations';
+import { TimelineGantt, TimelineRowDecoration } from '../pages/traces/flyout/timeline_gantt';
+import {
+  TimelineSpan,
+  TreeNode,
+  buildTreeFromTraceRow,
+  calculateTimelineRange,
+  collectExpandableIds,
+  flattenVisibleNodes,
+} from '../pages/traces/flyout/tree_helpers';
+import './trace_compare_flyout.scss';
 import type { CategorizedSpan } from '../../services/span_categorization';
 import {
   BaseRow,
@@ -104,55 +113,82 @@ export interface Side {
 
 type CompareView = 'spans' | 'map';
 
-export const SpanList: React.FC<{ side: Side; only: Set<string> }> = ({ side, only }) => {
-  const root = side.spans[0];
-  const t0 = root?.startMs ?? 0;
-  const total = Math.max(1, root?.durationMs ?? 1);
+const ONLY_HERE = i18n.translate('agentTraces.evals.compareTraces.onlyHere', {
+  defaultMessage: 'Only in this trace',
+});
+
+/** The Agent Traces span nodes of one side, as the trace flyout's Timeline builds them. */
+const ganttNodes = (side: Side): TreeNode[] => (side.tree ?? []).map(buildTreeFromTraceRow);
+
+/** The longest of the two traces: both Gantts share it, so equal bar widths are equal times. */
+export const sharedDurationMs = (sides: Side[]): number =>
+  Math.max(0, ...sides.map((s) => calculateTimelineRange(ganttNodes(s)).durationMs));
+
+/**
+ * One side's Timeline: the Agent Traces Gantt (the trace flyout's Timeline tab), on a time
+ * scale shared with the other side. Spans only in this trace are highlighted; judged spans
+ * carry their judge mark and tally.
+ */
+export const SpanList: React.FC<{ side: Side; only: Set<string>; durationMs?: number }> = ({
+  side,
+  only,
+  durationMs,
+}) => {
+  const nodes = useMemo(() => ganttNodes(side), [side]);
+  const [expanded, setExpanded] = useState<Set<string>>(() => collectExpandableIds(nodes));
+  const [selected, setSelected] = useState<string | undefined>();
+  const visible = useMemo(() => flattenVisibleNodes(nodes, expanded), [nodes, expanded]);
+  const range = useMemo(() => {
+    const own = calculateTimelineRange(nodes);
+    const total = Math.max(own.durationMs, durationMs ?? 0);
+    return { minMs: own.minMs, maxMs: own.minMs + total, durationMs: total };
+  }, [nodes, durationMs]);
+  const rootId = side.spans[0]?.spanId;
+  const byId = useMemo(() => new Map(side.spans.map((s) => [s.spanId, s])), [side.spans]);
+  const decorateRow = useCallback(
+    (span: TimelineSpan): TimelineRowDecoration => {
+      const spanId = span.node.traceRow?.spanId ?? span.node.id;
+      const flat = byId.get(spanId);
+      const marks = flat ? resultsOfSpan(side.results, flat, spanId === rootId) : [];
+      const isOnly = only.has(spanId);
+      return {
+        className: isOnly ? 'agtEvlGanttRow--only' : undefined,
+        title: isOnly ? `${span.node.label} (${ONLY_HERE})` : undefined,
+        'data-test-subj': isOnly ? 'agtEvlSpanOnly' : 'agtEvlSpan',
+        before: marks.length > 0 ? <JudgeMark results={marks} /> : undefined,
+        after: marks.length > 0 ? <TallyCell tally={tallyOf(marks)} /> : undefined,
+      };
+    },
+    [byId, side.results, rootId, only]
+  );
+  const toggle = useCallback(
+    (id: string) =>
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
+    []
+  );
   return (
-    <div className="agtEvlSpans" data-test-subj={`agtEvlSpans-${side.traceId}`}>
-      {side.spans.map((s, i) => {
-        const marks = resultsOfSpan(side.results, s, i === 0);
-        const offset = Number.isFinite(s.startMs - t0) ? Math.max(0, s.startMs - t0) : 0;
-        const isOnly = only.has(s.spanId);
-        const row = (
-          <div
-            className={`agtEvlSpans__row${isOnly ? ' agtEvlSpans__row--only' : ''}`}
-            key={s.spanId}
-            data-test-subj={isOnly ? 'agtEvlSpanOnly' : 'agtEvlSpan'}
-          >
-            <span className="agtEvlSpans__name" style={{ paddingLeft: s.depth * 12 }}>
-              {marks.length > 0 && <JudgeMark results={marks} />}
-              <span className="agtEvlDim agtEvlSmall">{s.kind}</span> {s.name}
-              {marks.length > 0 && <TallyCell tally={tallyOf(marks)} />}
-            </span>
-            <span className="agtEvlSpans__bar">
-              <span
-                className="agtEvlSpans__fill"
-                style={{
-                  left: `${Math.min(100, (offset / total) * 100)}%`,
-                  width: `${Math.max(1.5, (s.durationMs / total) * 100)}%`,
-                }}
-              />
-            </span>
-            <span className="agtEvlDim agtEvlSmall agtEvlSpans__dur">
-              {formatDuration(s.durationMs)}
-            </span>
-          </div>
-        );
-        return isOnly ? (
-          <EuiToolTip
-            key={s.spanId}
-            content={i18n.translate('agentTraces.evals.compareTraces.onlyHere', {
-              defaultMessage: 'Only in this trace',
-            })}
-          >
-            {row}
-          </EuiToolTip>
-        ) : (
-          row
-        );
-      })}
-    </div>
+    <EuiPanel
+      hasBorder
+      hasShadow={false}
+      paddingSize="none"
+      className="agtEvlGanttPanel"
+      data-test-subj={`agtEvlSpans-${side.traceId}`}
+    >
+      <TimelineGantt
+        timelineVisibleSpans={visible}
+        timelineRange={range}
+        selectedNodeId={selected}
+        expandedNodes={expanded}
+        onSelectNode={setSelected}
+        onToggleExpanded={toggle}
+        decorateRow={decorateRow}
+      />
+    </EuiPanel>
   );
 };
 
@@ -257,6 +293,8 @@ export const TraceCompareFlyout: React.FC<{
     return () => controller.abort();
   }, [services.data, spans, dataset, index, browseRange, traceA, traceB]);
 
+  const shared = useMemo(() => (state.sides ? sharedDurationMs(state.sides) : 0), [state.sides]);
+
   const column = (side: Side, other: Side, label: string, version?: string) => (
     <EuiFlexItem key={label} className="agtEvlTraceCol">
       <EuiTitle size="xxs">
@@ -283,7 +321,7 @@ export const TraceCompareFlyout: React.FC<{
           </p>
         </EuiText>
       ) : view === 'spans' ? (
-        <SpanList side={side} only={onlyIn(side.spans, other.spans)} />
+        <SpanList side={side} only={onlyIn(side.spans, other.spans)} durationMs={shared} />
       ) : (
         <TraceMapSide side={side} only={onlyIn(side.spans, other.spans)} />
       )}
@@ -345,8 +383,8 @@ export const TraceCompareFlyout: React.FC<{
                 [
                   [
                     'spans',
-                    i18n.translate('agentTraces.evals.compareTraces.tabSpans', {
-                      defaultMessage: 'Spans',
+                    i18n.translate('agentTraces.evals.compareTraces.tabTimeline', {
+                      defaultMessage: 'Timeline',
                     }),
                   ],
                   [
@@ -367,7 +405,19 @@ export const TraceCompareFlyout: React.FC<{
                 </EuiTab>
               ))}
             </EuiTabs>
-            <EuiSpacer size="m" />
+            <EuiSpacer size="s" />
+            {view === 'spans' && shared > 0 && (
+              <EuiText size="xs" color="subdued" data-test-subj="agtEvlTraceCompareScale">
+                <p>
+                  {i18n.translate('agentTraces.evals.compareTraces.sharedScale', {
+                    defaultMessage:
+                      'Both timelines share one time scale, 0 to {total}, from the start of each trace.',
+                    values: { total: formatDuration(shared) },
+                  })}
+                </p>
+              </EuiText>
+            )}
+            <EuiSpacer size="s" />
             <EuiFlexGroup gutterSize="l" responsive={false}>
               {column(state.sides[0], state.sides[1], RUN_A, versionA)}
               {column(state.sides[1], state.sides[0], RUN_B, versionB)}

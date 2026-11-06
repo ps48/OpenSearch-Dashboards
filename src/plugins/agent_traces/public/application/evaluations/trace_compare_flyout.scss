@@ -1,0 +1,9 @@
+.agtEvlGanttPanel {
+  margin: $euiSizeS 0;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.agentTracesFlyout__timelineRow.agtEvlGanttRow--only {
+  background: tintOrShade($euiColorWarning, 90%, 70%);
+}

@@ -99,4 +99,26 @@ describe('TimelineGantt', () => {
     const row = document.querySelector('.agentTracesFlyout__timelineRow--selected');
     expect(row).toBeTruthy();
   });
+
+  it('draws a host decoration on a row', () => {
+    render(
+      <TimelineGantt
+        {...defaultProps}
+        decorateRow={(span) => ({
+          className: 'extraRow',
+          'data-test-subj': `row-${span.node.id}`,
+          before: <span>mark</span>,
+          after: <span>tally</span>,
+          title: 'Only here',
+        })}
+      />
+    );
+    const row = screen.getByTestId('row-n1');
+    expect(row).toHaveClass('agentTracesFlyout__timelineRow', 'extraRow');
+    expect(row).toHaveTextContent('markAgentSpan 1tally');
+    expect(row.querySelector('.agentTracesFlyout__timelineLabelText')).toHaveAttribute(
+      'title',
+      'Only here'
+    );
+  });
 });

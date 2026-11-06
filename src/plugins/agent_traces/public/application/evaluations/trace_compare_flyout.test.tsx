@@ -100,6 +100,32 @@ describe('TraceCompareFlyout', () => {
     expect(screen.getByText('Wrong')).toBeInTheDocument();
   });
 
+  it('draws both traces on the Agent Traces Gantt with one shared time scale', async () => {
+    renderCompare();
+    await waitFor(() => expect(screen.getByTestId('agtEvlSpans-tb')).toBeInTheDocument());
+    expect(screen.getByTestId('agtEvlTraceCompareScale')).toHaveTextContent('0 to 3.0 s');
+    const bars = (traceId: string) =>
+      Array.from(
+        screen
+          .getByTestId(`agtEvlSpans-${traceId}`)
+          .querySelectorAll<HTMLElement>('.agentTracesFlyout__timelineBarArea')
+      ).map((el) => [
+        el.style.getPropertyValue('--bar-offset'),
+        el.style.getPropertyValue('--bar-width'),
+      ]);
+    // A (2s) on the 3s scale: its root takes two thirds; its tool starts at 0.5s.
+    const [aRoot, aTool] = bars('ta');
+    expect(parseFloat(aRoot[1])).toBeCloseTo(66.67, 1);
+    expect(parseFloat(aTool[0])).toBeCloseTo(16.67, 1);
+    // B: the tool starts at 1s of 3s, its own offset (not shifted by the other trace).
+    const [bRoot, bTool] = bars('tb');
+    expect(parseFloat(bRoot[1])).toBeCloseTo(100, 1);
+    expect(parseFloat(bTool[0])).toBeCloseTo(33.33, 1);
+    expect(within(screen.getByTestId('agtEvlSpans-tb')).getByTestId('agtEvlSpanOnly')).toHaveClass(
+      'agtEvlGanttRow--only'
+    );
+  });
+
   const renderCompare = () =>
     renderWithContext(
       <TraceCompareFlyout
