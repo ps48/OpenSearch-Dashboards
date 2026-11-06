@@ -46,6 +46,7 @@ import { usePplRows } from './use_ppl_rows';
 import { useRootSpans, useSessionTurns, useSpan } from './eval_spans';
 import { useRunBefore } from './run_page';
 import { JsonAccordion } from './json_viewer';
+import { NewTabViewLink } from './view_links';
 import { SpanIOView } from './span_io_view';
 import { getEvalTimezone } from './eval_time';
 import { CompareRunRef, SpanList, TraceCompareFlyout, flattenSpans } from './trace_compare_flyout';
@@ -209,6 +210,7 @@ const SessionJudgedSection: React.FC<{
   r: EvalResult;
   openSession?: (sessionId: string, aroundMs: number) => void;
 }> = ({ r, openSession }) => {
+  const { hrefOf } = useEvalContext();
   const session = useSessionTurns(r.conversationId);
   const first = session.turns[0];
   const last = session.turns[session.turns.length - 1];
@@ -238,15 +240,14 @@ const SessionJudgedSection: React.FC<{
         {r.conversationId && openSession && (
           <EuiFlexItem grow={false}>
             <EuiText size="xs">
-              <EuiLink
-                onClick={() => r.conversationId && openSession(r.conversationId, r.time)}
-                data-test-subj="agtEvlFlyoutViewSession"
-              >
-                {i18n.translate('agentTraces.evals.flyout.viewSession', {
+              <NewTabViewLink
+                href={hrefOf?.(r)}
+                onOpen={() => r.conversationId && openSession(r.conversationId, r.time)}
+                label={i18n.translate('agentTraces.evals.flyout.viewSession', {
                   defaultMessage: 'View session',
                 })}
-              </EuiLink>
-              <NewTabLink r={r} />
+                testId="agtEvlFlyoutViewSession"
+              />
             </EuiText>
           </EuiFlexItem>
         )}
@@ -300,6 +301,7 @@ const JudgedSection: React.FC<{
   openTrace?: (traceId: string, aroundMs: number) => void;
   onJudgeTrace: () => void;
 }> = ({ r, openTrace, onJudgeTrace }) => {
+  const { hrefOf } = useEvalContext();
   const spanLevel = r.level === 'span' && !!r.spanId;
   const root = useRootSpans(spanLevel ? [] : [r.traceId]);
   const span = useSpan(spanLevel ? r.traceId : undefined, spanLevel ? r.spanId : undefined);
@@ -336,19 +338,22 @@ const JudgedSection: React.FC<{
         <EuiFlexItem grow={false}>
           <EuiText size="xs">
             {r.traceId && openTrace && (
-              <EuiLink
-                onClick={() => r.traceId && openTrace(r.traceId, r.time)}
-                data-test-subj="agtEvlFlyoutViewTrace"
-              >
-                {i18n.translate('agentTraces.evals.flyout.viewTrace', {
+              <NewTabViewLink
+                href={hrefOf?.(r)}
+                onOpen={() => r.traceId && openTrace(r.traceId, r.time)}
+                label={i18n.translate('agentTraces.evals.flyout.viewTrace', {
                   defaultMessage: 'View trace',
                 })}
-              </EuiLink>
+                testId="agtEvlFlyoutViewTrace"
+              />
             )}
+            {/* The trace is already open (in Agent Traces): its id, and a new tab icon. */}
             {r.traceId && !openTrace && (
-              <span className="agtEvlMono agtEvlDim">{shortId(r.traceId)}</span>
+              <>
+                <span className="agtEvlMono agtEvlDim">{shortId(r.traceId)}</span>
+                <NewTabLink r={r} />
+              </>
             )}
-            <NewTabLink r={r} />
             {r.judgeTraceId && (
               <>
                 {' · '}

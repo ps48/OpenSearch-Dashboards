@@ -57,6 +57,7 @@ import {
 } from './eval_ppl';
 import { SpanIOView } from './span_io_view';
 import { useRunNames } from './use_run_names';
+import { NewTabViewLink, traceHref } from './view_links';
 import { useRootSpans } from './eval_spans';
 import {
   DASH,
@@ -447,7 +448,7 @@ const RunStat: React.FC<{
 
 /** A run: its header, figures (against the run before) and cases (expand a case). */
 export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
-  const { dataset, index, browseRange, refreshKey, navigate, openTrace } = useEvalContext();
+  const { dataset, index, browseRange, refreshKey, navigate, openTrace, hrefOf } = useEvalContext();
   // The run's cases first (they name its suite), then the suite's run before and its cases:
   // the page shows as soon as its own cases answer, the run before's figures fill in after.
   const { rows, loading, loaded, error } = usePplRows(
@@ -568,16 +569,15 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
       align: 'right',
       render: (traceId: string | undefined, c: CaseRow) =>
         traceId ? (
-          <EuiButtonEmpty
-            size="xs"
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
-              openTrace(traceId, c.at);
-            }}
-            data-test-subj={`agtEvlViewTrace-${c.caseId}`}
-          >
-            {i18n.translate('agentTraces.evals.run.viewTrace', { defaultMessage: 'View trace' })}
-          </EuiButtonEmpty>
+          <NewTabViewLink
+            button
+            href={traceHref(hrefOf, traceId, c.at)}
+            onOpen={() => openTrace(traceId, c.at)}
+            label={i18n.translate('agentTraces.evals.run.viewTrace', {
+              defaultMessage: 'View trace',
+            })}
+            testId={`agtEvlViewTrace-${c.caseId}`}
+          />
         ) : null,
     },
   ];

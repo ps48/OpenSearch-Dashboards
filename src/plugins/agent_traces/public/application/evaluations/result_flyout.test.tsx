@@ -272,22 +272,31 @@ describe('ResultFlyout', () => {
     expect(links.openRun).toHaveBeenCalledWith(RUN);
   });
 
-  it('has a New tab link to the judged span when the context gives a URL', () => {
+  it('View trace opens the judged span in a new tab when the context gives a URL', () => {
     const hrefOf = jest.fn(() => 'https://osd/app/agentTraces#/?openTraceId=trace1');
+    const links = { openTrace: jest.fn() };
     renderWithContext(
-      <ResultFlyout
-        result={offline}
-        onClose={jest.fn()}
-        links={{ openTrace: jest.fn() }}
-        onOpenResult={jest.fn()}
-      />,
+      <ResultFlyout result={offline} onClose={jest.fn()} links={links} onOpenResult={jest.fn()} />,
       testContext({ hrefOf })
     );
-    const link = screen.getByTestId('agtEvlFlyoutNewTab');
+    const link = screen.getByTestId('agtEvlFlyoutViewTrace');
     expect(link).toHaveAttribute('href', 'https://osd/app/agentTraces#/?openTraceId=trace1');
     expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     expect(hrefOf).toHaveBeenCalledWith(offline);
-    expect(screen.getByTestId('agtEvlFlyoutViewTrace')).toBeInTheDocument();
+    // One control: no separate new tab icon next to the link.
+    expect(screen.queryByTestId('agtEvlFlyoutNewTab')).not.toBeInTheDocument();
+    fireEvent.click(link);
+    expect(links.openTrace).not.toHaveBeenCalled();
+  });
+
+  it('keeps the new tab icon where the trace is already open (no View trace)', () => {
+    renderWithContext(
+      <ResultFlyout result={offline} onClose={jest.fn()} links={{}} onOpenResult={jest.fn()} />,
+      testContext({ hrefOf: () => 'https://osd/app/agentTraces#/?openTraceId=trace1' })
+    );
+    expect(screen.queryByTestId('agtEvlFlyoutViewTrace')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlFlyoutNewTab')).toHaveAttribute('target', '_blank');
   });
 
   it('has no New tab link without a URL', () => {
@@ -393,22 +402,25 @@ describe('ResultFlyout', () => {
       expect(links.openSession).toHaveBeenCalledWith(CONV, session(CONV).time);
     });
 
-    it('has a New tab link next to View session when the context gives a URL', () => {
+    it('View session opens the session in a new tab when the context gives a URL', () => {
+      const links = { openSession: jest.fn() };
       renderWithContext(
         <ResultFlyout
           result={session(CONV)}
           onClose={jest.fn()}
-          links={{ openSession: jest.fn() }}
+          links={links}
           onOpenResult={jest.fn()}
         />,
         testContext({ hrefOf: () => 'https://osd/app/agentTraces#/?openSessionId=conv' })
       );
       const saw = screen.getByTestId('agtEvlJudgeSawSession');
-      expect(within(saw).getByTestId('agtEvlFlyoutNewTab')).toHaveAttribute(
-        'href',
-        'https://osd/app/agentTraces#/?openSessionId=conv'
-      );
-      expect(within(saw).getByTestId('agtEvlFlyoutViewSession')).toBeInTheDocument();
+      const link = within(saw).getByTestId('agtEvlFlyoutViewSession');
+      expect(link).toHaveAttribute('href', 'https://osd/app/agentTraces#/?openSessionId=conv');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+      expect(within(saw).queryByTestId('agtEvlFlyoutNewTab')).not.toBeInTheDocument();
+      fireEvent.click(link);
+      expect(links.openSession).not.toHaveBeenCalled();
     });
 
     it('has no View session link without an openSession link', () => {

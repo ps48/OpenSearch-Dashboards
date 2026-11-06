@@ -286,7 +286,29 @@ describe('RunPage', () => {
     expect(new Set(mockPpl.queries)).toEqual(new Set(RUN_QUERIES()));
   });
 
-  it('View trace opens the case trace', () => {
+  it('View trace opens the case trace in a new tab', () => {
+    const hrefOf = jest.fn(
+      (r: { traceId?: string }) => `https://osd/app/agentTraces#/?openTraceId=${r.traceId}`
+    );
+    const { ctx } = renderWithContext(<RunPage runId={RUN} />, testContext({ hrefOf }));
+    const link = screen.getByTestId('agtEvlViewTrace-c3');
+    expect(link).toHaveAttribute('href', 'https://osd/app/agentTraces#/?openTraceId=trace-c3');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(hrefOf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'trace',
+        traceId: 'trace-c3',
+        time: Date.UTC(2026, 9, 28, 7, 0, 30),
+      })
+    );
+    fireEvent.click(link);
+    expect(ctx.openTrace).not.toHaveBeenCalled();
+    // The row does not open: the link is its own control.
+    expect(screen.queryByTestId('agtEvlCaseResults-c3')).not.toBeInTheDocument();
+  });
+
+  it('View trace opens in place without a URL', () => {
     const { ctx } = renderWithContext(<RunPage runId={RUN} />);
     fireEvent.click(screen.getByTestId('agtEvlViewTrace-c3'));
     expect(ctx.openTrace).toHaveBeenCalledWith('trace-c3', Date.UTC(2026, 9, 28, 7, 0, 30));
