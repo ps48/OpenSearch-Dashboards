@@ -6,6 +6,8 @@
 import {
   isCompatibleRun,
   runRefsOf,
+  runNamesOf,
+  withRunNames,
   agentEvaluations,
   agentRows,
   agentVersionRows,
@@ -534,6 +536,74 @@ describe('result documents', () => {
       }).level
     ).toBe('trace');
     expect(recordToResult({ attributes: {} }).expectedTruncated).toBe(false);
+  });
+
+  it('reads the run name, evaluator description and judge context, and works without them', () => {
+    const r = recordToResult({
+      attributes: {
+        gen_ai: {
+          evaluation: { name: 'help' },
+          request: { model: 'judge-model-1' },
+          prompt: { name: 'helpfulness', version: '3' },
+          system_instructions: 'You are a strict grader.',
+        },
+        opensearch: {
+          gen_ai: {
+            evaluation: {
+              evaluator: { description: 'Checks the answer is helpful' },
+              system_instructions_truncated: true,
+            },
+          },
+          test: { suite: { run: { name: 'v5 shorter prompt', description: 'Prompt trim' } } },
+        },
+        test: { suite: { run: { id: 'r1' } } },
+      },
+    });
+    expect(r).toMatchObject({
+      runName: 'v5 shorter prompt',
+      runDescription: 'Prompt trim',
+      evaluatorDescription: 'Checks the answer is helpful',
+      judgeModel: 'judge-model-1',
+      promptName: 'helpfulness',
+      promptVersion: '3',
+      systemInstructions: 'You are a strict grader.',
+      systemInstructionsTruncated: true,
+    });
+    const bare = recordToResult({ attributes: { gen_ai: { evaluation: { name: 'x' } } } });
+    expect(bare.runName).toBeUndefined();
+    expect(bare.runDescription).toBeUndefined();
+    expect(bare.evaluatorDescription).toBeUndefined();
+    expect(bare.judgeModel).toBeUndefined();
+    expect(bare.promptName).toBeUndefined();
+    expect(bare.promptVersion).toBeUndefined();
+    expect(bare.systemInstructions).toBeUndefined();
+    expect(bare.systemInstructionsTruncated).toBe(false);
+  });
+});
+
+describe('run names', () => {
+  const doc = (id: string, name?: string, description?: string) => ({
+    attributes: {
+      test: { suite: { run: { id } } },
+      opensearch: { test: { suite: { run: { name, description } } } },
+    },
+  });
+
+  it('reads one name per run, skips runs without one, and merges them into rows', () => {
+    const names = runNamesOf([
+      doc('r1', 'First', 'About r1'),
+      doc('r1', 'Ignored'),
+      doc('r2'),
+      doc('r3', '  ', 'Only a description'),
+    ]);
+    expect(names.get('r1')).toEqual({ name: 'First', description: 'About r1' });
+    expect(names.has('r2')).toBe(false);
+    expect(names.get('r3')).toEqual({ name: undefined, description: 'Only a description' });
+    const rows = withRunNames([{ runId: 'r1' }, { runId: 'r2' }], names);
+    expect(rows[0]).toMatchObject({ runId: 'r1', name: 'First', description: 'About r1' });
+    expect(rows[1]).toEqual({ runId: 'r2' });
+    const same = [{ runId: 'r1' }];
+    expect(withRunNames(same, new Map())).toBe(same);
   });
 });
 

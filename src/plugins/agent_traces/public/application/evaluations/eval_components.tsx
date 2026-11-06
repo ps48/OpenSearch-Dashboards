@@ -96,6 +96,9 @@ export const formatDuration = (ms: number) => {
 export const shortId = (id?: string, size = 8) =>
   id ? (id.split('_').pop() ?? id).slice(0, size) : '';
 
+/** A run as people name it: its name (`opensearch.test.suite.run.name`), else its short id. */
+export const runLabel = (r: { runId: string; name?: string }) => r.name ?? shortId(r.runId);
+
 export const formatScore = (value?: number) =>
   value === undefined ? DASH : Number.isInteger(value) ? String(value) : value.toFixed(2);
 

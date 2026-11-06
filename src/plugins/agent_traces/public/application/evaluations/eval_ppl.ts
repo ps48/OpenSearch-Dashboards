@@ -44,6 +44,9 @@ export const F = {
   conversationId: 'attributes.gen_ai.conversation.id',
   suiteName: 'attributes.test.suite.name',
   runId: 'attributes.test.suite.run.id',
+  /** Human-readable run name and description (SDK gap fields, optional). */
+  runName: 'attributes.opensearch.test.suite.run.name',
+  runDescription: 'attributes.opensearch.test.suite.run.description',
   caseId: 'attributes.test.case.id',
   caseName: 'attributes.test.case.name',
   ciUrl: 'attributes.cicd.pipeline.run.url.full',
@@ -51,6 +54,15 @@ export const F = {
   evaluatorName: 'attributes.opensearch.gen_ai.evaluation.evaluator.name',
   evaluatorType: 'attributes.opensearch.gen_ai.evaluation.evaluator.type',
   evaluatorVersion: 'attributes.opensearch.gen_ai.evaluation.evaluator.version',
+  /** What the evaluator checks (SDK gap field, optional). */
+  evaluatorDescription: 'attributes.opensearch.gen_ai.evaluation.evaluator.description',
+  /** The LLM judge's model, prompt template and system prompt (semconv, all optional). */
+  judgeModel: 'attributes.gen_ai.request.model',
+  promptName: 'attributes.gen_ai.prompt.name',
+  promptVersion: 'attributes.gen_ai.prompt.version',
+  systemInstructions: 'attributes.gen_ai.system_instructions',
+  systemInstructionsTruncated:
+    'attributes.opensearch.gen_ai.evaluation.system_instructions_truncated',
   scoreMin: 'attributes.opensearch.gen_ai.evaluation.score.min',
   scoreMax: 'attributes.opensearch.gen_ai.evaluation.score.max',
   scoreThreshold: 'attributes.opensearch.gen_ai.evaluation.score.threshold',
@@ -324,6 +336,24 @@ export const isTruncated = (rows: unknown[]): boolean => rows.length >= AGG_LIMI
 
 const runsWhere = (runIds: string[]) =>
   runIds.map((id) => `${fld(F.runId)} = ${quote(id)}`).join(' or ');
+
+/** At most this many runs get their name read (`buildRunNamesQuery`), the latest first. */
+export const RUN_NAMES_LIMIT = 100;
+
+/**
+ * One result document per run, for its optional name and description
+ * (`opensearch.test.suite.run.name` / `.description`). They are read from whole documents, not
+ * grouped by: PPL fails on a field the index mapping does not have (old data, no run names).
+ */
+export const buildRunNamesQuery = (index: string, runIds: string[]): string => {
+  const ids = runIds.slice(0, RUN_NAMES_LIMIT);
+  return join([
+    ...base(index),
+    `where ${ids.length > 1 ? `(${runsWhere(ids)})` : runsWhere(ids)}`,
+    `dedup ${fld(F.runId)}`,
+    `head ${ids.length}`,
+  ]);
+};
 
 /** First and last result of one or two runs: the window the run and compare pages read. */
 export const buildRunWindowQuery = (index: string, runIds: string[]): string =>

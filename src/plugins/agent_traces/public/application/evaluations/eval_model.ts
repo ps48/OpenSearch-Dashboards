@@ -428,6 +428,9 @@ export interface RunRow {
   started: number;
   tally: Tally;
   rate?: number;
+  /** `opensearch.test.suite.run.name` / `.description`, from `withRunNames`. */
+  name?: string;
+  description?: string;
 }
 
 const runsOf = (rows: PplRecord[]): RunRow[] => {
@@ -611,6 +614,9 @@ export interface RunRef {
   /** Read by the lookup without a suite only. */
   agent?: string;
   started: number;
+  /** From `withRunNames`. */
+  name?: string;
+  description?: string;
 }
 
 /** The runs of `buildRunsLookupQuery` rows. */
@@ -646,6 +652,39 @@ export const otherRunsOfSuite = (rows: PplRecord[], runId: string): number => {
   return rows.filter((row) => str(get(row, F.runId)) !== runId && suiteOf(row) === suiteOf(self))
     .length;
 };
+
+// ---------------------------------------------------------------------- Run names
+
+/** A run's optional name and description. */
+export interface RunName {
+  name?: string;
+  description?: string;
+}
+
+/** Name and description per run, from `buildRunNamesQuery` documents (runs without either: none). */
+export const runNamesOf = (rows: PplRecord[]): Map<string, RunName> => {
+  const out = new Map<string, RunName>();
+  rows.forEach((row) => {
+    const runId = str(get(row, F.runId));
+    if (!runId || out.has(runId)) return;
+    const name = str(get(row, F.runName))?.trim() || undefined;
+    const description = str(get(row, F.runDescription))?.trim() || undefined;
+    if (name || description) out.set(runId, { name, description });
+  });
+  return out;
+};
+
+/** The runs with their names (when there is one). */
+export const withRunNames = <T extends { runId: string }>(
+  runs: T[],
+  names: Map<string, RunName>
+): Array<T & RunName> =>
+  names.size === 0
+    ? runs
+    : runs.map((r) => {
+        const n = names.get(r.runId);
+        return n ? { ...r, name: n.name, description: n.description } : r;
+      });
 
 // ---------------------------------------------------------------------- Compare runs
 
@@ -784,6 +823,16 @@ export interface EvalResult {
   evaluatorName?: string;
   evaluatorType?: string;
   evaluatorVersion?: string;
+  /** What the evaluator checks (`opensearch.gen_ai.evaluation.evaluator.description`). */
+  evaluatorDescription?: string;
+  /** The LLM judge's model (`gen_ai.request.model`). */
+  judgeModel?: string;
+  /** The judge prompt template (`gen_ai.prompt.name` / `gen_ai.prompt.version`). */
+  promptName?: string;
+  promptVersion?: string;
+  /** The judge's system prompt (`gen_ai.system_instructions`), opt-in in the SDKs. */
+  systemInstructions?: string;
+  systemInstructionsTruncated: boolean;
   scoreMin?: number;
   scoreMax?: number;
   scoreThreshold?: number;
@@ -795,6 +844,9 @@ export interface EvalResult {
   expectedTruncated: boolean;
   suiteName?: string;
   runId?: string;
+  /** `opensearch.test.suite.run.name` / `.description`, offline only. */
+  runName?: string;
+  runDescription?: string;
   caseId?: string;
   caseName?: string;
   conversationId?: string;
@@ -832,6 +884,12 @@ export const recordToResult = (row: PplRecord, index = 0): EvalResult => {
     evaluatorName: s(F.evaluatorName),
     evaluatorType: s(F.evaluatorType),
     evaluatorVersion: s(F.evaluatorVersion),
+    evaluatorDescription: s(F.evaluatorDescription),
+    judgeModel: s(F.judgeModel),
+    promptName: s(F.promptName),
+    promptVersion: s(F.promptVersion),
+    systemInstructions: s(F.systemInstructions),
+    systemInstructionsTruncated: String(get(row, F.systemInstructionsTruncated)) === 'true',
     scoreMin: num(get(row, F.scoreMin)),
     scoreMax: num(get(row, F.scoreMax)),
     scoreThreshold: num(get(row, F.scoreThreshold)),
@@ -841,6 +899,8 @@ export const recordToResult = (row: PplRecord, index = 0): EvalResult => {
     expectedTruncated: String(get(row, F.caseExpectedTruncated)) === 'true',
     suiteName: s(F.suiteName),
     runId: s(F.runId),
+    runName: s(F.runName),
+    runDescription: s(F.runDescription),
     caseId: s(F.caseId),
     caseName: s(F.caseName),
     conversationId: s(F.conversationId),

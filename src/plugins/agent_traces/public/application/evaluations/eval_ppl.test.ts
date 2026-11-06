@@ -19,6 +19,8 @@ import {
   buildOneTraceSpansQuery,
   buildRootSpansQuery,
   buildRunsLookupQuery,
+  buildRunNamesQuery,
+  RUN_NAMES_LIMIT,
   buildEvalRunsQuery,
   buildEvalRunCasesQuery,
   buildRunsFacetQuery,
@@ -236,6 +238,30 @@ describe('evaluation PPL', () => {
         'head 10000',
       ].join(' | ')
     );
+  });
+
+  it('Run names: one whole document per run, never grouped by the optional name', () => {
+    expect(buildRunNamesQuery(I, ['r1'])).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'r1'",
+        'dedup `attributes.test.suite.run.id`',
+        'head 1',
+      ].join(' | ')
+    );
+    expect(buildRunNamesQuery(I, ['r1', 'r2'])).toBe(
+      [
+        ...BASE,
+        "where (`attributes.test.suite.run.id` = 'r1' or `attributes.test.suite.run.id` = 'r2')",
+        'dedup `attributes.test.suite.run.id`',
+        'head 2',
+      ].join(' | ')
+    );
+    const many = Array.from({ length: RUN_NAMES_LIMIT + 5 }, (_, i) => `r${i}`);
+    const q = buildRunNamesQuery(I, many);
+    expect(q).toContain(`head ${RUN_NAMES_LIMIT}`);
+    expect(q).not.toContain(`'r${RUN_NAMES_LIMIT}'`);
+    expect(q).not.toContain('run.name');
   });
 
   it('Run: the runs in the range, to find the run before', () => {
