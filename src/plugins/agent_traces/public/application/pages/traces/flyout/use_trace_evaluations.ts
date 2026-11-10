@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../../types';
 import { EvalResult, isSpanResult, recordsToResults } from '../../../evaluations/eval_model';
-import { buildSessionResultsQuery, buildTraceResultsQuery } from '../../../evaluations/eval_ppl';
+import { buildSessionResultsQuery, buildTraceResultsQuery } from '../../../evaluations/ppl_queries';
 import { useEvalsDataSource, useEvalsIndexPattern } from '../../../evaluations/eval_dataset';
 import { errorMessage, evalsDataset, runPpl } from '../../../evaluations/use_ppl_rows';
 

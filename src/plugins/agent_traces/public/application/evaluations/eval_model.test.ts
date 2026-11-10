@@ -7,6 +7,8 @@ import {
   isCompatibleRun,
   runNamesOf,
   withRunNames,
+  caseNamesOf,
+  withCaseNames,
   agentEvaluations,
   agentRows,
   agentVersionRows,
@@ -19,7 +21,6 @@ import {
   emptyTally,
   addToTally,
   evaluationRows,
-  isLive,
   latestRunPerVersion,
   meanPassRate,
   otherRunsOfSuite,
@@ -34,7 +35,7 @@ import {
   verdictOf,
   versionsOf,
 } from './eval_model';
-import { NO_AGENT } from './eval_ppl';
+import { NO_AGENT } from './ppl_queries';
 
 const A = 'attributes.gen_ai.agent.name';
 const V = 'attributes.gen_ai.agent.version';
@@ -42,8 +43,6 @@ const N = 'attributes.gen_ai.evaluation.name';
 const RUN = 'attributes.test.suite.run.id';
 const SUITE = 'attributes.test.suite.name';
 const CASE = 'attributes.test.case.id';
-const CASE_NAME = 'attributes.test.case.name';
-const CI = 'attributes.cicd.pipeline.run.url.full';
 const L = 'attributes.gen_ai.evaluation.score.label';
 const DIR = 'attributes.opensearch.gen_ai.evaluation.score.direction';
 
@@ -155,16 +154,8 @@ describe('agents', () => {
     expect(none.rate).toBe(1);
   });
 
-  it('marks versions with results in the last 6 hours', () => {
-    const now = Date.UTC(2026, 9, 30, 15);
-    const [tp] = agentRows(rows);
-    expect(isLive(tp.versions[0], now)).toBe(true);
-    expect(isLive(tp.versions[1], now)).toBe(false);
-  });
-
   it('lists one Agents table row per agent and version', () => {
-    const now = Date.UTC(2026, 9, 30, 15);
-    const items = agentVersionRows(rows, now);
+    const items = agentVersionRows(rows);
     expect(items.map((r) => r.id)).toEqual(['tp/v2', 'tp/v1', `${NO_AGENT}/`]);
     expect(items[0]).toMatchObject({
       agent: 'tp',
@@ -172,10 +163,10 @@ describe('agents', () => {
       decided: 20,
       n: 27,
       last: Date.UTC(2026, 9, 30, 12),
-      live: true,
     });
+    expect(items[0]).not.toHaveProperty('live');
     expect(items[0].rate).toBeCloseTo(0.4);
-    expect(items[1]).toMatchObject({ version: 'v1', decided: 20, n: 20, live: false });
+    expect(items[1]).toMatchObject({ version: 'v1', decided: 20, n: 20 });
     expect(items[1].rate).toBeCloseTo(0.9);
     expect(items[2]).toMatchObject({ agent: NO_AGENT, version: undefined, rate: 1, n: 5 });
     expect(agentVersionRows([])).toEqual([]);
@@ -299,18 +290,16 @@ describe('suites and runs', () => {
     expect(s.delta).toBe(-0.5);
   });
 
-  it('lists a suite runs oldest first with errors and CI links', () => {
-    const runs = suiteRuns([
-      ...runRows.map((r) => ({ ...r, [A]: 'tp' })),
-      { ...runRows[0], n: 0, [CI]: 'https://ci/1' },
-    ]);
+  it('lists a suite runs oldest first with errors', () => {
+    const runs = suiteRuns(runRows.map((r) => ({ ...r, [A]: 'tp' })));
     expect(runs.map((r) => r.runId)).toEqual(['r1', 'r2']);
-    expect(runs[0]).toMatchObject({ agent: 'tp', ciUrl: 'https://ci/1' });
+    expect(runs[0]).toMatchObject({ agent: 'tp' });
+    expect(runs[0]).not.toHaveProperty('ciUrl');
     expect(runs[1].tally.error).toBe(2);
   });
 
   it('reads a run: header, duration and cases with failed evaluations', () => {
-    const base = { [SUITE]: 'g', [A]: 'tp', [V]: 'v2', [CI]: 'https://ci/9' };
+    const base = { [SUITE]: 'g', [A]: 'tp', [V]: 'v2' };
     const run = runDetail('r2', [
       {
         ...base,
@@ -318,7 +307,6 @@ describe('suites and runs', () => {
         t0: '2026-10-28 07:00:00',
         t1: '2026-10-28 07:00:10',
         [CASE]: 'c1',
-        [CASE_NAME]: 'Case 1',
         [N]: 'acc',
         verdict: 'fail',
         traceId: 't1',
@@ -329,7 +317,6 @@ describe('suites and runs', () => {
         t0: '2026-10-28 07:00:00',
         t1: '2026-10-28 07:00:10',
         [CASE]: 'c1',
-        [CASE_NAME]: 'Case 1',
         [N]: 'tone',
         verdict: 'pass',
         traceId: 't1',
@@ -340,7 +327,6 @@ describe('suites and runs', () => {
         t0: '2026-10-28 07:00:20',
         t1: '2026-10-28 07:01:00',
         [CASE]: 'c2',
-        [CASE_NAME]: 'Case 2',
         [N]: 'acc',
         verdict: 'error',
         traceId: 't2',
@@ -351,7 +337,6 @@ describe('suites and runs', () => {
         t0: '2026-10-28 07:00:20',
         t1: '2026-10-28 07:01:00',
         [CASE]: 'c3',
-        [CASE_NAME]: 'Case 3',
         [N]: 'acc',
         verdict: 'pass',
         traceId: 't3',
@@ -361,7 +346,6 @@ describe('suites and runs', () => {
       suite: 'g',
       agent: 'tp',
       version: 'v2',
-      ciUrl: 'https://ci/9',
       durationMs: 60000,
     });
     expect(run?.rate).toBeCloseTo(2 / 3);
@@ -371,8 +355,12 @@ describe('suites and runs', () => {
       status: 'fail',
       failed: ['acc'],
       traceId: 't1',
-      caseName: 'Case 1',
     });
+    // Case names are not grouped by: they come from `caseNamesOf` documents.
+    expect(c1?.caseName).toBeUndefined();
+    const named = withCaseNames(run?.cases ?? [], new Map([['c1', 'Case 1']]));
+    expect(named.find((c) => c.caseId === 'c1')?.caseName).toBe('Case 1');
+    expect(named.find((c) => c.caseId === 'c2')?.caseName).toBeUndefined();
     expect(run?.cases.find((c) => c.caseId === 'c2')).toMatchObject({
       status: 'error',
       errored: ['acc'],
@@ -518,6 +506,7 @@ describe('result documents', () => {
           test: { case: { expected: 'Paris', expected_truncated: true } },
         },
         test: { suite: { name: 'g', run: { id: 'r1' } }, case: { id: 'c1' } },
+        cicd: { pipeline: { run: { url: { full: 'https://ci/runs/3' } } } },
       },
     });
     expect(r).toMatchObject({
@@ -539,6 +528,7 @@ describe('result documents', () => {
       expectedTruncated: true,
       runId: 'r1',
       caseId: 'c1',
+      ciUrl: 'https://ci/runs/3',
       scope: 'opensearch-genai-observability-sdk-py',
     });
     expect(
@@ -597,11 +587,26 @@ describe('result documents', () => {
 });
 
 describe('run names', () => {
-  const doc = (id: string, name?: string, description?: string) => ({
+  const doc = (id: string, name?: string, description?: string, ci?: string) => ({
     attributes: {
       test: { suite: { run: { id } } },
       opensearch: { test: { suite: { run: { name, description } } } },
+      ...(ci ? { cicd: { pipeline: { run: { url: { full: ci } } } } } : {}),
     },
+  });
+
+  it('reads the CI link of a run from its document', () => {
+    const names = runNamesOf([doc('r1', undefined, undefined, 'https://ci/runs/7'), doc('r2')]);
+    expect(names.get('r1')).toEqual({ ciUrl: 'https://ci/runs/7' });
+    expect(names.has('r2')).toBe(false);
+  });
+
+  it('reads one name per case, skipping cases without one', () => {
+    const c = (id: string, name?: string) => ({ attributes: { test: { case: { id, name } } } });
+    const names = caseNamesOf([c('c1', 'First'), c('c1', 'Ignored'), c('c2'), c('c3', '  ')]);
+    expect([...names.entries()]).toEqual([['c1', 'First']]);
+    const same = [{ caseId: 'c1' }];
+    expect(withCaseNames(same, new Map())).toBe(same);
   });
 
   it('reads one name per run, skips runs without one, and merges them into rows', () => {

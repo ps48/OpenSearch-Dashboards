@@ -42,7 +42,7 @@ import {
   sortDatasets,
 } from './eval_dataset';
 import { errorMessage, evalsLookupDataset, runPpl } from './use_ppl_rows';
-import { EVAL_EVENT, F, fld } from './eval_ppl';
+import { buildResultsTotalQuery } from './ppl_queries';
 import { num } from './eval_model';
 import type { EvaluationsServices } from '.';
 
@@ -85,7 +85,7 @@ export const countEvaluationResults = async (
     const rows = await runPpl(
       services.data,
       evalsLookupDataset(index, dataSource),
-      `source = ${index} | where ${fld(F.eventName)} = '${EVAL_EVENT}' | stats count() as n`
+      buildResultsTotalQuery(index)
     );
     return num(rows[0]?.n) ?? 0;
   } catch (e) {

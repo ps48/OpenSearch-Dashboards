@@ -42,7 +42,7 @@ import {
   hitsToAgentSpans,
 } from '../pages/traces/hooks/tree_utils';
 import { EvalResult, isSpanResult, parseTime, recordsToResults, tallyOf } from './eval_model';
-import { buildTraceResultsQuery, buildTraceSpansQuery } from './eval_ppl';
+import { buildTraceResultsQuery, buildTraceSpansQuery } from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { errorMessage, runPpl } from './use_ppl_rows';
 import { JudgeMark } from './judge_mark';

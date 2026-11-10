@@ -42,7 +42,7 @@ import {
   buildFacetQuery,
   buildResultsCountQuery,
   buildResultsPageQuery,
-} from './eval_ppl';
+} from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { useRunNames } from './use_run_names';

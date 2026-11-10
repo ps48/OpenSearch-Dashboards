@@ -5,23 +5,18 @@
 
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
-import {
-  RunPage,
-  buildRunEvaluatorsQuery,
-  deltaOf,
-  passedDelta,
-  evaluatorDescriptionsOf,
-  filterCases,
-} from './run_page';
+import { RunPage, deltaOf, passedDelta, evaluatorDescriptionsOf, filterCases } from './run_page';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
   buildCaseResultsQuery,
   buildRootSpansQuery,
   buildRunCasesQuery,
+  buildCaseNamesQuery,
+  buildRunEvaluatorsQuery,
   buildRunNamesQuery,
   buildRunsLookupQuery,
   buildSuiteRunsQuery,
-} from './eval_ppl';
+} from './ppl_queries';
 import { CaseRow, emptyTally } from './eval_model';
 
 const SUITE = 'attributes.test.suite.name';
@@ -44,6 +39,7 @@ const RUN = 'run_20261028_cccc3333';
 /** The run's cases (they name its suite), the suite's runs, then the run before's cases. */
 const RUN_QUERIES = () => [
   buildRunCasesQuery(TEST_INDEX, RUN),
+  buildCaseNamesQuery(TEST_INDEX, [RUN]),
   buildRunEvaluatorsQuery(TEST_INDEX, RUN),
   buildRunNamesQuery(TEST_INDEX, [RUN, 'run_20261027_bbbb2222']),
   buildRunsLookupQuery(TEST_INDEX, 'golden'),
@@ -54,7 +50,6 @@ const base = {
   'attributes.test.suite.name': 'golden',
   'attributes.gen_ai.agent.name': 'tp',
   'attributes.gen_ai.agent.version': 'v2',
-  'attributes.cicd.pipeline.run.url.full': 'https://ci/runs/77',
 };
 const caseRow = (id: string, name: string, verdict: string, t0: string, t1: string, run = RUN) => ({
   ...base,
@@ -63,7 +58,6 @@ const caseRow = (id: string, name: string, verdict: string, t0: string, t1: stri
   t0,
   t1,
   'attributes.test.case.id': id,
-  'attributes.test.case.name': `Case ${id}`,
   'attributes.gen_ai.evaluation.name': name,
   verdict,
   traceId: `trace-${id}`,
@@ -73,6 +67,16 @@ describe('RunPage', () => {
   beforeEach(() => {
     mockPpl.reset();
     mockPpl.answer((q) => {
+      // One document per run (its CI link) and per case (its name).
+      if (q === buildRunNamesQuery(TEST_INDEX, [RUN, BEFORE]))
+        return [
+          {
+            [RUN_ID]: RUN,
+            attributes: { cicd: { pipeline: { run: { url: { full: 'https://ci/runs/77' } } } } },
+          },
+        ];
+      if (q === buildCaseNamesQuery(TEST_INDEX, [RUN]))
+        return [{ attributes: { test: { case: { id: 'c1', name: 'Case c1' } } } }];
       if (q.includes('stats min(`@timestamp`) as started'))
         return [
           { started: '2026-10-27 07:00:00', [SUITE]: 'golden', [AGENT]: 'tp', [RUN_ID]: BEFORE },
@@ -163,6 +167,7 @@ describe('RunPage', () => {
     expect(meta).toHaveTextContent('golden');
     expect(meta).toHaveTextContent('tp');
     expect(meta).toHaveTextContent('1 min 30 s');
+    // The CI link from the run's document, not from a group-by.
     expect(within(meta).getByText('#77')).toBeInTheDocument();
     const stat = (id: string, value: string, delta: string, kind: string) => {
       const el = screen.getByTestId(id);
@@ -188,6 +193,9 @@ describe('RunPage', () => {
       '3 cases × 2 evaluations: accuracy, tone'
     );
     const c1 = screen.getByTestId('agtEvlCaseRow-c1');
+    // The case name from the case's document; a case without one shows its id.
+    expect(within(c1).getByText('Case c1')).toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlCaseRow-c2')).not.toHaveTextContent('Case c2');
     expect(within(c1).getByText('Fail')).toBeInTheDocument();
     expect(within(c1).getByText('accuracy')).toBeInTheDocument();
     expect(
@@ -457,7 +465,7 @@ describe('RunPage', () => {
 
   it('shows the run name and description when the run has them', () => {
     mockPpl.answer((q) =>
-      q.includes('dedup `attributes.test.suite.run.id`')
+      q === buildRunNamesQuery(TEST_INDEX, [RUN])
         ? [
             {
               [RUN_ID]: RUN,

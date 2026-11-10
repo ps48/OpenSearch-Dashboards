@@ -23,7 +23,7 @@ import {
   num,
   str,
 } from '../../evaluations/eval_model';
-import { F, buildTracesTallyQuery } from '../../evaluations/eval_ppl';
+import { F, buildTracesTallyQuery } from '../../evaluations/ppl_queries';
 import { useEvalsDataSource, useEvalsIndexPattern } from '../../evaluations/eval_dataset';
 import { evalsDataset, runPpl } from '../../evaluations/use_ppl_rows';
 

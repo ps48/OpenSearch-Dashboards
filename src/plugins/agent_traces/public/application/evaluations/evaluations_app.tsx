@@ -45,7 +45,7 @@ import {
 } from './eval_routes';
 import { EvalContext, EvalScreenContext } from './eval_context';
 import { evalsDataset, evalsLookupDataset, spansDataset, usePplRows } from './use_ppl_rows';
-import { buildRunNamesQuery, buildRunWindowQuery } from './eval_ppl';
+import { buildRunNamesQuery, buildRunWindowQuery } from './ppl_queries';
 import {
   EvalsDatasetConfig,
   evalsDataSourceOf,
@@ -524,6 +524,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
     ]
   );
 
+  const onHomeTab = (HOME_PAGES as string[]).includes(route.page);
   const gettingStartedButton = (
     <EvalGettingStartedButton key="gettingStarted" onClick={() => setTourOpen(true)} />
   );
@@ -621,13 +622,12 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
                 defaultMessage="Evaluation results of your agents, from online evaluators and test suite runs."
               />
             }
-            controls={
-              !config
-                ? [gettingStartedButton, settingsButton]
-                : onRunPage
-                  ? [refreshButton, gettingStartedButton, settingsButton]
-                  : [datePicker, gettingStartedButton, settingsButton]
-            }
+            controls={[
+              ...(!config ? [] : onRunPage ? [refreshButton] : [datePicker]),
+              // Getting started is offered on the home tabs only (and in the empty states).
+              ...(onHomeTab ? [gettingStartedButton] : []),
+              settingsButton,
+            ]}
           />
           {!services.chrome.navGroup?.getNavGroupEnabled() && <EuiSpacer size="m" />}
           {renderContent()}

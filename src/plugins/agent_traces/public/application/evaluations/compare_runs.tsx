@@ -39,6 +39,7 @@ import {
   recordsToResults,
   str,
   suiteRuns,
+  withCaseNames,
 } from './eval_model';
 import {
   F,
@@ -47,7 +48,7 @@ import {
   buildCompareRunsQuery,
   buildSuiteRunsQuery,
   isTruncated,
-} from './eval_ppl';
+} from './ppl_queries';
 import { SpanIOView } from './span_io_view';
 import { useRootSpans } from './eval_spans';
 import {
@@ -76,7 +77,7 @@ import {
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { TraceCompareFlyout } from './trace_compare_flyout';
-import { useRunNames } from './use_run_names';
+import { useCaseNames, useRunNames } from './use_run_names';
 
 const CHANGE_ORDER: Record<CaseChange, number> = {
   regressed: 0,
@@ -391,8 +392,13 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
     timeRange,
     refreshKey
   );
-  const cmp = useMemo(() => comparison(runA, runB, rows), [runA, runB, rows]);
-  const names = useRunNames(useMemo(() => [runA, runB], [runA, runB]));
+  const runIds = useMemo(() => [runA, runB], [runA, runB]);
+  const caseNames = useCaseNames(runIds);
+  const cmp = useMemo(() => {
+    const c = comparison(runA, runB, rows);
+    return { ...c, cases: withCaseNames(c.cases, caseNames) };
+  }, [runA, runB, rows, caseNames]);
+  const names = useRunNames(runIds);
   // A run id with no results (a wrong link, a run outside the data): say which, rather than
   // a comparison where every case is only in the other run.
   const missingRuns = useMemo(() => {

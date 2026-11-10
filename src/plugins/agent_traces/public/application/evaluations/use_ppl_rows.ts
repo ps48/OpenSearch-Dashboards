@@ -11,7 +11,7 @@ import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_requ
 import { pplResponseToRecords } from '../pages/sessions/session_utils';
 import { PplRecord } from './eval_model';
 import type { DataSourceRef } from './eval_dataset';
-import { EVALS_TIME_FIELD } from './eval_ppl';
+import { EVALS_TIME_FIELD } from './ppl_queries';
 
 /** The evaluations index as a dataset: the PPL service bounds it by `@timestamp`. */
 const withDataSource = (dataSource?: DataSourceRef) => (dataSource ? { dataSource } : {});

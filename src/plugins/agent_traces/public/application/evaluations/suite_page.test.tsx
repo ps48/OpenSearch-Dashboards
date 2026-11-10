@@ -5,9 +5,10 @@
 
 import React from 'react';
 import { fireEvent, screen, within } from '@testing-library/react';
-import { SuitePage, ciLabel, compareOrder, runVersionMarkers } from './suite_page';
+import { SuitePage, compareOrder, runVersionMarkers } from './suite_page';
+import { ciLabel } from './eval_components';
 import { TEST_INDEX, fakePpl, renderWithContext } from './eval_test_utils';
-import { buildRunNamesQuery, buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './eval_ppl';
+import { buildRunNamesQuery, buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './ppl_queries';
 import { RunRow, emptyTally } from './eval_model';
 
 const mockPpl = fakePpl();
@@ -17,20 +18,12 @@ jest.mock('./use_ppl_rows', () => ({
 }));
 jest.mock('./pass_rate_chart', () => ({ PassRateChart: () => <div /> }));
 
-const run = (
-  id: string,
-  day: number,
-  version: string,
-  verdict: string,
-  n: number,
-  ci?: string
-) => ({
+const run = (id: string, day: number, version: string, verdict: string, n: number) => ({
   n,
   started: `2026-10-${day} 07:00:00`,
   'attributes.test.suite.run.id': id,
   'attributes.gen_ai.agent.name': 'tp',
   'attributes.gen_ai.agent.version': version,
-  'attributes.cicd.pipeline.run.url.full': ci ?? null,
   verdict,
 });
 
@@ -47,27 +40,13 @@ describe('SuitePage', () => {
             run('run_20261026_aaaa1111', 26, 'v1', 'pass', 8),
             run('run_20261027_bbbb2222', 27, 'v1', 'pass', 6),
             run('run_20261027_bbbb2222', 27, 'v1', 'error', 2),
-            run(
-              'run_20261028_cccc3333',
-              28,
-              'v2',
-              'fail',
-              4,
-              'https://github.com/o/r/actions/runs/1793'
-            ),
-            run(
-              'run_20261028_cccc3333',
-              28,
-              'v2',
-              'pass',
-              4,
-              'https://github.com/o/r/actions/runs/1793'
-            ),
+            run('run_20261028_cccc3333', 28, 'v2', 'fail', 4),
+            run('run_20261028_cccc3333', 28, 'v2', 'pass', 4),
           ]
     );
   });
 
-  it('runs the runs, cases and run names queries and lists runs with errors and CI links', () => {
+  it('runs the runs, cases and run names queries and lists runs with errors, no CI column', () => {
     renderWithContext(<SuitePage suite="golden" />);
     expect(new Set(mockPpl.queries)).toEqual(
       new Set([
@@ -85,7 +64,10 @@ describe('SuitePage', () => {
     const c = screen.getByTestId('agtEvlRunRow-run_20261028_cccc3333');
     expect(within(c).getByText('cccc3333')).toBeInTheDocument();
     expect(within(c).getByText('50%')).toBeInTheDocument();
-    expect(within(c).getByText('#1793')).toBeInTheDocument();
+    // The CI link is on the run page, not in the runs table.
+    expect(
+      screen.getAllByRole('columnheader').some((h) => (h.textContent ?? '').includes('CI'))
+    ).toBe(false);
     const b = screen.getByTestId('agtEvlRunRow-run_20261027_bbbb2222');
     expect(within(b).getByText('2')).toBeInTheDocument();
   });

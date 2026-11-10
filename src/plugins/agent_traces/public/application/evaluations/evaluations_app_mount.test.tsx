@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { createMemoryHistory, MemoryHistory } from 'history';
 import { of } from 'rxjs';
 import { I18nProvider } from '@osd/i18n/react';
@@ -206,7 +206,28 @@ describe('EvaluationsApp', () => {
     const header = screen.getByTestId('agtEvlInPageHeader');
     expect(within(header).getByTestId('agtEvlRefresh')).toBeInTheDocument();
     expect(header.querySelector('.euiSuperDatePicker')).not.toBeInTheDocument();
-    expect(controlIds()).toEqual(['agtEvlGettingStartedButton', 'agtEvlSettingsButton']);
+    // Getting started is on the home tabs only.
+    expect(controlIds()).toEqual(['agtEvlSettingsButton']);
+  });
+
+  it('Getting started on the three home tabs only', () => {
+    ['#/agents', '#/runs', '#/results'].forEach((hash) => {
+      cleanup();
+      mount(hash);
+      expect(controlIds()).toEqual(['agtEvlGettingStartedButton', 'agtEvlSettingsButton']);
+    });
+    ['#/agents/tp', '#/suites/golden', '#/runs/run_1', '#/compare/run_1/run_2'].forEach((hash) => {
+      cleanup();
+      mount(hash);
+      expect(controlIds()).toEqual(['agtEvlSettingsButton']);
+    });
+  });
+
+  it('no config off the home tabs: the empty state keeps Getting started, the header does not', () => {
+    mockDataset = { status: 'ready', unavailable: false, refresh: jest.fn() };
+    mount('#/suites/golden');
+    expect(controlIds()).toEqual(['agtEvlSettingsButton']);
+    expect(screen.getByTestId('agtEvlTour')).toBeInTheDocument();
   });
 
   it('no config: the showcase, Getting started and Settings; Set up opens the wizard', () => {

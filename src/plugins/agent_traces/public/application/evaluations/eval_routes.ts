@@ -11,7 +11,7 @@ import {
   ResultsSort,
   ResultsSortField,
   RunsFilters,
-} from './eval_ppl';
+} from './ppl_queries';
 
 /**
  * Screens of the Agent Evaluations app, by the path of the URL hash:

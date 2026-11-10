@@ -22,15 +22,14 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { AgentVersionRow, MIN_N, agentVersionRows } from './eval_model';
-import { NO_AGENT, buildAgentsQuery } from './eval_ppl';
+import { NO_AGENT, buildAgentsQuery } from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import {
-  LiveDot,
   NO_AGENT_LABEL,
   PassRateCell,
   QueryErrorCallout,
-  LAST_RESULT_LABEL,
+  LastResultLabel,
   SourceFilter,
   formatTime,
   versionLabel,
@@ -119,10 +118,7 @@ export const AgentsHome: React.FC = () => {
       sortable: (r: AgentVersionRow) => r.version ?? '',
       render: (_: unknown, r: AgentVersionRow) => (
         <span className="agtEvlNoWrap">
-          <EuiBadge color="hollow">
-            {r.live && <LiveDot />}
-            {versionLabel(r.version)}
-          </EuiBadge>
+          <EuiBadge color="hollow">{versionLabel(r.version)}</EuiBadge>
         </span>
       ),
     },
@@ -150,7 +146,7 @@ export const AgentsHome: React.FC = () => {
     },
     {
       field: 'last',
-      name: LAST_RESULT_LABEL[state.agentsSource],
+      name: <LastResultLabel source={state.agentsSource} />,
       align: 'right',
       sortable: true,
       render: (last: number) => <span className="agtEvlDim">{formatTime(last)}</span>,
@@ -170,7 +166,7 @@ export const AgentsHome: React.FC = () => {
         <p>
           {i18n.translate('agentTraces.evals.agents.description', {
             defaultMessage:
-              'One row per agent version with evaluation results in the time range. A dot marks a version with results in the last 6 hours. Click a row to see its evaluations and compare it with another version.',
+              'One row per agent version with evaluation results in the time range. Click a row to see its evaluations and compare it with another version.',
           })}
         </p>
       </EuiText>

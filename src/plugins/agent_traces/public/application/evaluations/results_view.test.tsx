@@ -17,7 +17,7 @@ import {
   buildResultsCountQuery,
   buildResultsPageQuery,
   buildRunNamesQuery,
-} from './eval_ppl';
+} from './ppl_queries';
 
 // jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
 jest.mock('react-virtualized-auto-sizer', () => ({

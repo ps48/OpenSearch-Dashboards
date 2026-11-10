@@ -16,6 +16,7 @@ import {
   SdkLinks,
 } from './eval_onboarding';
 import { NoEvalsDatasetPrompt } from './eval_empty_states';
+import { CODING_AGENT_PROMPT } from './coding_agent_prompt';
 import { EvalGettingStartedButton, EvalHeader, ExperimentalBadge } from './eval_header';
 
 const withServices = (ui: React.ReactElement, services: Record<string, unknown> = {}) =>
@@ -103,6 +104,30 @@ describe('GettingStartedModal', () => {
     fireEvent.click(screen.getByTestId('agtEvlTourNext'));
     fireEvent.click(screen.getByTestId('agtEvlTourDone'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Send results offers a copyable prompt for a coding agent', () => {
+    renderTour();
+    fireEvent.click(screen.getByTestId('agtEvlTourStep-send'));
+    const block = within(screen.getByTestId('agtEvlTourScreen-send')).getByTestId(
+      'agtEvlCodingAgentPrompt'
+    );
+    expect(block).toHaveTextContent('Copy prompt for your coding agent');
+    expect(within(block).getByTestId('agtEvlCodingAgentPromptText')).toHaveTextContent(
+      'Instrument this agent for OpenSearch Agent Traces and Agent Evaluations'
+    );
+    // The whole prompt, in a code block (its Copy button needs layout: checked in a browser).
+    expect(within(block).getByTestId('agtEvlCodingAgentPromptText').textContent).toContain(
+      'Checklist (confirm each with evidence)'
+    );
+  });
+
+  it('the coding agent prompt is generic and vendor-neutral', () => {
+    expect(CODING_AGENT_PROMPT).toContain('gen_ai.evaluation.result');
+    expect(CODING_AGENT_PROMPT).toContain('<OTLP_ENDPOINT>');
+    expect(CODING_AGENT_PROMPT).toContain('Checklist');
+    expect(CODING_AGENT_PROMPT).not.toMatch(/sigv4|OSIS|Amazon|AWS/);
+    expect(CODING_AGENT_PROMPT).not.toContain('\u2014');
   });
 
   it('jumps to a screen from its step', () => {

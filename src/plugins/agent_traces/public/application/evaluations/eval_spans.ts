@@ -10,7 +10,7 @@ import {
   readAttribute,
 } from '../pages/traces/hooks/genai_message_preview';
 import { PplRecord, get, str } from './eval_model';
-import { SF, buildRootSpansQuery, buildSessionRootsQuery, buildSpanQuery } from './eval_ppl';
+import { SF, buildRootSpansQuery, buildSessionRootsQuery, buildSpanQuery } from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 

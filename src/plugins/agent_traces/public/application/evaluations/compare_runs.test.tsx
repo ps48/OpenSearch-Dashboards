@@ -8,12 +8,13 @@ import { fireEvent, screen, within } from '@testing-library/react';
 import { CompareRuns, filterCompareCases } from './compare_runs';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
+  buildCaseNamesQuery,
   buildCaseResultsQuery,
   buildCompareRunsQuery,
   buildRootSpansQuery,
   buildSuiteRunsQuery,
   buildRunNamesQuery,
-} from './eval_ppl';
+} from './ppl_queries';
 import { shortId } from './eval_components';
 
 // jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
@@ -46,7 +47,6 @@ const row = (run: string, caseId: string, name: string, verdict: string) => ({
   'attributes.gen_ai.agent.name': 'tp',
   'attributes.gen_ai.agent.version': run === A ? 'v1' : 'v2',
   'attributes.test.case.id': caseId,
-  'attributes.test.case.name': `Case ${caseId}`,
   'attributes.gen_ai.evaluation.name': name,
   verdict,
   traceId: `${run}-${caseId}`,
@@ -71,6 +71,11 @@ describe('CompareRuns', () => {
     mockPpl.reset();
     mockFlyout.mockClear();
     mockPpl.answer((q) => {
+      // One document per case, for its name (never grouped by).
+      if (q === buildCaseNamesQuery(TEST_INDEX, [A, B]))
+        return ['c1', 'c2', 'c3', 'c4'].map((id) => ({
+          attributes: { test: { case: { id, name: `Case ${id}` } } },
+        }));
       if (q.includes('`parentSpanId`'))
         return [
           {
@@ -110,7 +115,11 @@ describe('CompareRuns', () => {
   it('runs one aggregation over both runs and shows changed cases first', () => {
     renderWithContext(<CompareRuns runA={A} runB={B} />);
     expect(new Set(mockPpl.queries)).toEqual(
-      new Set([buildCompareRunsQuery(TEST_INDEX, A, B), buildRunNamesQuery(TEST_INDEX, [A, B])])
+      new Set([
+        buildCompareRunsQuery(TEST_INDEX, A, B),
+        buildCaseNamesQuery(TEST_INDEX, [A, B]),
+        buildRunNamesQuery(TEST_INDEX, [A, B]),
+      ])
     );
     // Without run names, each card names its run by its short id.
     expect(screen.getByTestId('agtEvlRunCardName-Run A')).toHaveTextContent(shortId(A));

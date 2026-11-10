@@ -31,7 +31,7 @@ import {
   buildEvalRunsQuery,
   buildRunsFacetQuery,
   isTruncated,
-} from './eval_ppl';
+} from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { useDebounced } from './agents_home';

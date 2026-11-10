@@ -42,24 +42,23 @@ import {
   runBefore,
   runDetail,
   suiteRuns,
+  withCaseNames,
 } from './eval_model';
 import {
-  EVAL_EVENT,
-  F,
   NO_AGENT,
   buildCaseResultsQuery,
   buildRunCasesQuery,
+  buildRunEvaluatorsQuery,
   buildRunsLookupQuery,
   buildSuiteRunsQuery,
-  fld,
   isTruncated,
-  quote,
-} from './eval_ppl';
+} from './ppl_queries';
 import { SpanIOView } from './span_io_view';
-import { useRunNames } from './use_run_names';
+import { useCaseNames, useRunNames } from './use_run_names';
 import { NewTabViewLink, traceHref } from './view_links';
 import { useRootSpans } from './eval_spans';
 import {
+  CiLink,
   DASH,
   EXPECTED_LABEL,
   INPUT_LABEL,
@@ -81,7 +80,7 @@ import {
 } from './eval_components';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
-import { CiLink, compareOrder } from './suite_page';
+import { compareOrder } from './suite_page';
 
 type StatusFilter = 'all' | CaseStatus;
 
@@ -147,19 +146,6 @@ const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, case
     </div>
   );
 };
-
-/**
- * One result document per evaluation of a run, for what each evaluator checks
- * (`opensearch.gen_ai.evaluation.evaluator.description`). Whole documents, not grouped by:
- * PPL fails on a field the index mapping does not have (old data).
- */
-export const buildRunEvaluatorsQuery = (index: string, runId: string): string =>
-  [
-    `source = ${index}`,
-    `where ${fld(F.eventName)} = '${EVAL_EVENT}' and ${fld(F.runId)} = ${quote(runId)}`,
-    `dedup ${fld(F.name)}`,
-    'head 100',
-  ].join(' | ');
 
 /** What each evaluation of a run checks, by evaluation name (those with a description). */
 export const evaluatorDescriptionsOf = (rows: PplRecord[]): Array<[string, string]> => {
@@ -481,7 +467,12 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
     browseRange,
     refreshKey
   );
-  const run = useMemo(() => runDetail(runId, rows), [runId, rows]);
+  const detail = useMemo(() => runDetail(runId, rows), [runId, rows]);
+  const caseNames = useCaseNames(useMemo(() => [runId], [runId]));
+  const run = useMemo(
+    () => detail && { ...detail, cases: withCaseNames(detail.cases, caseNames) },
+    [detail, caseNames]
+  );
   const lookup = useRunBefore(runId, run ? (run.suite ?? null) : undefined);
   const beforeId = lookup.before?.runId;
   const beforeCases = usePplRows(
@@ -732,11 +723,11 @@ export const RunPage: React.FC<{ runId: string }> = ({ runId }) => {
             >
               <strong>{formatDuration(run.durationMs)}</strong>
             </MetaItem>
-            {run.ciUrl && (
+            {own?.ciUrl && (
               <MetaItem
                 label={i18n.translate('agentTraces.evals.run.ci', { defaultMessage: 'CI' })}
               >
-                <CiLink url={run.ciUrl} />
+                <CiLink url={own.ciUrl} />
               </MetaItem>
             )}
             <span className="agtEvlMono agtEvlDim" title="test.suite.run.id">

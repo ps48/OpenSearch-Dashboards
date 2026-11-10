@@ -7,7 +7,7 @@ import React from 'react';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { TraceCompareFlyout, flattenSpans, onlyIn, resultsOfSpan } from './trace_compare_flyout';
 import { TEST_INDEX, renderWithContext } from './eval_test_utils';
-import { buildTraceResultsQuery, buildTraceSpansQuery } from './eval_ppl';
+import { buildTraceResultsQuery, buildTraceSpansQuery } from './ppl_queries';
 import { recordToResult } from './eval_model';
 import type { BaseRow } from '../pages/traces/hooks/tree_utils';
 

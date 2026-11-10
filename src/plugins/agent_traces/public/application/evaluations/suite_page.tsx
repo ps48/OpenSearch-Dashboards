@@ -19,7 +19,7 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { RunName, RunRow, runCases, suiteRuns, withRunNames } from './eval_model';
-import { buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './eval_ppl';
+import { buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { PassRateChart } from './pass_rate_chart';
@@ -40,24 +40,6 @@ import {
   formatTime,
   shortId,
 } from './eval_components';
-
-/** The CI run's number (last path part of `cicd.pipeline.run.url.full`). */
-export const ciLabel = (url: string) => `#${url.replace(/\/+$/, '').split('/').pop()}`;
-
-export const CiLink: React.FC<{ url?: string }> = ({ url }) =>
-  url ? (
-    <EuiLink
-      href={url}
-      target="_blank"
-      external
-      title="cicd.pipeline.run.url.full"
-      onClick={(e: React.MouseEvent) => e.stopPropagation()}
-    >
-      {ciLabel(url)}
-    </EuiLink>
-  ) : (
-    <span className="agtEvlDim">{DASH}</span>
-  );
 
 /** Where the agent version changes from one run to the next. */
 export const runVersionMarkers = (runs: RunRow[]) =>
@@ -176,11 +158,6 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
         ) : (
           <span className="agtEvlDim">0</span>
         ),
-    },
-    {
-      field: 'ciUrl',
-      name: i18n.translate('agentTraces.evals.suite.ci', { defaultMessage: 'CI run' }),
-      render: (url?: string) => <CiLink url={url} />,
     },
   ];
 

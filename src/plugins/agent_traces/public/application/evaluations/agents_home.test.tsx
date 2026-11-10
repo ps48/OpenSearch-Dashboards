@@ -7,7 +7,7 @@ import React from 'react';
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { AgentsHome } from './agents_home';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
-import { NO_AGENT, buildAgentsQuery } from './eval_ppl';
+import { NO_AGENT, buildAgentsQuery } from './ppl_queries';
 
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
@@ -92,7 +92,7 @@ describe('AgentsHome', () => {
     expect(screen.queryByText(/pts/)).not.toBeInTheDocument();
   });
 
-  it('marks a version with results in the last 6 hours in its Version badge', () => {
+  it('shows no recency dot and "Last result" with its tip on All sources', () => {
     const now = Date.now();
     const iso = (ms: number) => new Date(ms).toISOString().replace('T', ' ').replace('Z', '');
     mockPpl.answer(() => [
@@ -105,23 +105,16 @@ describe('AgentsHome', () => {
         [N]: 'a',
         verdict: 'pass',
       },
-      {
-        n: 3,
-        first: iso(now - 9e7),
-        last: iso(now - 8e7),
-        [A]: 'tp',
-        [V]: 'v4',
-        [N]: 'a',
-        verdict: 'pass',
-      },
     ]);
     renderWithContext(<AgentsHome />);
-    const live = screen.getByTestId('agtEvlAgentRow-tp/v5');
-    const dot = within(live).getByTestId('agtEvlLiveDot');
-    expect(dot.closest('.euiBadge')).toHaveTextContent('v5');
-    expect(
-      within(screen.getByTestId('agtEvlAgentRow-tp/v4')).queryByTestId('agtEvlLiveDot')
-    ).not.toBeInTheDocument();
+    const versionRow = screen.getByTestId('agtEvlAgentRow-tp/v5');
+    expect(within(versionRow).queryByTestId('agtEvlLiveDot')).not.toBeInTheDocument();
+    expect(screen.queryByText(/A dot marks/)).not.toBeInTheDocument();
+    const header = screen
+      .getAllByRole('columnheader')
+      .find((h) => h.textContent?.includes('Last result')) as HTMLElement;
+    expect(header).toHaveTextContent(/^Last result$/);
+    expect(within(header).getByTestId('agtEvlLastResultTip')).toBeInTheDocument();
   });
 
   it('shows the SDK snippet and links when the range has no results', () => {

@@ -5,7 +5,7 @@
 
 import { renderHook, waitFor } from '@testing-library/react';
 import { useSessionEvaluations, useTraceEvaluations } from './use_trace_evaluations';
-import { buildSessionResultsQuery, buildTraceResultsQuery } from '../../../evaluations/eval_ppl';
+import { buildSessionResultsQuery, buildTraceResultsQuery } from '../../../evaluations/ppl_queries';
 
 const FROM = '2026-11-02T00:00:00.000Z';
 const mockServices = {

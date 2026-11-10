@@ -27,6 +27,7 @@ import {
 import { i18n } from '@osd/i18n';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
 import type { EvaluationsServices } from '.';
+import { CODING_AGENT_PROMPT } from './coding_agent_prompt';
 
 // ---------------------------------------------------------------------------------------
 // Links, snippets and screenshots shared by Getting started, the setup and the empty screen
@@ -106,6 +107,48 @@ export const SdkLinks: React.FC = () => (
       </EuiLink>
     </p>
   </EuiText>
+);
+
+/**
+ * "Copy prompt for your coding agent": a prompt that instruments an agent app for Agent Traces
+ * and Agent Evaluations, in a copyable block.
+ */
+export const CodingAgentPrompt: React.FC = () => (
+  <EuiPanel hasBorder hasShadow={false} paddingSize="s" data-test-subj="agtEvlCodingAgentPrompt">
+    <EuiFlexGroup gutterSize="s" alignItems="center" responsive={false}>
+      <EuiFlexItem grow={false}>
+        <EuiIcon type="copyClipboard" color="primary" />
+      </EuiFlexItem>
+      <EuiFlexItem>
+        <EuiTitle size="xxs">
+          <h3>
+            {i18n.translate('agentTraces.evalsOnboarding.codingAgentTitle', {
+              defaultMessage: 'Copy prompt for your coding agent',
+            })}
+          </h3>
+        </EuiTitle>
+      </EuiFlexItem>
+    </EuiFlexGroup>
+    <EuiText size="xs" color="subdued">
+      <p>
+        {i18n.translate('agentTraces.evalsOnboarding.codingAgentBody', {
+          defaultMessage:
+            'Paste it into your coding agent to instrument your agent app for traces and evaluations, then fill in the values in angle brackets.',
+        })}
+      </p>
+    </EuiText>
+    <EuiSpacer size="xs" />
+    <EuiCodeBlock
+      language="markdown"
+      fontSize="s"
+      paddingSize="s"
+      overflowHeight={200}
+      isCopyable
+      data-test-subj="agtEvlCodingAgentPromptText"
+    >
+      {CODING_AGENT_PROMPT}
+    </EuiCodeBlock>
+  </EuiPanel>
 );
 
 // ---------------------------------------------------------------------------------------
@@ -332,6 +375,8 @@ const TOUR_SCREENS: TourScreen[] = [
         </EuiText>
         <EuiSpacer size="s" />
         <SdkLinks />
+        <EuiSpacer size="s" />
+        <CodingAgentPrompt />
         <EuiSpacer size="s" />
         <EuiCodeBlock language="yaml" fontSize="s" paddingSize="s" isCopyable>
           {DATA_PREPPER_SNIPPET}

@@ -7,7 +7,7 @@ Read-only screens over `gen_ai.evaluation.result` events in the workspace's eval
 
 ## Data rules
 
-- One verdict rule, computed in PPL (`VERDICT_EVAL` in `eval_ppl.ts`): `error.type` set is an
+- One verdict rule, computed in PPL (`VERDICT_EVAL` in `ppl_queries.ts`): `error.type` set is an
   evaluator error; `score.label` `pass` / `fail` is Pass / Fail; anything else is Scored. Pass
   rate = pass / (pass + fail). The UI never evaluates thresholds.
 - Online results have no `test.suite.run.id`; offline results (suite runs) have one.
@@ -49,10 +49,17 @@ a chart slice (`slice`, cleared by a new range or "Back to ...").
 
 ## Queries
 
-Every builder is in `eval_ppl.ts`, with its exact text asserted in `eval_ppl.test.ts`. The time
-range is applied by the PPL service (the dataset's `@timestamp`). A screen runs its queries only
-while shown, and again only on a range, filter or Refresh change (`use_ppl_rows.ts`).
-Aggregations end in `head 10000`; documents are read only for a page of results (25), one case
-(100), one or two root spans (1 / 2), one span or one trace (1 / 200), the two traces of Compare
-traces (2000) and a session's turns (50). Span lookups by trace
-id carry no time range.
+Every builder, for these screens and for the evaluation parts of Agent Traces, is in
+`ppl_queries.ts`, with its exact text asserted in `ppl_queries.test.ts`. The time range is applied
+by the PPL service (the dataset's `@timestamp`). A screen runs its queries only while shown, and
+again only on a range, filter or Refresh change (`use_ppl_rows.ts`). Aggregations end in
+`head 10000`; documents are read only for a page of results (25), one case (100), one document
+per run (100), per case of a run (500) or per evaluation of a run (100), one or two root spans
+(1 / 2), one span or one trace (1 / 200), the two traces of Compare traces (2000) and a session's
+turns (50). Span lookups by trace id carry no time range.
+
+Optional per-run and per-case values (run name and description, the CI run link
+`cicd.pipeline.run.url.full`, the case name `test.case.name`) are never in a `stats ... by`: they
+are the same on every result of a run or case, and PPL fails on a field the index mapping does
+not have. They are read from one whole document per run (`buildRunNamesQuery`) or per case
+(`buildCaseNamesQuery`).

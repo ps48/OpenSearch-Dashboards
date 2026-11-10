@@ -8,7 +8,7 @@ import { renderHook } from '@testing-library/react';
 import { EvalContext } from './eval_context';
 import { fakePpl, testContext } from './eval_test_utils';
 import { spanIOOf, useRootSpans, useSessionTurns, useSpan } from './eval_spans';
-import { buildRootSpansQuery, buildSessionRootsQuery, buildSpanQuery } from './eval_ppl';
+import { buildRootSpansQuery, buildSessionRootsQuery, buildSpanQuery } from './ppl_queries';
 
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({

@@ -25,7 +25,7 @@ import {
   buildSuiteRunsQuery,
   buildTraceResultsQuery,
   buildTracesTallyQuery,
-} from './eval_ppl';
+} from './ppl_queries';
 import { evalsDataset } from './use_ppl_rows';
 
 const patterns: Record<string, Record<string, string>> = {

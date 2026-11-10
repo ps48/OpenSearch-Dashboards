@@ -40,7 +40,7 @@ import {
   str,
   tallyOf,
 } from './eval_model';
-import { buildCaseResultsQuery, buildOneTraceSpansQuery } from './eval_ppl';
+import { buildCaseResultsQuery, buildOneTraceSpansQuery } from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { useRootSpans, useSessionTurns, useSpan } from './eval_spans';
@@ -51,6 +51,7 @@ import { SpanIOView } from './span_io_view';
 import { getEvalTimezone } from './eval_time';
 import { CompareRunRef, SpanList, TraceCompareFlyout, flattenSpans } from './trace_compare_flyout';
 import {
+  CiLink,
   DASH,
   EXPECTED_LABEL,
   INPUT_LABEL,
@@ -718,6 +719,19 @@ export const ResultFlyout: React.FC<{
             </span>
           ),
         },
+    // This result's own CI run (`cicd.pipeline.run.url.full`), offline results that carry one.
+    ...(!online && r.ciUrl
+      ? [
+          {
+            title: i18n.translate('agentTraces.evals.flyout.ci', { defaultMessage: 'CI run' }),
+            description: (
+              <span data-test-subj="agtEvlFlyoutCi">
+                <CiLink url={r.ciUrl} />
+              </span>
+            ),
+          },
+        ]
+      : []),
   ];
 
   const header = judge ? (

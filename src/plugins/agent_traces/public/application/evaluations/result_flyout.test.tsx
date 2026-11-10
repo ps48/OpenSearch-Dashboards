@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { ResultFlyout, promptLabel, scalePosition } from './result_flyout';
 import { recordToResult } from './eval_model';
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
@@ -15,7 +15,7 @@ import {
   buildRunsLookupQuery,
   buildSessionRootsQuery,
   buildSpanQuery,
-} from './eval_ppl';
+} from './ppl_queries';
 
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
@@ -329,10 +329,30 @@ describe('ResultFlyout', () => {
     expect(screen.queryByTestId('agtEvlFlyoutCase')).not.toBeInTheDocument();
     expect(screen.queryByTestId('agtEvlFlyoutJudgeTrace')).not.toBeInTheDocument();
     expect(screen.getByText('Online (live traffic)')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlFlyoutCi')).not.toBeInTheDocument();
     // No declared scale, but 0.1 fits 0 to 1: bricks on that scale.
     const scale = screen.getByTestId('agtEvlFlyoutScale');
     expect(scale.querySelectorAll('.agtEvlBricks__brick--on')).toHaveLength(1);
     expect(scale.querySelector('.agtEvlBricks__row--scored')).toBeInTheDocument();
+  });
+
+  it("links the result's own CI run when its document has one", () => {
+    renderFlyout();
+    expect(screen.queryByTestId('agtEvlFlyoutCi')).not.toBeInTheDocument();
+    cleanup();
+    const raw = offline.raw as { attributes: Record<string, unknown> };
+    renderFlyout(
+      recordToResult({
+        ...raw,
+        attributes: {
+          ...raw.attributes,
+          cicd: { pipeline: { run: { url: { full: 'https://ci/o/r/actions/runs/1793' } } } },
+        },
+      })
+    );
+    const link = within(screen.getByTestId('agtEvlFlyoutCi')).getByText('#1793');
+    expect(link.closest('a')).toHaveAttribute('href', 'https://ci/o/r/actions/runs/1793');
+    expect(link.closest('a')).toHaveAttribute('target', '_blank');
   });
 
   it('has no scale for a score outside 0 to 1 without a declared scale', () => {

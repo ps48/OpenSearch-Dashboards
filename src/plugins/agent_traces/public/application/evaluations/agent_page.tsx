@@ -33,7 +33,6 @@ import {
   agentSuites,
   defaultVersionPair,
   evaluationRows,
-  isLive,
   latestRunPerVersion,
   rateDelta,
   trendSeries,
@@ -46,7 +45,7 @@ import {
   buildAgentSuitesQuery,
   buildAgentTrendQuery,
   trendStep,
-} from './eval_ppl';
+} from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
 import { AgentTab, EvalAppState, TimeSlice } from './eval_routes';
@@ -55,11 +54,10 @@ import { PassRateChart } from './pass_rate_chart';
 import {
   DASH,
   DeltaCell,
-  LiveDot,
   MetaItem,
   PassRateCell,
   QueryErrorCallout,
-  LAST_RESULT_LABEL,
+  LastResultLabel,
   SourceFilter,
   VersionBadge,
   formatTime,
@@ -80,7 +78,6 @@ const AgentMeta: React.FC<{ data: AgentEvaluations; source: EvalSource }> = ({
   source,
 }) => {
   if (!summary) return null;
-  const live = summary.versions.filter((v) => isLive(v));
   return (
     <div className="agtEvlMeta" data-test-subj="agtEvlAgentMeta">
       <MetaItem
@@ -88,24 +85,16 @@ const AgentMeta: React.FC<{ data: AgentEvaluations; source: EvalSource }> = ({
       >
         {summary.versions.map((v) => (
           <EuiBadge key={v.version ?? ''} color="default">
-            {isLive(v) && <LiveDot />}
             {versionLabel(v.version)}
           </EuiBadge>
         ))}
-        {live.length > 1 && (
-          <EuiBadge color="accent" data-test-subj="agtEvlRunningTogether">
-            {i18n.translate('agentTraces.evals.agent.runningTogether', {
-              defaultMessage: 'running together',
-            })}
-          </EuiBadge>
-        )}
       </MetaItem>
       <MetaItem
         label={i18n.translate('agentTraces.evals.agent.results', { defaultMessage: 'Results' })}
       >
         <strong>{summary.n.toLocaleString()}</strong>
       </MetaItem>
-      <MetaItem label={LAST_RESULT_LABEL[source]}>
+      <MetaItem label={<LastResultLabel source={source} />}>
         <span data-test-subj="agtEvlAgentLastResult">{formatTime(summary.last)}</span>
       </MetaItem>
     </div>

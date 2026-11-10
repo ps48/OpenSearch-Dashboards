@@ -14,7 +14,7 @@ import {
   buildEvalRunsQuery,
   buildRunsFacetQuery,
   buildRunNamesQuery,
-} from './eval_ppl';
+} from './ppl_queries';
 import { PplRecord } from './eval_model';
 
 // jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.

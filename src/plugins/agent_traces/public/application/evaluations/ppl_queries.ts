@@ -4,13 +4,15 @@
  */
 
 /**
- * Every PPL query of the Agent Evaluations screens, one builder per screen (see the P0 mock,
- * "Queries on this screen"). The index only holds `gen_ai.evaluation.result` events. The time
- * range is not part of the text: the PPL service adds the `@timestamp` bounds of the dataset.
+ * Every PPL query of Agent Evaluations and of the evaluation parts of Agent Traces (column,
+ * trace flyout, session results), one builder each, with its exact text asserted in
+ * `ppl_queries.test.ts`. The index only holds `gen_ai.evaluation.result` events. The time range
+ * is not part of the text: the PPL service adds the `@timestamp` bounds of the dataset.
  *
  * Aggregations end in `head 10000`; raw documents are read only for one page of results (25),
- * one case (100), one or two root spans (1 / 2), one trace (200), the two traces of Compare
- * traces (2000) and the turns of one session (50).
+ * one case (100), one document per run (100) or per case (500), one per evaluation of a run
+ * (100), one or two root spans (1 / 2), one trace (200), the two traces of Compare traces (2000)
+ * and the turns of one session (50).
  *
  * Attribute names follow OTel; OpenSearch gap fields mirror them under `opensearch.*`
  * (`opensearch.gen_ai.evaluation.*`, `opensearch.test.case.*`).
@@ -138,6 +140,12 @@ const like = (f: string, q: string) => `where like(${fld(f)}, ${quote(`%${likeLi
 const head = `head ${AGG_LIMIT}`;
 const join = (commands: string[]) => commands.join(' | ');
 
+// ---------------------------------------------------------------------- Setup and settings
+
+/** The number of results in an index (setup detection, Settings). */
+export const buildResultsTotalQuery = (index: string): string =>
+  join([...base(index), 'stats count() as n']);
+
 // ---------------------------------------------------------------------- Agents (home)
 
 export const buildAgentsQuery = (index: string, source: EvalSource, q = ''): string =>
@@ -224,7 +232,7 @@ export const buildSuiteRunsQuery = (index: string, suite: string): string =>
     ...base(index),
     `where ${fld(F.suiteName)} = ${quote(suite)}`,
     VERDICT_EVAL,
-    runsStats([F.runId, F.agentName, F.agentVersion, F.ciUrl]),
+    runsStats([F.runId, F.agentName, F.agentVersion]),
     head,
   ]);
 
@@ -334,19 +342,44 @@ const runsWhere = (runIds: string[]) =>
 export const RUN_NAMES_LIMIT = 100;
 
 /**
- * One result document per run, for its optional name and description
- * (`opensearch.test.suite.run.name` / `.description`). They are read from whole documents, not
- * grouped by: PPL fails on a field the index mapping does not have (old data, no run names).
+ * One result document per run, for its optional name, description and CI run link
+ * (`opensearch.test.suite.run.name` / `.description`, `cicd.pipeline.run.url.full`). They are
+ * read from whole documents, not grouped by: PPL fails on a field the index mapping does not
+ * have (old data, no run names), and they are the same on every result of a run. One run needs
+ * no `dedup` (`head 1`).
  */
 export const buildRunNamesQuery = (index: string, runIds: string[]): string => {
   const ids = runIds.slice(0, RUN_NAMES_LIMIT);
   return join([
     ...base(index),
     `where ${ids.length > 1 ? `(${runsWhere(ids)})` : runsWhere(ids)}`,
-    `dedup ${fld(F.runId)}`,
+    ...(ids.length > 1 ? [`dedup ${fld(F.runId)}`] : []),
     `head ${ids.length}`,
   ]);
 };
+
+/** At most this many cases of a run (or of two) get their name read (`buildCaseNamesQuery`). */
+export const CASE_NAMES_LIMIT = 500;
+
+/**
+ * One result document per case of one or two runs, for the case's optional name
+ * (`test.case.name`), read from whole documents like the run names (not grouped by).
+ */
+export const buildCaseNamesQuery = (index: string, runIds: string[]): string =>
+  join([
+    ...base(index),
+    `where ${runIds.length > 1 ? `(${runsWhere(runIds)})` : runsWhere(runIds)}`,
+    `dedup ${fld(F.caseId)}`,
+    `head ${CASE_NAMES_LIMIT}`,
+  ]);
+
+/**
+ * One result document per evaluation of a run, for what each evaluator checks
+ * (`opensearch.gen_ai.evaluation.evaluator.description`). Whole documents, not grouped by: PPL
+ * fails on a field the index mapping does not have (old data).
+ */
+export const buildRunEvaluatorsQuery = (index: string, runId: string): string =>
+  join([...base(index), `where ${runsWhere([runId])}`, `dedup ${fld(F.name)}`, 'head 100']);
 
 /** First and last result of one or two runs: the window the run and compare pages read. */
 export const buildRunWindowQuery = (index: string, runIds: string[]): string =>
@@ -356,20 +389,21 @@ export const buildRunWindowQuery = (index: string, runIds: string[]): string =>
     `stats min(${fld(F.time)}) as first, max(${fld(F.time)}) as last`,
   ]);
 
-/** The cases of a run and of the run before it (when there is one), in one query. */
-export const buildRunCasesQuery = (index: string, runId: string, beforeId?: string): string =>
+/**
+ * The cases of a run. Case names and the CI link are not grouped by (`buildCaseNamesQuery`,
+ * `buildRunNamesQuery`).
+ */
+export const buildRunCasesQuery = (index: string, runId: string): string =>
   join([
     ...base(index),
-    `where ${runsWhere(beforeId ? [runId, beforeId] : [runId])}`,
+    `where ${runsWhere([runId])}`,
     VERDICT_EVAL,
     `stats count() as n, min(${fld(F.time)}) as t0, max(${fld(F.time)}) as t1 by ${[
       F.runId,
       F.suiteName,
       F.agentName,
       F.agentVersion,
-      F.ciUrl,
       F.caseId,
-      F.caseName,
       F.name,
     ]
       .map(fld)
@@ -405,7 +439,6 @@ export const buildCompareRunsQuery = (index: string, runA: string, runB: string)
       F.agentName,
       F.agentVersion,
       F.caseId,
-      F.caseName,
       F.name,
     ]
       .map(fld)
@@ -420,9 +453,10 @@ export const buildRootSpansQuery = (spansIndex: string, traceIds: string[]): str
     `source = ${spansIndex}`,
     `where ${traceIds.length > 1 ? `(${ids})` : ids} and ${fld(SF.parentSpanId)} = ''`,
     `fields ${[SF.traceId, SF.input, SF.output].map(fld).join(', ')}`,
-    // A trace can have several spans without a parent (broken context propagation): one
-    // each, so a trace cannot take another's place under the head.
-    `dedup ${fld(SF.traceId)}`,
+    // A trace can have several spans without a parent (broken context propagation): with two
+    // traces, one each, so a trace cannot take another's place under the head. One trace needs
+    // no dedup (`head 1`).
+    ...(traceIds.length > 1 ? [`dedup ${fld(SF.traceId)}`] : []),
     `head ${traceIds.length}`,
   ]);
 };
@@ -458,7 +492,7 @@ export const buildOneTraceSpansQuery = (spansIndex: string, traceId: string): st
 export const buildTraceSpansQuery = (spansIndex: string, traceIds: string[]): string =>
   join([
     `source = ${spansIndex}`,
-    `where ${anyOf(F.traceId, traceIds)}`,
+    `where ${anyOf(SF.traceId, traceIds)}`,
     'sort startTime',
     `head ${COMPARE_SPANS_LIMIT}`,
   ]);

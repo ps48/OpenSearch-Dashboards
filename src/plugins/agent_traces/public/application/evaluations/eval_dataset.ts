@@ -10,7 +10,7 @@ import { useAgentEvalsEnabled } from './eval_feature_flag';
 import { SavedObjectsClientContract } from '../../../../../core/public';
 import { getWorkspaceIdFromUrl } from '../../../../../core/public/utils';
 import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
-import { EVALS_TIME_FIELD } from './eval_ppl';
+import { EVALS_TIME_FIELD } from './ppl_queries';
 
 /**
  * The Agent Evaluations app config: the traces dataset and the evaluations dataset (a logs

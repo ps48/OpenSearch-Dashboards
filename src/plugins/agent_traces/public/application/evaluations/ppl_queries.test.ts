@@ -21,6 +21,10 @@ import {
   buildRunsLookupQuery,
   buildRunNamesQuery,
   RUN_NAMES_LIMIT,
+  CASE_NAMES_LIMIT,
+  buildCaseNamesQuery,
+  buildRunEvaluatorsQuery,
+  buildResultsTotalQuery,
   buildEvalRunsQuery,
   buildEvalRunCasesQuery,
   buildRunsFacetQuery,
@@ -40,7 +44,7 @@ import {
   isTruncated,
   likeLiteral,
   trendStep,
-} from './eval_ppl';
+} from './ppl_queries';
 
 const I = 'evals-*';
 const NONE = EMPTY_RESULTS_FILTERS;
@@ -53,7 +57,7 @@ const VERD =
 const EVALS_STATS =
   'stats count() as n, count(`attributes.gen_ai.evaluation.score.value`) as nv, avg(`attributes.gen_ai.evaluation.score.value`) as avg_score, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict, `attributes.gen_ai.evaluation.score.label`, `attributes.opensearch.gen_ai.evaluation.score.direction`';
 const RUN_STATS =
-  'stats count() as n, min(`@timestamp`) as t0, max(`@timestamp`) as t1 by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.cicd.pipeline.run.url.full`, `attributes.test.case.id`, `attributes.test.case.name`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`';
+  'stats count() as n, min(`@timestamp`) as t0, max(`@timestamp`) as t1 by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`';
 
 /** The exact PPL of every screen (each was run on a cluster with the P0 data contract). */
 describe('evaluation PPL', () => {
@@ -134,13 +138,13 @@ describe('evaluation PPL', () => {
     );
   });
 
-  it('Suite: by run, agent, version, CI URL and verdict', () => {
+  it('Suite: by run, agent, version and verdict (no CI URL)', () => {
     expect(buildSuiteRunsQuery(I, 'golden')).toBe(
       [
         ...BASE,
         "where `attributes.test.suite.name` = 'golden'",
         VERD,
-        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.cicd.pipeline.run.url.full`, verdict',
+        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -216,7 +220,7 @@ describe('evaluation PPL', () => {
     });
   });
 
-  it('Run: by run, case, evaluation, verdict and trace (no run before)', () => {
+  it('Run: by run, case, evaluation, verdict and trace (no case name or CI URL)', () => {
     expect(buildRunCasesQuery(I, 'run_1')).toBe(
       [
         ...BASE,
@@ -228,26 +232,24 @@ describe('evaluation PPL', () => {
     );
   });
 
-  it('Run: one query reads the run and the run before', () => {
-    expect(buildRunCasesQuery(I, 'run_2', 'run_1')).toBe(
-      [
-        ...BASE,
-        "where `attributes.test.suite.run.id` = 'run_2' or `attributes.test.suite.run.id` = 'run_1'",
-        VERD,
-        RUN_STATS,
-        'head 10000',
-      ].join(' | ')
-    );
+  it('No aggregation groups by the case name or the CI URL', () => {
+    const queries = [
+      buildRunCasesQuery(I, 'run_1'),
+      buildCompareRunsQuery(I, 'a', 'b'),
+      buildSuiteRunsQuery(I, 'golden'),
+      buildEvalRunsQuery(I, EMPTY_RUNS_FILTERS),
+      buildAgentSuitesQuery(I, 'travel'),
+    ];
+    queries.forEach((q) => {
+      expect(q).not.toContain('test.case.name');
+      expect(q).not.toContain('cicd.pipeline.run.url.full');
+    });
   });
 
   it('Run names: one whole document per run, never grouped by the optional name', () => {
+    // One run: `head 1` keeps one document, no dedup.
     expect(buildRunNamesQuery(I, ['r1'])).toBe(
-      [
-        ...BASE,
-        "where `attributes.test.suite.run.id` = 'r1'",
-        'dedup `attributes.test.suite.run.id`',
-        'head 1',
-      ].join(' | ')
+      [...BASE, "where `attributes.test.suite.run.id` = 'r1'", 'head 1'].join(' | ')
     );
     expect(buildRunNamesQuery(I, ['r1', 'r2'])).toBe(
       [
@@ -262,6 +264,41 @@ describe('evaluation PPL', () => {
     expect(q).toContain(`head ${RUN_NAMES_LIMIT}`);
     expect(q).not.toContain(`'r${RUN_NAMES_LIMIT}'`);
     expect(q).not.toContain('run.name');
+    expect(q).not.toContain('cicd');
+  });
+
+  it('Case names: one whole document per case of one or two runs', () => {
+    expect(buildCaseNamesQuery(I, ['r1'])).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'r1'",
+        'dedup `attributes.test.case.id`',
+        `head ${CASE_NAMES_LIMIT}`,
+      ].join(' | ')
+    );
+    expect(buildCaseNamesQuery(I, ['r1', "r'2"])).toBe(
+      [
+        ...BASE,
+        "where (`attributes.test.suite.run.id` = 'r1' or `attributes.test.suite.run.id` = 'r\\'2')",
+        'dedup `attributes.test.case.id`',
+        'head 500',
+      ].join(' | ')
+    );
+  });
+
+  it('Run page: one document per evaluation of the run, for what each checks', () => {
+    expect(buildRunEvaluatorsQuery(I, "r'1")).toBe(
+      [
+        ...BASE,
+        "where `attributes.test.suite.run.id` = 'r\\'1'",
+        'dedup `attributes.gen_ai.evaluation.name`',
+        'head 100',
+      ].join(' | ')
+    );
+  });
+
+  it('Setup and Settings: the number of results', () => {
+    expect(buildResultsTotalQuery(I)).toBe([...BASE, 'stats count() as n'].join(' | '));
   });
 
   it('Run: the runs in the range, to find the run before', () => {
@@ -335,7 +372,7 @@ describe('evaluation PPL', () => {
         'source = spans-*',
         "where `traceId` = 't1' and `parentSpanId` = ''",
         'fields `traceId`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
-        'dedup `traceId`',
+        // One trace: `head 1` keeps one root, no dedup.
         'head 1',
       ].join(' | ')
     );
@@ -376,7 +413,7 @@ describe('evaluation PPL', () => {
         ...BASE,
         "where `attributes.test.suite.run.id` = 'run_a' or `attributes.test.suite.run.id` = 'run_b'",
         VERD,
-        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.test.case.name`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`',
+        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`',
         'head 10000',
       ].join(' | ')
     );

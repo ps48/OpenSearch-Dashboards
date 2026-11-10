@@ -20,7 +20,7 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { CaseStatus, EvalResult, MIN_N, RunRow, Tally, Verdict } from './eval_model';
-import { AGG_LIMIT, EvalSource, NO_AGENT } from './eval_ppl';
+import { AGG_LIMIT, EvalSource, NO_AGENT } from './ppl_queries';
 import { formatInZone } from './eval_time';
 import { ResultTarget, targetOf } from './eval_links';
 
@@ -260,16 +260,24 @@ export const DeltaCell: React.FC<{
   );
 };
 
-/** Marks a version with results in the last 6 hours. */
-export const LiveDot: React.FC = () => (
-  <span
-    className="agtEvlLiveDot"
-    aria-label={i18n.translate('agentTraces.evals.live', {
-      defaultMessage: 'Results in the last 6 hours',
-    })}
-    data-test-subj="agtEvlLiveDot"
-  />
-);
+/** The CI run's number (last path part of `cicd.pipeline.run.url.full`). */
+export const ciLabel = (url: string) => `#${url.replace(/\/+$/, '').split('/').pop()}`;
+
+/** A run's CI link (run page header, result flyout), or a dash. */
+export const CiLink: React.FC<{ url?: string }> = ({ url }) =>
+  url ? (
+    <EuiLink
+      href={url}
+      target="_blank"
+      external
+      title="cicd.pipeline.run.url.full"
+      onClick={(e: React.MouseEvent) => e.stopPropagation()}
+    >
+      {ciLabel(url)}
+    </EuiLink>
+  ) : (
+    <span className="agtEvlDim">{DASH}</span>
+  );
 
 /** Counts per verdict as colored dots: fail, pass, evaluator error, scored. */
 export const TallyCell: React.FC<{ tally: Tally }> = ({ tally }) => {
@@ -299,7 +307,7 @@ export const TallyCell: React.FC<{ tally: Tally }> = ({ tally }) => {
 /** "Last result", saying which results the source filter keeps (one message per source). */
 export const LAST_RESULT_LABEL: Record<EvalSource, string> = {
   all: i18n.translate('agentTraces.evals.lastResult.all', {
-    defaultMessage: 'Last result (any source)',
+    defaultMessage: 'Last result',
   }),
   online: i18n.translate('agentTraces.evals.lastResult.online', {
     defaultMessage: 'Last online result',
@@ -308,6 +316,29 @@ export const LAST_RESULT_LABEL: Record<EvalSource, string> = {
     defaultMessage: 'Last offline result',
   }),
 };
+
+const LAST_RESULT_ALL_TIP = i18n.translate('agentTraces.evals.lastResult.allTip', {
+  defaultMessage: 'Time of the latest result, online or offline.',
+});
+
+/** The "Last result" label, with a tip saying it spans online and offline results. */
+export const LastResultLabel: React.FC<{ source: EvalSource }> = ({ source }) => (
+  <span className="agtEvlNoWrap" data-test-subj="agtEvlLastResultLabel">
+    {LAST_RESULT_LABEL[source]}
+    {source === 'all' && (
+      <>
+        {' '}
+        <EuiIconTip
+          type="iInCircle"
+          size="s"
+          color="subdued"
+          content={LAST_RESULT_ALL_TIP}
+          iconProps={{ 'data-test-subj': 'agtEvlLastResultTip' }}
+        />
+      </>
+    )}
+  </span>
+);
 
 const SOURCE_LABEL: Record<EvalSource, string> = {
   all: i18n.translate('agentTraces.evals.source.all', { defaultMessage: 'All' }),
@@ -402,7 +433,7 @@ export const PassRateTip: React.FC = () => (
 );
 
 /** A labelled value in a page's meta line. */
-export const MetaItem: React.FC<{ label: string }> = ({ label, children }) => (
+export const MetaItem: React.FC<{ label: React.ReactNode }> = ({ label, children }) => (
   <span className="agtEvlMeta__item">
     <span className="agtEvlDim">{label}</span> {children}
   </span>

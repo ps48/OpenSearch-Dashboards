@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { F, NO_AGENT } from './eval_ppl';
+import { F, NO_AGENT } from './ppl_queries';
 
 /**
  * What each screen's query returns, shaped for its tables. Aggregated rows carry a `verdict`
@@ -106,8 +106,6 @@ const maxT = (a: number, b: number) => (Number.isNaN(a) ? b : Number.isNaN(b) ? 
 
 /** Under this many results with a pass rule on either side, a change is shown greyed. */
 export const MIN_N = 30;
-/** A version with results this recent is marked as live. */
-export const LIVE_MS = 6 * 3600e3;
 
 /** One evaluation within one version. */
 export interface EvalStat {
@@ -230,10 +228,6 @@ export const versionsOf = (rows: PplRecord[]): VersionStat[] => {
 export const byRecent = (versions: VersionStat[]): VersionStat[] =>
   [...versions].sort((a, b) => b.last - a.last);
 
-/** The version has results in the last 6 hours. */
-export const isLive = (v: VersionStat, now = Date.now()) =>
-  Number.isFinite(v.last) && v.last > now - LIVE_MS;
-
 export interface AgentRow {
   agent: string;
   /** Every version, most recent result first. */
@@ -279,11 +273,10 @@ export interface AgentVersionRow {
   decided: number;
   n: number;
   last: number;
-  live: boolean;
 }
 
 /** Agents table rows from `buildAgentsQuery`: one row per agent and version. */
-export const agentVersionRows = (rows: PplRecord[], now = Date.now()): AgentVersionRow[] =>
+export const agentVersionRows = (rows: PplRecord[]): AgentVersionRow[] =>
   agentRows(rows).flatMap((agent) =>
     agent.versions.map((v) => ({
       id: `${agent.agent}/${versionKey(v)}`,
@@ -293,7 +286,6 @@ export const agentVersionRows = (rows: PplRecord[], now = Date.now()): AgentVers
       decided: v.decided,
       n: v.tally.n,
       last: v.last,
-      live: isLive(v, now),
     }))
   );
 
@@ -424,7 +416,6 @@ export interface RunRow {
   suite?: string;
   agent?: string;
   version?: string;
-  ciUrl?: string;
   started: number;
   tally: Tally;
   rate?: number;
@@ -442,7 +433,6 @@ const runsOf = (rows: PplRecord[]): RunRow[] => {
     r.suite = r.suite ?? str(get(row, F.suiteName));
     r.agent = r.agent ?? str(get(row, F.agentName));
     r.version = r.version ?? str(get(row, F.agentVersion));
-    r.ciUrl = r.ciUrl ?? str(get(row, F.ciUrl));
     r.started = minT(r.started, parseTime(row.started));
     addToTally(r.tally, row.verdict, num(row.n) ?? 0);
     byRun.set(runId, r);
@@ -533,7 +523,6 @@ const casesOf = (rows: PplRecord[]): CaseRow[] => {
       errored: [],
       byEvaluation: new Map<string, Tally>(),
     };
-    c.caseName = c.caseName ?? str(get(row, F.caseName));
     c.traceId = c.traceId ?? str(get(row, F.traceId));
     c.at = minT(c.at, parseTime(row.t0 ?? row.started));
     const n = num(row.n) ?? 0;
@@ -558,7 +547,6 @@ export interface RunDetail {
   suite?: string;
   agent?: string;
   version?: string;
-  ciUrl?: string;
   started: number;
   /** max - min `@timestamp` of the run's results. */
   durationMs: number;
@@ -572,8 +560,8 @@ export interface RunDetail {
 }
 
 /**
- * Run page from `buildRunCasesQuery` (rows of this run and of the run before). Undefined when
- * the run has no results in range.
+ * Run page from `buildRunCasesQuery` (rows of other runs are left out). Undefined when the run
+ * has no results in range. Case names come from `caseNamesOf` (`withCaseNames`).
  */
 export const runDetail = (runId: string, allRows: PplRecord[]): RunDetail | undefined => {
   const rows = allRows.filter((row) => {
@@ -597,7 +585,6 @@ export const runDetail = (runId: string, allRows: PplRecord[]): RunDetail | unde
     suite: first(F.suiteName),
     agent: first(F.agentName),
     version: first(F.agentVersion),
-    ciUrl: first(F.ciUrl),
     started,
     durationMs: Number.isNaN(ended - started) ? 0 : ended - started,
     tally,
@@ -646,13 +633,18 @@ export const otherRunsOfSuite = (rows: PplRecord[], runId: string): number =>
 
 // ---------------------------------------------------------------------- Run names
 
-/** A run's optional name and description. */
+/** A run's optional name and description, and its CI run link. */
 export interface RunName {
   name?: string;
   description?: string;
+  /** `cicd.pipeline.run.url.full`, the run page header's CI link. */
+  ciUrl?: string;
 }
 
-/** Name and description per run, from `buildRunNamesQuery` documents (runs without either: none). */
+/**
+ * Name, description and CI link per run, from `buildRunNamesQuery` documents (runs with none
+ * of them: none).
+ */
 export const runNamesOf = (rows: PplRecord[]): Map<string, RunName> => {
   const out = new Map<string, RunName>();
   rows.forEach((row) => {
@@ -660,10 +652,31 @@ export const runNamesOf = (rows: PplRecord[]): Map<string, RunName> => {
     if (!runId || out.has(runId)) return;
     const name = str(get(row, F.runName))?.trim() || undefined;
     const description = str(get(row, F.runDescription))?.trim() || undefined;
-    if (name || description) out.set(runId, { name, description });
+    const ciUrl = str(get(row, F.ciUrl))?.trim() || undefined;
+    if (name || description || ciUrl) out.set(runId, { name, description, ciUrl });
   });
   return out;
 };
+
+/** The name of each case (`test.case.name`), from `buildCaseNamesQuery` documents. */
+export const caseNamesOf = (rows: PplRecord[]): Map<string, string> => {
+  const out = new Map<string, string>();
+  rows.forEach((row) => {
+    const caseId = str(get(row, F.caseId));
+    const name = str(get(row, F.caseName))?.trim();
+    if (caseId && name && !out.has(caseId)) out.set(caseId, name);
+  });
+  return out;
+};
+
+/** The cases (run page, Compare runs) with their names, when there is one. */
+export const withCaseNames = <T extends { caseId: string; caseName?: string }>(
+  cases: T[],
+  names: Map<string, string>
+): T[] =>
+  names.size === 0
+    ? cases
+    : cases.map((c) => (names.has(c.caseId) ? { ...c, caseName: names.get(c.caseId) } : c));
 
 /** The runs with their names (when there is one). */
 export const withRunNames = <T extends { runId: string }>(
@@ -840,6 +853,8 @@ export interface EvalResult {
   runDescription?: string;
   caseId?: string;
   caseName?: string;
+  /** `cicd.pipeline.run.url.full`, offline only. */
+  ciUrl?: string;
   conversationId?: string;
   scope?: string;
   /** The document as read. */
@@ -894,6 +909,7 @@ export const recordToResult = (row: PplRecord, index = 0): EvalResult => {
     runDescription: s(F.runDescription),
     caseId: s(F.caseId),
     caseName: s(F.caseName),
+    ciUrl: s(F.ciUrl),
     conversationId: s(F.conversationId),
     scope: s(F.scope),
     raw: row,

@@ -15,7 +15,7 @@ import {
   buildResultsCountQuery,
   buildResultsPageQuery,
   DEFAULT_RESULTS_SORT,
-} from './eval_ppl';
+} from './ppl_queries';
 
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
@@ -133,7 +133,11 @@ describe('AgentPage', () => {
     expect(rows[0]).toHaveAttribute('data-test-subj', 'agtEvlEvalRow-accuracy');
     expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Versions');
     // The date's label says which results the source filter keeps.
-    expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Last result (any source)');
+    expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Last result');
+    expect(screen.getByTestId('agtEvlAgentMeta')).not.toHaveTextContent('any source');
+    expect(screen.getByTestId('agtEvlLastResultTip')).toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlLiveDot')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agtEvlRunningTogether')).not.toBeInTheDocument();
     // The first tab is the Overview.
     expect(screen.getByTestId('agtEvlAgentTab-evaluations')).toHaveTextContent('Overview');
     const props = mockChart.mock.calls[0][0] as {
@@ -294,6 +298,8 @@ describe('AgentPage', () => {
     expect(within(acc).queryByTestId('agtEvlDeltaLow')).not.toBeInTheDocument();
     expect(within(acc).getByTestId('agtEvlDelta')).toHaveTextContent('-30 pts');
     expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Last offline result');
+    // The tip only explains the "All" label.
+    expect(screen.queryByTestId('agtEvlLastResultTip')).not.toBeInTheDocument();
   });
 
   it('Online/Offline is pushed into both queries', () => {
