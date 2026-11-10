@@ -17,7 +17,9 @@ import {
   buildCompareRunsQuery,
   buildFacetQuery,
   buildOneTraceSpansQuery,
-  buildRootSpansQuery,
+  buildResultSpansQuery,
+  buildAiRootCandidatesQuery,
+  AI_ROOT_CANDIDATES_LIMIT,
   buildRunsLookupQuery,
   buildRunNamesQuery,
   RUN_NAMES_LIMIT,
@@ -32,7 +34,6 @@ import {
   buildSessionResultsQuery,
   buildSuiteRunCasesQuery,
   buildSessionRootsQuery,
-  buildSpanQuery,
   buildResultsCountQuery,
   buildResultsPageQuery,
   buildRunCasesQuery,
@@ -366,32 +367,39 @@ describe('evaluation PPL', () => {
     );
   });
 
-  it('Root spans: input and output of one or two traces', () => {
-    expect(buildRootSpansQuery('spans-*', ['t1'])).toBe(
-      [
-        'source = spans-*',
-        "where `traceId` = 't1' and `parentSpanId` = ''",
-        'fields `traceId`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
-        // One trace: `head 1` keeps one root, no dedup.
-        'head 1',
-      ].join(' | ')
+  it('Judged spans: the span each result points to, by exact trace and span id', () => {
+    expect(buildResultSpansQuery('spans-*', [{ traceId: 't1', spanId: 's1' }])).toBe(
+      "source = spans-* | where `traceId` = 't1' and `spanId` = 's1' | head 1"
     );
-    expect(buildRootSpansQuery('spans-*', ['t1', 't2'])).toBe(
+    expect(
+      buildResultSpansQuery('spans-*', [
+        { traceId: 't1', spanId: 's1' },
+        { traceId: "t'2", spanId: 's2' },
+      ])
+    ).toBe(
       [
         'source = spans-*',
-        "where (`traceId` = 't1' or `traceId` = 't2') and `parentSpanId` = ''",
-        'fields `traceId`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
-        // One root per trace, so a trace with two parentless spans cannot take the other's place.
-        'dedup `traceId`',
+        "where (`traceId` = 't1' and `spanId` = 's1') or (`traceId` = 't\\'2' and `spanId` = 's2')",
         'head 2',
       ].join(' | ')
     );
   });
 
-  it('Result flyout: the judged span, and the judge trace', () => {
-    expect(buildSpanQuery('spans-*', 't1', 's1')).toBe(
-      "source = spans-* | where `traceId` = 't1' and `spanId` = 's1' | head 1"
+  it("AI-root candidates: a trace's root and GenAI spans, earliest first, at most 10", () => {
+    expect(buildAiRootCandidatesQuery('spans-*', 't1')).toBe(
+      [
+        'source = spans-*',
+        "where `traceId` = 't1' and (`parentSpanId` = '' or isnotnull(`attributes.gen_ai.operation.name`))",
+        'sort startTime',
+        `head ${AI_ROOT_CANDIDATES_LIMIT}`,
+      ].join(' | ')
     );
+    expect(AI_ROOT_CANDIDATES_LIMIT).toBe(10);
+    // The AI-root marker is read from the documents, never named (it may be unmapped).
+    expect(buildAiRootCandidatesQuery('spans-*', 't1')).not.toContain('is_root');
+  });
+
+  it('Result flyout: the judge trace', () => {
     expect(buildOneTraceSpansQuery('spans-*', 'j1')).toBe(
       "source = spans-* | where `traceId` = 'j1' | sort startTime | head 200"
     );

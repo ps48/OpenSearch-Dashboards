@@ -34,6 +34,7 @@ import {
   CompareSide,
   EvalResult,
   RunName,
+  caseSpanOf,
   comparison,
   get,
   recordsToResults,
@@ -50,7 +51,7 @@ import {
   isTruncated,
 } from './ppl_queries';
 import { SpanIOView } from './span_io_view';
-import { useRootSpans } from './eval_spans';
+import { useJudgedSpans } from './eval_spans';
 import {
   DASH,
   DeltaCell,
@@ -168,15 +169,29 @@ const CompareCaseDetail: React.FC<{
   onCompareTraces: () => void;
 }> = ({ row, runA, runB, versionA, versionB, onCompareTraces }) => {
   const { dataset, index, timeRange, refreshKey } = useEvalContext();
-  const { rows, loading, error } = usePplRows(
+  const { rows, loading, loaded, error } = usePplRows(
     dataset,
     buildCaseResultsQuery(index, [runA, runB], row.caseId),
     timeRange,
     refreshKey
   );
-  const roots = useRootSpans([row.traceA, row.traceB]);
   const results = useMemo(() => recordsToResults(rows), [rows]);
   const ofRun = (runId: string) => results.filter((r) => r.runId === runId);
+  const targets = useMemo(
+    () => [
+      caseSpanOf(
+        results.filter((r) => r.runId === runA),
+        row.traceA
+      ),
+      caseSpanOf(
+        results.filter((r) => r.runId === runB),
+        row.traceB
+      ),
+    ],
+    [results, runA, runB, row.traceA, row.traceB]
+  );
+  // After the results answer: they say which spans the two outputs are on.
+  const roots = useJudgedSpans(loaded ? targets : []);
   const ioA = row.traceA ? roots.byTrace.get(row.traceA) : undefined;
   const ioB = row.traceB ? roots.byTrace.get(row.traceB) : undefined;
   const expected = expectedOf(results);

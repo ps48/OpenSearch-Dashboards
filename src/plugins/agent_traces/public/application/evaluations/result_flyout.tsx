@@ -43,7 +43,7 @@ import {
 import { buildCaseResultsQuery, buildOneTraceSpansQuery } from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
-import { useRootSpans, useSessionTurns, useSpan } from './eval_spans';
+import { useJudgedSpans, useSessionTurns } from './eval_spans';
 import { useRunBefore } from './run_page';
 import { JsonAccordion } from './json_viewer';
 import { NewTabViewLink } from './view_links';
@@ -304,12 +304,10 @@ const JudgedSection: React.FC<{
 }> = ({ r, openTrace, onJudgeTrace }) => {
   const { hrefOf } = useEvalContext();
   const spanLevel = r.level === 'span' && !!r.spanId;
-  const root = useRootSpans(spanLevel ? [] : [r.traceId]);
-  const span = useSpan(spanLevel ? r.traceId : undefined, spanLevel ? r.spanId : undefined);
-  const io = spanLevel ? span.span : r.traceId ? root.byTrace.get(r.traceId) : undefined;
-  const loading = spanLevel ? span.loading : root.loading;
-  const loaded = spanLevel ? span.loaded : root.loaded;
-  const error = spanLevel ? span.error : root.error;
+  // The span the result points to (any level), else its trace's AI root.
+  const judged = useJudgedSpans([{ traceId: r.traceId, spanId: r.spanId }]);
+  const io = r.traceId ? judged.byTrace.get(r.traceId) : undefined;
+  const { loading, loaded, error } = judged;
   return (
     <div data-test-subj="agtEvlJudgeSaw">
       <EuiFlexGroup gutterSize="s" alignItems="baseline" responsive={false}>
@@ -330,8 +328,15 @@ const JudgedSection: React.FC<{
                 <strong>{io?.name ?? r.spanId}</strong>
               </span>
             ) : (
-              i18n.translate('agentTraces.evals.flyout.wholeTrace', {
-                defaultMessage: 'the whole trace (root span)',
+              i18n.translate('agentTraces.evals.flyout.wholeTraceAt', {
+                defaultMessage: 'the whole trace ({span})',
+                values: {
+                  span:
+                    io?.name ??
+                    i18n.translate('agentTraces.evals.flyout.agentSpan', {
+                      defaultMessage: 'agent span',
+                    }),
+                },
               })
             )}
           </EuiText>

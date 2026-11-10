@@ -76,6 +76,14 @@ jest.mock('../../../../../../explore/public', () => ({
   ),
 }));
 
+const mockUseTraceEvaluations = jest.fn();
+jest.mock('./use_trace_evaluations', () => ({
+  useTraceEvaluations: (...args: unknown[]) => {
+    mockUseTraceEvaluations(...args);
+    return { results: [], bySpanId: {}, isLoading: false };
+  },
+}));
+
 jest.mock('./flyout_detail_panel', () => ({
   FlyoutDetailPanel: () => <div data-test-subj="mock-detail-panel">Detail Panel</div>,
 }));
@@ -248,6 +256,30 @@ describe('TraceDetailsFlyout', () => {
 
     expect(screen.getByText('Trace: invoke_agent Travel Planner')).toBeInTheDocument();
     expect(screen.queryByText('Trace: POST /runs')).not.toBeInTheDocument();
+  });
+});
+
+describe('TraceDetailsFlyout evaluation marks', () => {
+  it('places results without a span id on the AI root, not the HTTP root, and knows the tree spans', () => {
+    mockUseTraceEvaluations.mockClear();
+    const agent: TraceRow = {
+      ...mockTrace,
+      id: 'agent-1',
+      spanId: 'agent-span-1',
+      parentSpanId: 'span-1',
+      name: 'invoke_agent Travel Planner',
+      rawDocument: { attributes: { 'derived.gen_ai.is_root': true } },
+    };
+    const httpRoot: TraceRow = { ...mockTrace, name: 'POST /invocations', children: [agent] };
+    render(<TraceDetailsFlyout {...defaultProps} trace={httpRoot} fullTree={[httpRoot]} />);
+    const [traceId, aiRootSpanId, spanIds] = mockUseTraceEvaluations.mock.calls.pop() as [
+      string,
+      string,
+      Set<string>,
+    ];
+    expect(traceId).toBe('trace-id-abc');
+    expect(aiRootSpanId).toBe('agent-span-1');
+    expect([...spanIds].sort()).toEqual(['agent-span-1', 'span-1']);
   });
 });
 

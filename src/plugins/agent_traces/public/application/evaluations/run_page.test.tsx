@@ -9,7 +9,8 @@ import { RunPage, deltaOf, passedDelta, evaluatorDescriptionsOf, filterCases } f
 import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test_utils';
 import {
   buildCaseResultsQuery,
-  buildRootSpansQuery,
+  buildAiRootCandidatesQuery,
+  buildResultSpansQuery,
   buildRunCasesQuery,
   buildCaseNamesQuery,
   buildRunEvaluatorsQuery,
@@ -224,11 +225,12 @@ describe('RunPage', () => {
     expect(screen.queryByTestId('agtEvlStatDelta')).not.toBeInTheDocument();
   });
 
-  it('expands a case: input, output (root span), expected and its results', () => {
+  it('expands a case: input, output (the AI root without a span id), expected and its results', () => {
     const { ctx } = renderWithContext(<RunPage runId={RUN} />);
     fireEvent.click(screen.getByTestId('agtEvlCaseRow-c1'));
     expect(mockPpl.queries).toContain(buildCaseResultsQuery(TEST_INDEX, RUN, 'c1'));
-    expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', ['trace-c1']));
+    // The results carry no span id: the trace's AI root.
+    expect(mockPpl.queries).toContain(buildAiRootCandidatesQuery('spans-*', 'trace-c1'));
     const results = screen.getByTestId('agtEvlCaseResults-c1');
     const io = within(results).getByTestId('agtEvlCaseIO');
     const section = (key: string) => within(io).getByTestId(`agtEvlIO-${key}`);
@@ -461,6 +463,51 @@ describe('RunPage', () => {
     expect(screen.queryByTestId('agtEvlRunEvaluators')).not.toBeInTheDocument();
     expect(buildRunEvaluatorsQuery('evals-*', "r'1")).toContain("= 'r\\'1'");
     expect(evaluatorDescriptionsOf([])).toEqual([]);
+  });
+
+  it('an agent behind an HTTP handler: the case input and output come from the span its results point to', () => {
+    const agent = { traceId: 'trace-c1', spanId: 'agent-c1' };
+    mockPpl.answer((q) => {
+      if (q.includes('as t0'))
+        return [caseRow('c1', 'accuracy', 'pass', '2026-10-28 07:00:00', '2026-10-28 07:00:05')];
+      if (q.endsWith('| head 100'))
+        return [
+          {
+            '@timestamp': '2026-10-28 07:00:01',
+            ...agent,
+            attributes: {
+              gen_ai: { evaluation: { name: 'accuracy', score: { label: 'pass' } } },
+              opensearch: { gen_ai: { evaluation: { level: 'trace' } } },
+            },
+          },
+        ];
+      if (q === buildResultSpansQuery('spans-*', [agent]))
+        return [
+          {
+            ...agent,
+            parentSpanId: 'http-c1',
+            name: 'invoke_agent travel_planner',
+            'attributes.gen_ai.input.messages': JSON.stringify([
+              { role: 'user', parts: [{ type: 'text', content: 'Plan a trip' }] },
+            ]),
+            'attributes.gen_ai.output.messages': JSON.stringify([
+              { role: 'assistant', parts: [{ type: 'text', content: 'Lisbon, 3 days' }] },
+            ]),
+          },
+        ];
+      return [];
+    });
+    renderWithContext(<RunPage runId={RUN} />);
+    fireEvent.click(screen.getByTestId('agtEvlCaseRow-c1'));
+    expect(mockPpl.queries).toContain(buildResultSpansQuery('spans-*', [agent]));
+    // Not the HTTP root (`parentSpanId = ''`), which has no messages.
+    expect(mockPpl.queries.some((q) => q.includes("`parentSpanId` = ''"))).toBe(false);
+    const io = screen.getByTestId('agtEvlCaseIO');
+    expect(within(io).getByTestId('agtEvlIO-input')).toHaveTextContent('Plan a trip');
+    expect(within(io).getByTestId('agtEvlIO-output')).toHaveTextContent('Lisbon, 3 days');
+    ['input', 'output'].forEach((key) =>
+      expect(within(io).getByTestId(`agtEvlIO-${key}`)).not.toHaveTextContent('Not recorded')
+    );
   });
 
   it('shows the run name and description when the run has them', () => {

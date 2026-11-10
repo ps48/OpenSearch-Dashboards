@@ -11,10 +11,10 @@ import { TEST_INDEX, fakePpl, renderWithContext, testContext } from './eval_test
 import {
   buildCaseResultsQuery,
   buildOneTraceSpansQuery,
-  buildRootSpansQuery,
+  buildAiRootCandidatesQuery,
+  buildResultSpansQuery,
   buildRunsLookupQuery,
   buildSessionRootsQuery,
-  buildSpanQuery,
 } from './ppl_queries';
 
 const mockPpl = fakePpl();
@@ -102,6 +102,16 @@ describe('ResultFlyout', () => {
         return [
           {
             traceId: 't',
+            spanId: 'http',
+            parentSpanId: '',
+            name: 'POST /invocations',
+          },
+          {
+            traceId: 't',
+            spanId: 'agent',
+            parentSpanId: 'http',
+            name: 'invoke_agent bot',
+            'attributes.gen_ai.operation.name': 'invoke_agent',
             'attributes.gen_ai.input.messages': msg('user', 'Hello'),
             'attributes.gen_ai.output.messages': msg('assistant', 'Hi there'),
           },
@@ -148,7 +158,9 @@ describe('ResultFlyout', () => {
 
   it('shows what the judge saw: the judged span and the expected output (one span query)', () => {
     renderFlyout();
-    expect(mockPpl.queries).toContain(buildSpanQuery('spans-*', 'trace1', 'span1'));
+    expect(mockPpl.queries).toContain(
+      buildResultSpansQuery('spans-*', [{ traceId: 'trace1', spanId: 'span1' }])
+    );
     expect(screen.getByTestId('agtEvlFlyoutJudged')).toHaveTextContent(
       'span execute_tool search_flights'
     );
@@ -299,6 +311,27 @@ describe('ResultFlyout', () => {
     expect(screen.getByTestId('agtEvlFlyoutNewTab')).toHaveAttribute('target', '_blank');
   });
 
+  it('a trace-level result with a span id reads the span it points to', () => {
+    renderFlyout(
+      recordToResult({
+        '@timestamp': '2026-10-28 07:00:01',
+        traceId: 'trace1',
+        spanId: 'span1',
+        attributes: {
+          gen_ai: { evaluation: { name: 'goal', score: { label: 'pass' } } },
+          opensearch: { gen_ai: { evaluation: { level: 'trace' } } },
+        },
+      })
+    );
+    expect(mockPpl.queries).toContain(
+      buildResultSpansQuery('spans-*', [{ traceId: 'trace1', spanId: 'span1' }])
+    );
+    expect(mockPpl.queries.some((q) => q.includes('`parentSpanId`'))).toBe(false);
+    expect(screen.getByTestId('agtEvlFlyoutJudged')).toHaveTextContent(
+      'the whole trace (execute_tool search_flights)'
+    );
+  });
+
   it('has no New tab link without a URL', () => {
     renderWithContext(
       <ResultFlyout result={offline} onClose={jest.fn()} links={{}} onOpenResult={jest.fn()} />,
@@ -317,10 +350,11 @@ describe('ResultFlyout', () => {
     );
     expect(screen.getByText(/\(no agent name\)/)).toBeInTheDocument();
     expect(screen.getByTestId('agtEvlVerdict-scored')).toBeInTheDocument();
+    // No span id: the trace's AI root (the agent span behind the HTTP handler), not the root.
     expect(screen.getByTestId('agtEvlFlyoutJudged')).toHaveTextContent(
-      'the whole trace (root span)'
+      'the whole trace (invoke_agent bot)'
     );
-    expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', ['t']));
+    expect(mockPpl.queries).toContain(buildAiRootCandidatesQuery('spans-*', 't'));
     const io = screen.getByTestId('agtEvlJudgedIO');
     expect(within(io).getByTestId('agtEvlIO-input')).toHaveTextContent('Hello');
     expect(within(io).getByTestId('agtEvlIO-output')).toHaveTextContent('Hi there');

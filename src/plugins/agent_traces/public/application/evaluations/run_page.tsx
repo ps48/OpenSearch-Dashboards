@@ -40,6 +40,7 @@ import {
   recordsToResults,
   otherRunsOfSuite,
   runBefore,
+  caseSpanOf,
   runDetail,
   suiteRuns,
   withCaseNames,
@@ -56,7 +57,7 @@ import {
 import { SpanIOView } from './span_io_view';
 import { useCaseNames, useRunNames } from './use_run_names';
 import { NewTabViewLink, traceHref } from './view_links';
-import { useRootSpans } from './eval_spans';
+import { useJudgedSpans } from './eval_spans';
 import {
   CiLink,
   DASH,
@@ -97,23 +98,25 @@ export const filterCases = (cases: CaseRow[], status: StatusFilter, q: string): 
 };
 
 /**
- * An expanded case: its input, expected output and output (one root-span query), and its
- * results (one query), read when it opens.
+ * An expanded case: its results (one query), then its input and output from the span they
+ * point to (or the trace's AI root), read when it opens.
  */
 const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, caseRow }) => {
   const { dataset, index, timeRange, refreshKey, openResult } = useEvalContext();
   const { caseId } = caseRow;
-  const { rows, loading, error } = usePplRows(
+  const { rows, loading, loaded, error } = usePplRows(
     dataset,
     buildCaseResultsQuery(index, runId, caseId),
     timeRange,
     refreshKey
   );
-  const root = useRootSpans([caseRow.traceId]);
   const results = useMemo(
     () => recordsToResults(rows).sort((a, b) => a.name.localeCompare(b.name)),
     [rows]
   );
+  const target = useMemo(() => caseSpanOf(results, caseRow.traceId), [results, caseRow.traceId]);
+  // After the results answer: they say which span the case's input and output are on.
+  const root = useJudgedSpans(loaded ? [target] : []);
   const io = caseRow.traceId ? root.byTrace.get(caseRow.traceId) : undefined;
   const expected = expectedOf(results);
   if (error) return <QueryErrorCallout message={error} />;

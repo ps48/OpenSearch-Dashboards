@@ -11,7 +11,8 @@
  *
  * Aggregations end in `head 10000`; raw documents are read only for one page of results (25),
  * one case (100), one document per run (100) or per case (500), one per evaluation of a run
- * (100), one or two root spans (1 / 2), one trace (200), the two traces of Compare traces (2000)
+ * (100), the judged spans of one or two results (1 / 2), up to 10 AI-root candidates of a trace, one
+ * trace (200), the two traces of Compare traces (2000)
  * and the turns of one session (50).
  *
  * Attribute names follow OTel; OpenSearch gap fields mirror them under `opensearch.*`
@@ -83,6 +84,7 @@ export const SF = {
   input: 'attributes.gen_ai.input.messages',
   output: 'attributes.gen_ai.output.messages',
   conversationId: 'attributes.gen_ai.conversation.id',
+  operation: 'attributes.gen_ai.operation.name',
   startTime: 'startTime',
 } as const;
 
@@ -446,20 +448,43 @@ export const buildCompareRunsQuery = (index: string, runA: string, runB: string)
     head,
   ]);
 
-/** The root spans of one or two traces: their input and output messages. */
-export const buildRootSpansQuery = (spansIndex: string, traceIds: string[]): string => {
-  const ids = anyOf(SF.traceId, traceIds);
+/** At most this many spans per trace are read to find its AI root (`buildAiRootCandidatesQuery`). */
+export const AI_ROOT_CANDIDATES_LIMIT = 10;
+
+/**
+ * The spans results point to, by exact trace and span id (what each result judged): whole
+ * documents, so a tool span's arguments and result are there too. One span per pair.
+ */
+export const buildResultSpansQuery = (
+  spansIndex: string,
+  refs: Array<{ traceId: string; spanId: string }>
+): string => {
+  const conds = refs.map(
+    (r) => `${fld(SF.traceId)} = ${quote(r.traceId)} and ${fld(SF.spanId)} = ${quote(r.spanId)}`
+  );
   return join([
     `source = ${spansIndex}`,
-    `where ${traceIds.length > 1 ? `(${ids})` : ids} and ${fld(SF.parentSpanId)} = ''`,
-    `fields ${[SF.traceId, SF.input, SF.output].map(fld).join(', ')}`,
-    // A trace can have several spans without a parent (broken context propagation): with two
-    // traces, one each, so a trace cannot take another's place under the head. One trace needs
-    // no dedup (`head 1`).
-    ...(traceIds.length > 1 ? [`dedup ${fld(SF.traceId)}`] : []),
-    `head ${traceIds.length}`,
+    `where ${conds.length > 1 ? conds.map((c) => `(${c})`).join(' or ') : conds[0]}`,
+    `head ${refs.length}`,
   ]);
 };
+
+/**
+ * The spans that can be a trace's AI root, for results without a span id: its root and its
+ * GenAI spans, earliest first (the root and the outermost GenAI spans start first). The browser
+ * picks the AI root by Agent Traces' rule (`aiRootSpanOf`): a GenAI or marked root, else the
+ * earliest marked span, else the earliest GenAI span (an agent behind an HTTP handler), else the
+ * root. The marker is read from the documents, not named in PPL (it may be unmapped).
+ */
+export const buildAiRootCandidatesQuery = (spansIndex: string, traceId: string): string =>
+  join([
+    `source = ${spansIndex}`,
+    `where ${fld(SF.traceId)} = ${quote(traceId)} and (${fld(SF.parentSpanId)} = '' or isnotnull(${fld(
+      SF.operation
+    )}))`,
+    'sort startTime',
+    `head ${AI_ROOT_CANDIDATES_LIMIT}`,
+  ]);
 
 /** The root spans of a session (`gen_ai.conversation.id`), oldest first: its turns. */
 export const buildSessionRootsQuery = (spansIndex: string, conversationId: string): string =>
@@ -469,14 +494,6 @@ export const buildSessionRootsQuery = (spansIndex: string, conversationId: strin
     `sort ${fld(SF.startTime)}`,
     `fields ${[SF.traceId, SF.startTime, SF.input, SF.output].map(fld).join(', ')}`,
     `head ${SESSION_TURNS_LIMIT}`,
-  ]);
-
-/** One span (a span-level result's judged span), the whole document (tool fields included). */
-export const buildSpanQuery = (spansIndex: string, traceId: string, spanId: string): string =>
-  join([
-    `source = ${spansIndex}`,
-    `where ${fld(SF.traceId)} = ${quote(traceId)} and ${fld(SF.spanId)} = ${quote(spanId)}`,
-    'head 1',
   ]);
 
 /** The spans of one trace (a judge trace), oldest first. */

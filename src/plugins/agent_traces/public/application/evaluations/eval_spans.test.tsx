@@ -7,8 +7,12 @@ import React from 'react';
 import { renderHook } from '@testing-library/react';
 import { EvalContext } from './eval_context';
 import { fakePpl, testContext } from './eval_test_utils';
-import { spanIOOf, useRootSpans, useSessionTurns, useSpan } from './eval_spans';
-import { buildRootSpansQuery, buildSessionRootsQuery, buildSpanQuery } from './ppl_queries';
+import { aiRootSpanOf, spanIOOf, useJudgedSpans, useSessionTurns } from './eval_spans';
+import {
+  buildAiRootCandidatesQuery,
+  buildResultSpansQuery,
+  buildSessionRootsQuery,
+} from './ppl_queries';
 
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
@@ -54,33 +58,93 @@ describe('spanIOOf', () => {
 describe('span hooks', () => {
   beforeEach(() => mockPpl.reset());
 
-  it('useRootSpans: one query for the distinct ids, keyed by trace, without a time bound', () => {
+  const span = (traceId: string, spanId: string, extra: Record<string, unknown> = {}) => ({
+    traceId,
+    spanId,
+    parentSpanId: '',
+    ...extra,
+  });
+
+  it('useJudgedSpans: the spans results point to, in one query, keyed by trace', () => {
     mockPpl.answer(() => [
-      {
-        traceId: 'a',
+      span('a', 'sa', {
         attributes: { gen_ai: { output: { messages: messages('assistant', 'A') } } },
-      },
-      { traceId: 'b' },
+      }),
+      span('b', 'sb'),
     ]);
-    const { result } = renderHook(() => useRootSpans(['a', undefined, 'b', 'a']), { wrapper });
-    expect(mockPpl.queries).toEqual([buildRootSpansQuery('spans-*', ['a', 'b'])]);
+    const { result } = renderHook(
+      () =>
+        useJudgedSpans([
+          { traceId: 'a', spanId: 'sa' },
+          { traceId: 'b', spanId: 'sb' },
+          { traceId: 'a', spanId: 'sa' },
+        ]),
+      { wrapper }
+    );
+    expect(mockPpl.queries).toEqual([
+      buildResultSpansQuery('spans-*', [
+        { traceId: 'a', spanId: 'sa' },
+        { traceId: 'b', spanId: 'sb' },
+      ]),
+    ]);
     expect(mockPpl.ranges.get(mockPpl.queries[0])).toBeUndefined();
     expect([...result.current.byTrace.keys()]).toEqual(['a', 'b']);
     expect(result.current.byTrace.get('a')?.output).toContain('A');
+    expect(result.current.loaded).toBe(true);
+  });
+
+  it('useJudgedSpans: without a span id, the AI root of the trace (not an HTTP root)', () => {
+    mockPpl.answer((q) =>
+      q === buildAiRootCandidatesQuery('spans-*', 't1')
+        ? [
+            span('t1', 'http', { name: 'POST /invocations' }),
+            {
+              traceId: 't1',
+              spanId: 'agent',
+              parentSpanId: 'http',
+              name: 'invoke_agent travel_planner',
+              attributes: {
+                gen_ai: {
+                  operation: { name: 'invoke_agent' },
+                  input: { messages: messages('user', 'Plan a trip') },
+                },
+              },
+            },
+          ]
+        : []
+    );
+    const { result } = renderHook(() => useJudgedSpans([{ traceId: 't1' }]), { wrapper });
+    expect(mockPpl.queries).toEqual([buildAiRootCandidatesQuery('spans-*', 't1')]);
+    expect(result.current.byTrace.get('t1')?.name).toBe('invoke_agent travel_planner');
+    expect(result.current.byTrace.get('t1')?.input).toContain('Plan a trip');
+  });
+
+  it('aiRootSpanOf: a GenAI or marked root, else the earliest marked span, else the earliest GenAI span, else the root', () => {
+    const genAi = { attributes: { gen_ai: { operation: { name: 'chat' } } } };
+    const marked = { attributes: { 'derived.gen_ai.is_root': true } };
+    const http = span('t', 'http');
+    const child = (spanId: string, extra: Record<string, unknown>) => ({
+      traceId: 't',
+      spanId,
+      parentSpanId: 'http',
+      ...extra,
+    });
+    expect(aiRootSpanOf([span('t', 'root', genAi), child('c', genAi)])?.spanId).toBe('root');
+    expect(aiRootSpanOf([http, child('c1', genAi), child('m', marked)])?.spanId).toBe('m');
+    expect(aiRootSpanOf([http, child('c1', genAi), child('c2', genAi)])?.spanId).toBe('c1');
+    expect(aiRootSpanOf([http])?.spanId).toBe('http');
+    expect(aiRootSpanOf([])).toBeUndefined();
   });
 
   it('runs nothing without ids', () => {
-    renderHook(() => useRootSpans([undefined]), { wrapper });
-    renderHook(() => useSpan('t', undefined), { wrapper });
+    renderHook(() => useJudgedSpans([{ traceId: undefined, spanId: 's' }]), { wrapper });
+    renderHook(() => useJudgedSpans([]), { wrapper });
     renderHook(() => useSessionTurns(undefined), { wrapper });
     expect(mockPpl.queries).toEqual([]);
   });
 
-  it('useSpan and useSessionTurns read one span and the turns of a session', () => {
+  it('useSessionTurns reads the turns of a session', () => {
     mockPpl.answer(() => [{ traceId: 't1' }, { traceId: 't2' }]);
-    const span = renderHook(() => useSpan('t1', 's1'), { wrapper });
-    expect(mockPpl.queries).toContain(buildSpanQuery('spans-*', 't1', 's1'));
-    expect(span.result.current.span?.traceId).toBe('t1');
     const turns = renderHook(() => useSessionTurns('conv-1'), { wrapper });
     expect(mockPpl.queries).toContain(buildSessionRootsQuery('spans-*', 'conv-1'));
     expect(turns.result.current.turns.map((t) => t.traceId)).toEqual(['t1', 't2']);

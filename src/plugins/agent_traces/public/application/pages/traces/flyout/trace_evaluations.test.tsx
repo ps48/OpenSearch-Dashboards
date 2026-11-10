@@ -77,20 +77,27 @@ describe('Agent Traces evaluation marks', () => {
     expect(screen.getByTestId('agtEvlJudgeMark')).toHaveAttribute('tabindex', '0');
   });
 
-  it('puts span results on their span and trace-level results on the root', () => {
+  it('puts each result on the span it points to, and results without a span id on the AI root', () => {
     const span = result('a', 'pass', 's1');
     const trace = result('b', 'fail');
+    // A trace-level result of an agent behind an HTTP handler points to the agent span.
     const declaredTrace = recordToResult({
       traceId: 't1',
-      spanId: 's2',
+      spanId: 'agent',
       attributes: {
         opensearch: { gen_ai: { evaluation: { level: 'trace' } } },
         gen_ai: { evaluation: { name: 'c' } },
       },
     });
-    const grouped = groupBySpan([span, trace, declaredTrace], 'root');
+    const grouped = groupBySpan([span, trace, declaredTrace], 'aiRoot');
     expect(grouped.s1.map((r) => r.name)).toEqual(['a']);
-    expect(grouped.root.map((r) => r.name)).toEqual(['b', 'c']);
+    expect(grouped.agent.map((r) => r.name)).toEqual(['c']);
+    expect(grouped.aiRoot.map((r) => r.name)).toEqual(['b']);
+    // A span the tree does not have: on the AI root, so the result still shows.
+    const known = groupBySpan([span, declaredTrace], 'aiRoot', new Set(['aiRoot', 'agent']));
+    expect(known.s1).toBeUndefined();
+    expect(known.aiRoot.map((r) => r.name)).toEqual(['a']);
+    expect(known.agent.map((r) => r.name)).toEqual(['c']);
   });
 
   it('the traces table cell is a tally per trace (or per span) from one aggregation', () => {

@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOpenSearchDashboards } from '../../../../../../opensearch_dashboards_react/public';
 import { AgentTracesServices } from '../../../../types';
-import { EvalResult, isSpanResult, recordsToResults } from '../../../evaluations/eval_model';
+import { EvalResult, recordsToResults } from '../../../evaluations/eval_model';
 import { buildSessionResultsQuery, buildTraceResultsQuery } from '../../../evaluations/ppl_queries';
 import { useEvalsDataSource, useEvalsIndexPattern } from '../../../evaluations/eval_dataset';
 import { errorMessage, evalsDataset, runPpl } from '../../../evaluations/use_ppl_rows';
@@ -14,7 +14,7 @@ import { errorMessage, evalsDataset, runPpl } from '../../../evaluations/use_ppl
 export interface TraceEvaluations {
   /** Every result of the trace, failures first. */
   results: EvalResult[];
-  /** Results per span id; trace-level results sit on the root span. */
+  /** Results per span id: on the span each points to, else on the trace's AI root. */
   bySpanId: Record<string, EvalResult[]>;
   isLoading: boolean;
   error?: string;
@@ -22,14 +22,19 @@ export interface TraceEvaluations {
 
 const ORDER = { fail: 0, error: 1, pass: 2, scored: 3 };
 
-/** Span results on their span, trace-level results on the root span. */
+/**
+ * Each result on the span it points to (its `spanId`, whatever its level: a trace-level result
+ * of an agent behind an HTTP handler points to the agent span), else, without a span id or with
+ * one the tree does not have (`spanIds`, when known), on the trace's AI root (`aiRootSpanId`).
+ */
 export const groupBySpan = (
   results: EvalResult[],
-  rootSpanId?: string
+  aiRootSpanId?: string,
+  spanIds?: Set<string>
 ): Record<string, EvalResult[]> => {
   const out: Record<string, EvalResult[]> = {};
   results.forEach((r) => {
-    const spanId = isSpanResult(r) ? r.spanId : rootSpanId;
+    const spanId = r.spanId && (!spanIds || spanIds.has(r.spanId)) ? r.spanId : aiRootSpanId;
     if (spanId) (out[spanId] = out[spanId] ?? []).push(r);
   });
   return out;
@@ -110,11 +115,12 @@ export const useSessionEvaluations = (sessionId: string | undefined): ResultsSta
  */
 export const useTraceEvaluations = (
   traceId: string | undefined,
-  rootSpanId?: string
+  aiRootSpanId?: string,
+  spanIds?: Set<string>
 ): TraceEvaluations => {
   const state = useEvalResults(traceId, traceResultsQuery);
   return useMemo(
-    () => ({ ...state, bySpanId: groupBySpan(state.results, rootSpanId) }),
-    [state, rootSpanId]
+    () => ({ ...state, bySpanId: groupBySpan(state.results, aiRootSpanId, spanIds) }),
+    [state, aiRootSpanId, spanIds]
   );
 };

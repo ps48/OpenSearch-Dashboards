@@ -136,11 +136,16 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
     () => sessionIdOf([trace, ...flatNodes.map((node) => node.traceRow)]),
     [trace, flatNodes]
   );
-  // Evaluation results of this trace: span results on their span, trace-level ones on the root.
-  const traceEvals = useTraceEvaluations(
-    rootTrace.traceId,
-    fullTree?.[0]?.spanId ?? rootTrace.spanId
-  );
+  // Evaluation results of this trace: each on the span it points to; results without a span id
+  // on the trace's AI root (the agent span behind an HTTP handler, not the handler).
+  const { evalsAiRootSpanId, treeSpanIds } = useMemo(() => {
+    const all = fullTree && fullTree.length > 0 ? flattenRows(fullTree) : [];
+    return {
+      evalsAiRootSpanId: aiRootsOf(all)[0]?.spanId ?? fullTree?.[0]?.spanId ?? rootTrace.spanId,
+      treeSpanIds: all.length ? new Set(all.map((r) => r.spanId)) : undefined,
+    };
+  }, [fullTree, rootTrace.spanId]);
+  const traceEvals = useTraceEvaluations(rootTrace.traceId, evalsAiRootSpanId, treeSpanIds);
   // Evaluations show only with the flag on and an Agent Evaluations config in the workspace.
   const evalsEnabled = useAgentTracesEvalsShown();
   const tabOf = (tab?: string) =>

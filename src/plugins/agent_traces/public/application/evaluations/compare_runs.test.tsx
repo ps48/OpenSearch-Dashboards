@@ -11,7 +11,7 @@ import {
   buildCaseNamesQuery,
   buildCaseResultsQuery,
   buildCompareRunsQuery,
-  buildRootSpansQuery,
+  buildAiRootCandidatesQuery,
   buildSuiteRunsQuery,
   buildRunNamesQuery,
 } from './ppl_queries';
@@ -84,7 +84,7 @@ describe('CompareRuns', () => {
             [OUT]: msg('assistant', 'Paris'),
           },
           { traceId: `${B}-c1`, [OUT]: msg('assistant', 'Lyon') },
-        ];
+        ].filter((r) => q.includes(`'${r.traceId}'`));
       if (q.endsWith('head 100'))
         return [
           doc(A, 'c1', 'accuracy', 'pass', 'Right city'),
@@ -177,7 +177,9 @@ describe('CompareRuns', () => {
     renderWithContext(<CompareRuns runA={A} runB={B} />);
     fireEvent.click(screen.getByTestId('agtEvlCompareRow-c1'));
     expect(mockPpl.queries).toContain(buildCaseResultsQuery(TEST_INDEX, [A, B], 'c1'));
-    expect(mockPpl.queries).toContain(buildRootSpansQuery('spans-*', [`${A}-c1`, `${B}-c1`]));
+    // The results carry no span id: each trace's AI root (one bounded query per trace).
+    expect(mockPpl.queries).toContain(buildAiRootCandidatesQuery('spans-*', `${A}-c1`));
+    expect(mockPpl.queries).toContain(buildAiRootCandidatesQuery('spans-*', `${B}-c1`));
     const detail = screen.getByTestId('agtEvlCompareCase-c1');
     const io = within(detail).getByTestId('agtEvlCompareIO');
     const input = within(io).getByTestId('agtEvlIO-input');

@@ -918,6 +918,27 @@ export const recordToResult = (row: PplRecord, index = 0): EvalResult => {
 
 export const recordsToResults = (rows: PplRecord[]): EvalResult[] => rows.map(recordToResult);
 
+/**
+ * What a case's input and output are read from, for its trace: the span its trace-level results
+ * point to, else the span most of its results point to (the SDK points offline results at the
+ * agent span), else none, and the trace's AI root is read.
+ */
+export const caseSpanOf = (
+  results: Array<Pick<EvalResult, 'traceId' | 'spanId' | 'level'>>,
+  traceId?: string
+): { traceId?: string; spanId?: string } => {
+  const own = results.filter((r) => r.spanId && (!traceId || r.traceId === traceId));
+  const top = (list: typeof own) => {
+    const counts = new Map<string, number>();
+    list.forEach((r) => r.spanId && counts.set(r.spanId, (counts.get(r.spanId) ?? 0) + 1));
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  };
+  return {
+    traceId: traceId ?? own[0]?.traceId,
+    spanId: top(own.filter((r) => r.level === 'trace')) ?? top(own),
+  };
+};
+
 /** Trace-level results mark the root span; span results mark their span. */
 export const isSpanResult = (r: Pick<EvalResult, 'level' | 'spanId'>) =>
   !!r.spanId && r.level !== 'trace';

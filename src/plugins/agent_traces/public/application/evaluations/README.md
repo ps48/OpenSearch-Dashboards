@@ -54,8 +54,9 @@ Every builder, for these screens and for the evaluation parts of Agent Traces, i
 by the PPL service (the dataset's `@timestamp`). A screen runs its queries only while shown, and
 again only on a range, filter or Refresh change (`use_ppl_rows.ts`). Aggregations end in
 `head 10000`; documents are read only for a page of results (25), one case (100), one document
-per run (100), per case of a run (500) or per evaluation of a run (100), one or two root spans
-(1 / 2), one span or one trace (1 / 200), the two traces of Compare traces (2000) and a session's
+per run (100), per case of a run (500) or per evaluation of a run (100), the spans one or two
+results point to (1 / 2) or, without a span id, up to 10 AI-root candidates of a trace, one trace
+(200), the two traces of Compare traces (2000) and a session's
 turns (50). Span lookups by trace id carry no time range.
 
 Optional per-run and per-case values (run name and description, the CI run link
@@ -63,3 +64,8 @@ Optional per-run and per-case values (run name and description, the CI run link
 are the same on every result of a run or case, and PPL fails on a field the index mapping does
 not have. They are read from one whole document per run (`buildRunNamesQuery`) or per case
 (`buildCaseNamesQuery`).
+
+What a result judged (case input and output, the result flyout) is the span its `spanId` points
+to, whatever its level; without one, the trace's AI root by the Agent Traces rule (a GenAI or
+marked root, else the earliest marked span, else the earliest GenAI span), never a non-GenAI
+HTTP root.
