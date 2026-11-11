@@ -46,6 +46,27 @@ describe('spanIOOf', () => {
     expect(io.output).toContain('Paris');
   });
 
+  it('on an execute_tool span, the tool arguments and result come before tool_call messages', () => {
+    const io = spanIOOf({
+      name: 'execute_tool search_flights',
+      attributes: {
+        gen_ai: {
+          operation: { name: 'execute_tool' },
+          input: {
+            messages: JSON.stringify([
+              { role: 'assistant', parts: [{ type: 'tool_call', name: 'search_flights' }] },
+            ]),
+          },
+          tool: { call: { arguments: '{"to":"CDG"}', result: '3 flights' } },
+        },
+      },
+    });
+    expect(io.input).toBe('{"to":"CDG"}');
+    expect(io.output).toBe('3 flights');
+    expect(io.rawInput).toBe('{"to":"CDG"}');
+    expect(io.rawOutput).toBe('3 flights');
+  });
+
   it('falls back to the tool call arguments and result', () => {
     const io = spanIOOf({
       attributes: { gen_ai: { tool: { call: { arguments: '{"q":1}', result: '42' } } } },

@@ -5,6 +5,7 @@
 
 import { useMemo } from 'react';
 import {
+  isExecuteToolSpan,
   previewSpanInput,
   previewSpanOutput,
   readAttribute,
@@ -33,7 +34,8 @@ export interface SpanIO {
 
 /**
  * A span document (or its `fields` columns): `gen_ai.input.messages` /
- * `gen_ai.output.messages`, else `gen_ai.tool.call.arguments` / `.result`.
+ * `gen_ai.output.messages`, else `gen_ai.tool.call.arguments` / `.result`; on `execute_tool`
+ * spans the tool's arguments and result first.
  */
 export const spanIOOf = (row: PplRecord): SpanIO => {
   const doc = row as Record<string, unknown>;
@@ -42,13 +44,18 @@ export const spanIOOf = (row: PplRecord): SpanIO => {
     output: readAttribute(doc, 'gen_ai.output.messages'),
     rawDocument: doc,
   };
+  const tool = isExecuteToolSpan(span);
+  const args = readAttribute(doc, 'gen_ai.tool.call.arguments');
+  const result = readAttribute(doc, 'gen_ai.tool.call.result');
   return {
     traceId: str(get(row, SF.traceId)),
     name: str(row.name),
     input: previewSpanInput(span) || undefined,
     output: previewSpanOutput(span) || undefined,
-    rawInput: span.input ?? readAttribute(doc, 'gen_ai.tool.call.arguments'),
-    rawOutput: span.output ?? readAttribute(doc, 'gen_ai.tool.call.result'),
+    // On execute_tool spans the tool's arguments and result come first (as in Agent Traces):
+    // some instrumentations also put messages there, holding only a tool_call part.
+    rawInput: tool ? (args ?? span.input) : (span.input ?? args),
+    rawOutput: tool ? (result ?? span.output) : (span.output ?? result),
   };
 };
 
