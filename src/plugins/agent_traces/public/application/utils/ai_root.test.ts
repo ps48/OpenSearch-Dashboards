@@ -7,6 +7,7 @@ import { act, renderHook } from '@testing-library/react';
 import {
   aiRootCondition,
   aiRootsOf,
+  aiRootWithFallbackOf,
   isAiRootRow,
   dropShadowedAiRoots,
   ensureAiRootFieldChecked,
@@ -116,6 +117,51 @@ describe('ai_root', () => {
 
     it('is empty without a GenAI root or a marker', () => {
       expect(aiRootsOf([row('http', '', {})])).toEqual([]);
+    });
+
+    describe('aiRootWithFallbackOf (the evaluation views and the trace flyout)', () => {
+      it('the AI root first', () => {
+        const rows = [
+          row('http', '', {}),
+          row('c', 'http', genAi, '1'),
+          row('m', 'http', marked, '2'),
+        ];
+        expect(aiRootWithFallbackOf(rows)?.spanId).toBe('m');
+        expect(aiRootWithFallbackOf([row('r', '', genAi), row('m', 'r', marked)])?.spanId).toBe(
+          'r'
+        );
+      });
+
+      it('an unmarked HTTP root with a GenAI child: the GenAI span, not the handler', () => {
+        const rows = [row('http', '', {}, '0'), row('agent', 'http', genAi, '1')];
+        expect(aiRootWithFallbackOf(rows)?.spanId).toBe('agent');
+      });
+
+      it('the outermost GenAI span, even when a child starts in the same millisecond', () => {
+        const rows = [
+          row('http', '', {}, '1'),
+          row('chat', 'agent', genAi, '1'),
+          row('agent', 'http', genAi, '1'),
+        ];
+        expect(aiRootWithFallbackOf(rows)?.spanId).toBe('agent');
+      });
+
+      it('the earliest of sibling GenAI spans', () => {
+        const rows = [
+          row('http', '', {}),
+          row('b', 'http', genAi, '2'),
+          row('a', 'http', genAi, '1'),
+        ];
+        expect(aiRootWithFallbackOf(rows)?.spanId).toBe('a');
+      });
+
+      it('else the root, else the first row; nothing for no rows', () => {
+        expect(aiRootWithFallbackOf([row('c', 'http', {}), row('http', '', {})])?.spanId).toBe(
+          'http'
+        );
+        expect(aiRootWithFallbackOf([row('orphan', 'gone', {})])?.spanId).toBe('orphan');
+        expect(aiRootWithFallbackOf([])).toBeUndefined();
+      });
     });
 
     it('treats a marked span, or a GenAI root, as an AI root row', () => {

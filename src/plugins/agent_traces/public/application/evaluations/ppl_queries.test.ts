@@ -19,6 +19,7 @@ import {
   buildOneTraceSpansQuery,
   buildResultSpansQuery,
   buildAiRootCandidatesQuery,
+  buildMarkedSpansQuery,
   AI_ROOT_CANDIDATES_LIMIT,
   buildRunsLookupQuery,
   buildRunNamesQuery,
@@ -451,6 +452,25 @@ describe('evaluation PPL', () => {
     expect(AI_ROOT_CANDIDATES_LIMIT).toBe(10);
     // The AI-root marker is read from the documents, never named (it may be unmapped).
     expect(buildAiRootCandidatesQuery('spans-*', 't1')).not.toContain('is_root');
+  });
+
+  it('the marked spans of one or two traces, read apart from the candidates', () => {
+    expect(buildMarkedSpansQuery('spans-*', ['t1'])).toBe(
+      [
+        'source = spans-*',
+        "where `traceId` = 't1' and `attributes.derived.gen_ai.is_root` = true",
+        'sort startTime',
+        'head 10',
+      ].join(' | ')
+    );
+    expect(buildMarkedSpansQuery('spans-*', ['t1', 't2'])).toBe(
+      [
+        'source = spans-*',
+        "where (`traceId` = 't1' or `traceId` = 't2') and `attributes.derived.gen_ai.is_root` = true",
+        'sort startTime',
+        'head 20',
+      ].join(' | ')
+    );
   });
 
   it('Result flyout: the judge trace', () => {

@@ -283,6 +283,45 @@ describe('TraceDetailsFlyout evaluation marks', () => {
   });
 });
 
+describe('TraceDetailsFlyout evaluation marks without the marker', () => {
+  it('an unmarked HTTP root with a GenAI child: trace-level results on the GenAI span, as in the evaluation views', () => {
+    mockUseTraceEvaluations.mockClear();
+    const chat: TraceRow = {
+      ...mockTrace,
+      id: 'chat-1',
+      spanId: 'chat-span-1',
+      parentSpanId: 'agent-span-1',
+      name: 'chat claude',
+      rawDocument: {
+        startTime: '2026-11-01T10:00:00.100Z',
+        attributes: { 'gen_ai.operation.name': 'chat' },
+      },
+    };
+    const agent: TraceRow = {
+      ...mockTrace,
+      id: 'agent-1',
+      spanId: 'agent-span-1',
+      parentSpanId: 'span-1',
+      name: 'invoke_agent Travel Planner',
+      rawDocument: {
+        startTime: '2026-11-01T10:00:00.100Z',
+        attributes: { 'gen_ai.operation.name': 'invoke_agent' },
+      },
+      children: [chat],
+    };
+    const httpRoot: TraceRow = {
+      ...mockTrace,
+      name: 'POST /invocations',
+      rawDocument: { startTime: '2026-11-01T10:00:00.000Z', attributes: {} },
+      children: [agent],
+    };
+    render(<TraceDetailsFlyout {...defaultProps} trace={httpRoot} fullTree={[httpRoot]} />);
+    const [, aiRootSpanId] = mockUseTraceEvaluations.mock.calls.pop() as [string, string];
+    expect(aiRootSpanId).toBe('agent-span-1');
+    expect(screen.getByText('Trace: invoke_agent Travel Planner')).toBeInTheDocument();
+  });
+});
+
 describe('sessionIdOf', () => {
   it('returns the first span session id, flat or nested', () => {
     expect(

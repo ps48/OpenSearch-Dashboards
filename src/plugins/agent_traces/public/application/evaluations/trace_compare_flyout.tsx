@@ -252,7 +252,13 @@ export const TraceCompareFlyout: React.FC<{
   // Both traces' results: the browse range, which holds the run before (where its trace was
   // found), not only the current run's window.
   const { dataset, spans, index, browseRange, openResult } = useEvalContext();
-  const [state, setState] = useState<{ loading: boolean; error?: string; sides?: Side[] }>({
+  const [state, setState] = useState<{
+    loading: boolean;
+    error?: string;
+    /** The span query failed (else the results query). */
+    spansFailed?: boolean;
+    sides?: Side[];
+  }>({
     loading: true,
   });
   const [view, setView] = useState<CompareView>('spans');
@@ -263,10 +269,9 @@ export const TraceCompareFlyout: React.FC<{
     const timezone = getEvalTimezone();
     setState({ loading: true });
     Promise.all([
-      new PPLService(services.data, { signal: controller.signal }).executeQuery(
-        spans,
-        buildTraceSpansQuery(spans.title, ids)
-      ),
+      new PPLService(services.data, { signal: controller.signal })
+        .executeQuery(spans, buildTraceSpansQuery(spans.title, ids))
+        .catch((error: unknown) => Promise.reject({ spansFailed: true, error })),
       runPpl(
         services.data,
         dataset,
@@ -295,8 +300,11 @@ export const TraceCompareFlyout: React.FC<{
         });
         setState({ loading: false, sides });
       })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setState({ loading: false, error: errorMessage(error) });
+      .catch((failure: unknown) => {
+        if (controller.signal.aborted) return;
+        const spansFailed = (failure as { spansFailed?: boolean } | undefined)?.spansFailed;
+        const error = spansFailed ? (failure as { error: unknown }).error : failure;
+        setState({ loading: false, error: errorMessage(error), spansFailed });
       });
     return () => controller.abort();
   }, [services.data, spans, dataset, index, browseRange, traceA, traceB]);
@@ -412,7 +420,10 @@ export const TraceCompareFlyout: React.FC<{
       </EuiFlyoutHeader>
       <EuiFlyoutBody>
         {state.error ? (
-          <QueryErrorCallout message={state.error} />
+          <QueryErrorCallout
+            message={state.error}
+            on={state.spansFailed ? 'spans' : 'evaluations'}
+          />
         ) : state.loading || !state.sides ? (
           <EuiLoadingContent lines={8} />
         ) : (

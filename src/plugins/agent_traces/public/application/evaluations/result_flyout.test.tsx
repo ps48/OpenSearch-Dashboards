@@ -400,6 +400,19 @@ describe('ResultFlyout', () => {
     expect(screen.queryByTestId('agtEvlFlyoutScale')).not.toBeInTheDocument();
   });
 
+  it('a span-index error: shown as one, naming the span index (not as an evaluation-index issue)', () => {
+    mockPpl.answer((q) => {
+      if (q.startsWith('source = spans-*')) throw new Error('no such index [spans-*]');
+      return [];
+    });
+    renderFlyout();
+    const saw = screen.getByTestId('agtEvlJudgeSaw');
+    expect(within(saw).getByTestId('agtEvlQueryError')).toHaveTextContent(
+      'The query on the span index spans-* failed'
+    );
+    expect(screen.queryByTestId('agtEvlDataIssue-index-missing')).not.toBeInTheDocument();
+  });
+
   describe('session-level results', () => {
     const CONV = 'conv-1234567890abcdef';
     const session = (conversationId?: string) =>
@@ -480,6 +493,18 @@ describe('ResultFlyout', () => {
     it('has no View session link without an openSession link', () => {
       renderFlyout(session(CONV));
       expect(screen.queryByTestId('agtEvlFlyoutViewSession')).not.toBeInTheDocument();
+    });
+
+    it('a failed session query on the span index: its error, not the evaluation-index advice', () => {
+      mockPpl.answer((q) => {
+        if (q === buildSessionRootsQuery('spans-*', CONV))
+          throw new Error('Field [attributes.gen_ai.conversation.id] not found.');
+        return [];
+      });
+      renderFlyout(session(CONV), { openSession: jest.fn() });
+      const saw = screen.getByTestId('agtEvlJudgeSawSession');
+      expect(within(saw).getByTestId('agtEvlQueryError')).toHaveTextContent('spans-*');
+      expect(screen.queryByTestId('agtEvlDataIssue-field-missing')).not.toBeInTheDocument();
     });
 
     it('says when the session has no traces in the span index', () => {

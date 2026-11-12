@@ -15,14 +15,25 @@ Read-only screens over `gen_ai.evaluation.result` events in the workspace's eval
   drops their results. Aggregations by verdict group by the raw `error.type` and `score.label`
   first and compute the verdict on those rows (`verdictStats`); the verdict filter is plain
   conditions on the raw fields (`verdictCond`). Averages are recomputed from sums and counts.
+- Those first stages, and every `stats ... by` an optional field (`gen_ai.agent.name`,
+  `gen_ai.agent.version`), rely on PPL keeping groups with a null key: `error.type` is null on
+  almost every result. OpenSearch 3.9 keeps them with `plugins.ppl.syntax.legacy.preferred`
+  `true` (the default) and drops them with `false` (checked on a throwaway index: the first stage
+  returned no row at all; `bucket_nullable=true` keeps them either way but is not accepted by
+  older engines). Conditional sums (`sum(case(...))`) are no way out: a script again, they drop
+  the results of indices that do not map a field (2 of 5 lost in the same check). So the data
+  check probes it (`buildNullGroupsCheckQuery`) and shows a "drops empty groups" empty state
+  instead of wrong counts. The first stage is not capped by `plugins.query.size_limit` or
+  `plugins.query.buckets` (only the final rows are, `isTruncated`).
 - Online results have no `test.suite.run.id`; offline results (suite runs) have one.
 - Attribute names follow OTel; OpenSearch gap fields mirror them under `opensearch.*`:
   `opensearch.gen_ai.evaluation.*` (score.min, score.max, score.threshold, score.direction,
   evaluator.name, evaluator.type, evaluator.version, level, judge.trace_id) and
   `opensearch.test.case.expected` / `.expected_truncated` (offline results only).
 - Level: `opensearch.gen_ai.evaluation.level`, else span when `spanId` is set, else trace.
-- A version's pass rate is the mean of its evaluations' pass rates (each evaluation counts the
-  same). Values are never faded for a small sample; the tooltips give n.
+- A version's pass rate is pooled over its results: pass / (pass + fail) of all its evaluations
+  together (`versionsOf`), so an evaluation with more results weighs more. Values are never faded
+  for a small sample; the tooltips give n.
 - Evaluations without a pass rule: numeric ones show the average score (direction-aware change,
   `score.direction` `minimize` means lower is better), categorical ones the most common label.
 - Results without `gen_ai.agent.name` show as "(no agent name)" (route key `~none`).
@@ -71,6 +82,10 @@ not have. They are read from one whole document per run (`buildRunNamesQuery`) o
 (`buildCaseNamesQuery`).
 
 What a result judged (case input and output, the result flyout) is the span its `spanId` points
-to, whatever its level; without one, the trace's AI root by the Agent Traces rule (a GenAI or
-marked root, else the earliest marked span, else the earliest GenAI span), never a non-GenAI
-HTTP root.
+to, whatever its level; without one, the span that stands for the trace
+(`aiRootWithFallbackOf` in `utils/ai_root.ts`, which the trace flyout uses too: a GenAI or
+marked root, else the earliest outermost marked span, else the earliest outermost GenAI span,
+else the root), never a non-GenAI HTTP root with a GenAI span under it. The candidates are the
+root and the first 10 GenAI spans (`buildAiRootCandidatesQuery`) plus, when the span index maps
+the marker, the trace's marked spans read apart (`buildMarkedSpansQuery`), so earlier GenAI
+calls cannot push the marked agent span out.

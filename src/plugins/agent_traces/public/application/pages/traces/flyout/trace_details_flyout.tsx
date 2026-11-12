@@ -50,7 +50,7 @@ import type { CategorizedSpan } from '../../../../services/span_categorization';
 import { TraceLogsNotices } from './trace_logs_notices';
 import { readAttribute } from '../hooks/genai_message_preview';
 import { SessionRow } from '../../sessions/session_utils';
-import { aiRootsOf, isAiRootRow } from '../../../utils/ai_root';
+import { aiRootWithFallbackOf, isAiRootRow } from '../../../utils/ai_root';
 import './trace_details_flyout.scss';
 
 export interface TraceDetailsProps {
@@ -89,7 +89,8 @@ const flattenRows = (rows: TraceRow[], out: TraceRow[] = []): TraceRow[] => {
 
 /**
  * The span the flyout is about: the clicked row when it represents its trace (an AI root),
- * else its nearest AI-root ancestor, else the trace's AI root (`aiRootsOf`), else the top span.
+ * else its nearest AI-root ancestor, else the span that stands for the trace
+ * (`aiRootWithFallbackOf`: its AI root, else its earliest outermost GenAI span), else the top span.
  */
 export const headerSpanOf = (trace: TraceRow, fullTree: TraceRow[]): TraceRow => {
   const all = flattenRows(fullTree);
@@ -101,7 +102,7 @@ export const headerSpanOf = (trace: TraceRow, fullTree: TraceRow[]): TraceRow =>
     seen.add(current.spanId);
     current = current.parentSpanId ? bySpanId.get(current.parentSpanId) : undefined;
   }
-  return aiRootsOf(all)[0] ?? fullTree[0];
+  return aiRootWithFallbackOf(all) ?? fullTree[0];
 };
 
 export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
@@ -137,11 +138,12 @@ export const TraceDetailsFlyout: React.FC<TraceDetailsProps> = ({
     [trace, flatNodes]
   );
   // Evaluation results of this trace: each on the span it points to; results without a span id
-  // on the trace's AI root (the agent span behind an HTTP handler, not the handler).
+  // on the span that stands for the trace, by the rule of the evaluation views
+  // (`aiRootWithFallbackOf`): the agent span behind an HTTP handler, not the handler.
   const { evalsAiRootSpanId, treeSpanIds } = useMemo(() => {
     const all = fullTree && fullTree.length > 0 ? flattenRows(fullTree) : [];
     return {
-      evalsAiRootSpanId: aiRootsOf(all)[0]?.spanId ?? fullTree?.[0]?.spanId ?? rootTrace.spanId,
+      evalsAiRootSpanId: aiRootWithFallbackOf(all)?.spanId ?? rootTrace.spanId,
       treeSpanIds: all.length ? new Set(all.map((r) => r.spanId)) : undefined,
     };
   }, [fullTree, rootTrace.spanId]);

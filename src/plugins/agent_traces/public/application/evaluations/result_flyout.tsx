@@ -254,7 +254,7 @@ const SessionJudgedSection: React.FC<{
         )}
       </EuiFlexGroup>
       {session.error ? (
-        <QueryErrorCallout message={session.error} />
+        <QueryErrorCallout message={session.error} on="spans" />
       ) : session.loading && !first ? (
         <EuiLoadingContent lines={2} />
       ) : r.conversationId && session.loaded && !first ? (
@@ -374,7 +374,7 @@ const JudgedSection: React.FC<{
         </EuiFlexItem>
       </EuiFlexGroup>
       {error ? (
-        <QueryErrorCallout message={error} />
+        <QueryErrorCallout message={error} on="spans" />
       ) : loading && !io ? (
         <EuiLoadingContent lines={2} />
       ) : loaded && !io ? (
@@ -589,7 +589,7 @@ export const JudgeTraceView: React.FC<{ traceId: string; result: EvalResult }> =
       response: llm ? readAttribute(raw(llm), 'gen_ai.output.messages') : undefined,
     };
   }, [rows]);
-  if (error) return <QueryErrorCallout message={error} />;
+  if (error) return <QueryErrorCallout message={error} on="spans" />;
   if (loading || !loaded) return <EuiLoadingContent lines={6} />;
   if (!view.flat.length)
     return (

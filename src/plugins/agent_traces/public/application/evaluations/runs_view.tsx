@@ -20,7 +20,7 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { RunName, RunRow, evalRuns, runCases, withRunNames } from './eval_model';
+import { RunLabel, RunRow, evalRuns, runCases, withRunNames } from './eval_model';
 import {
   F,
   NO_AGENT,
@@ -132,22 +132,22 @@ export const RunsView: React.FC = () => {
   );
   const plainRuns = useMemo(() => evalRuns(runsQuery.rows), [runsQuery.rows]);
   const names = useRunNames(useMemo(() => plainRuns.map((r) => r.runId), [plainRuns]));
-  const runs: Array<RunRow & RunName> = useMemo(
+  const runs: Array<RunRow & RunLabel> = useMemo(
     () => withRunNames(plainRuns, names),
     [plainRuns, names]
   );
   const cases = useMemo(() => runCases(casesQuery.rows), [casesQuery.rows]);
   const truncated = isTruncated(runsQuery.rows);
 
-  const sel = useRunSelection<RunRow & RunName>(runsQuery.loaded ? runs : undefined);
+  const sel = useRunSelection<RunRow & RunLabel>(runsQuery.loaded ? runs : undefined);
 
-  const columns: Array<EuiBasicTableColumn<RunRow & RunName>> = [
+  const columns: Array<EuiBasicTableColumn<RunRow & RunLabel>> = [
     runSelectColumn(sel),
     {
       field: 'runId',
       name: i18n.translate('agentTraces.evals.runs.run', { defaultMessage: 'Run' }),
-      sortable: (r: RunRow & RunName) => r.name ?? shortId(r.runId),
-      render: (_: string, r: RunRow & RunName) => (
+      sortable: (r: RunRow & RunLabel) => r.name ?? shortId(r.runId),
+      render: (_: string, r: RunRow & RunLabel) => (
         <RunNameCell
           run={r}
           onOpen={() => navigate({ page: 'run', runId: r.runId })}
@@ -295,7 +295,7 @@ export const RunsView: React.FC = () => {
       {runsQuery.error ? (
         <QueryErrorCallout message={runsQuery.error} />
       ) : (
-        <EuiInMemoryTable<RunRow & RunName>
+        <EuiInMemoryTable<RunRow & RunLabel>
           items={runs}
           itemId="runId"
           columns={columns}

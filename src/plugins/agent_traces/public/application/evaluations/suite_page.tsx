@@ -18,7 +18,7 @@ import {
   EuiTitle,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { RunName, RunRow, runCases, suiteRuns, withRunNames } from './eval_model';
+import { RunLabel, RunRow, runCases, suiteRuns, withRunNames } from './eval_model';
 import { buildSuiteRunCasesQuery, buildSuiteRunsQuery } from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
@@ -70,20 +70,20 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
   const plainRuns = useMemo(() => suiteRuns(rows).map((r) => ({ ...r, suite })), [rows, suite]);
   // The latest runs first: the names are read for the most recent ones.
   const names = useRunNames(useMemo(() => plainRuns.map((r) => r.runId).reverse(), [plainRuns]));
-  const runs: Array<RunRow & RunName> = useMemo(
+  const runs: Array<RunRow & RunLabel> = useMemo(
     () => withRunNames(plainRuns, names),
     [plainRuns, names]
   );
-  const sel = useRunSelection<RunRow & RunName>(loaded ? runs : undefined);
+  const sel = useRunSelection<RunRow & RunLabel>(loaded ? runs : undefined);
   const agent = runs.map((r) => r.agent).find(Boolean);
 
-  const columns: Array<EuiBasicTableColumn<RunRow & RunName>> = [
+  const columns: Array<EuiBasicTableColumn<RunRow & RunLabel>> = [
     runSelectColumn(sel),
     {
       field: 'runId',
       name: i18n.translate('agentTraces.evals.suite.run', { defaultMessage: 'Run' }),
-      sortable: (r: RunRow & RunName) => r.name ?? shortId(r.runId),
-      render: (_: string, r: RunRow & RunName) => (
+      sortable: (r: RunRow & RunLabel) => r.name ?? shortId(r.runId),
+      render: (_: string, r: RunRow & RunLabel) => (
         <RunNameCell
           run={r}
           onOpen={() => navigate({ page: 'run', runId: r.runId })}
@@ -249,7 +249,7 @@ export const SuitePage: React.FC<{ suite: string }> = ({ suite }) => {
           </EuiFlexItem>
         </EuiFlexGroup>
         <EuiSpacer size="s" />
-        <EuiInMemoryTable<RunRow & RunName>
+        <EuiInMemoryTable<RunRow & RunLabel>
           items={runs}
           itemId="runId"
           columns={columns}

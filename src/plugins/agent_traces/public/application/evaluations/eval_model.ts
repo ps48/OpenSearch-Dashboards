@@ -676,11 +676,17 @@ export const withCaseNames = <T extends { caseId: string; caseName?: string }>(
     ? cases
     : cases.map((c) => (names.has(c.caseId) ? { ...c, caseName: names.get(c.caseId) } : c));
 
-/** The runs with their names (when there is one). */
+/** What the runs tables show of a run's `RunName`. */
+export type RunLabel = Pick<RunName, 'name' | 'description'>;
+
+/**
+ * The runs with their names and descriptions (when there is one). Not the CI link: the runs
+ * tables have no CI column (the run page header reads it from `runNamesOf`).
+ */
 export const withRunNames = <T extends { runId: string }>(
   runs: T[],
   names: Map<string, RunName>
-): Array<T & RunName> =>
+): Array<T & RunLabel> =>
   names.size === 0
     ? runs
     : runs.map((r) => {

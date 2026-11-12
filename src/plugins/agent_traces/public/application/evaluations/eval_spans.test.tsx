@@ -17,6 +17,7 @@ import {
 import { resetAiRootFieldChecks, setAiRootFieldPresent } from '../utils/ai_root';
 import {
   buildAiRootCandidatesQuery,
+  buildMarkedSpansQuery,
   buildResultSpansQuery,
   buildSessionRootsQuery,
 } from './ppl_queries';
@@ -162,6 +163,82 @@ describe('span hooks', () => {
     expect(aiRootSpanOf([http, child('c1', genAi), child('c2', genAi)])?.spanId).toBe('c1');
     expect(aiRootSpanOf([http])?.spanId).toBe('http');
     expect(aiRootSpanOf([])).toBeUndefined();
+  });
+
+  it('aiRootSpanOf: a nested GenAI span that starts in the same millisecond loses to its ancestor', () => {
+    const T = '2026-11-01 10:00:00.123';
+    const OP = 'attributes.gen_ai.operation.name';
+    const http = { traceId: 't', spanId: 'http', parentSpanId: '', startTime: T };
+    // Unmarked: the outermost GenAI span, not its first chat call.
+    const chat = {
+      traceId: 't',
+      spanId: 'chat',
+      parentSpanId: 'agent2',
+      startTime: T,
+      [OP]: 'chat',
+    };
+    const agent2 = {
+      traceId: 't',
+      spanId: 'agent2',
+      parentSpanId: 'http',
+      startTime: T,
+      [OP]: 'invoke_agent',
+    };
+    expect(aiRootSpanOf([http, chat, agent2])?.spanId).toBe('agent2');
+  });
+
+  it('useJudgedSpans: a marked agent span after more than 9 GenAI spans is still the AI root', () => {
+    setAiRootFieldPresent(ctx.spans.id ?? '', true);
+    try {
+      const at = (s: number) => `2026-11-01 10:00:${String(s).padStart(2, '0')}`;
+      // The candidates query is capped at 10: the HTTP root and 9 earlier GenAI calls
+      // (guardrails, embeddings), not the agent span.
+      const candidates = [
+        { traceId: 't1', spanId: 'http', parentSpanId: '', startTime: at(0), name: 'POST /chat' },
+        ...Array.from({ length: 9 }, (_, i) => ({
+          traceId: 't1',
+          spanId: `pre${i}`,
+          parentSpanId: 'http',
+          startTime: at(i + 1),
+          name: `chat guardrail ${i}`,
+          'attributes.gen_ai.operation.name': 'chat',
+        })),
+      ];
+      // The marked agent span, without gen_ai.operation.name: read apart.
+      const agent = {
+        traceId: 't1',
+        spanId: 'agent',
+        parentSpanId: 'http',
+        startTime: at(20),
+        name: 'travel agent',
+        'attributes.derived.gen_ai.is_root': true,
+      };
+      mockPpl.answer((q) =>
+        q === buildAiRootCandidatesQuery('spans-*', 't1')
+          ? candidates
+          : q === buildMarkedSpansQuery('spans-*', ['t1'])
+            ? [agent]
+            : []
+      );
+      const { result } = renderHook(() => useJudgedSpans([{ traceId: 't1' }]), { wrapper });
+      expect(mockPpl.queries).toEqual([
+        buildAiRootCandidatesQuery('spans-*', 't1'),
+        buildMarkedSpansQuery('spans-*', ['t1']),
+      ]);
+      expect(result.current.byTrace.get('t1')?.name).toBe('travel agent');
+      expect(result.current.loaded).toBe(true);
+    } finally {
+      resetAiRootFieldChecks();
+    }
+  });
+
+  it('useJudgedSpans: the marker not mapped: no marked-spans query (PPL would reject it)', () => {
+    mockPpl.answer(() => []);
+    renderHook(() => useJudgedSpans([{ traceId: 't1' }, { traceId: 't2' }]), { wrapper });
+    expect(mockPpl.queries).toEqual([
+      buildAiRootCandidatesQuery('spans-*', 't1'),
+      buildAiRootCandidatesQuery('spans-*', 't2'),
+    ]);
   });
 
   it('runs nothing without ids', () => {

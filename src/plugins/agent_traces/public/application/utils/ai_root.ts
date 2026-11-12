@@ -60,11 +60,39 @@ export const isGenAiSpanDocument = (source: Record<string, unknown> | undefined)
 };
 
 interface SpanRowLike {
+  spanId?: string;
   parentSpanId?: string | null;
   rawDocument?: Record<string, unknown>;
 }
 
 const rawStartOf = (row: SpanRowLike) => String(row.rawDocument?.startTime ?? '');
+
+/** Earliest first; spans that start together keep their order. */
+const byStart = <T extends SpanRowLike>(rows: T[]): T[] =>
+  [...rows].sort((a, b) => rawStartOf(a).localeCompare(rawStartOf(b)));
+
+/**
+ * The spans of `subset` with no ancestor in `subset` among `rows` (by `spanId` and
+ * `parentSpanId`). A malformed chain (a span that is its own parent, or a cycle) never hides a
+ * span.
+ */
+const outermostOf = <T extends SpanRowLike>(rows: T[], subset: T[]): T[] => {
+  const parents = new Map(rows.filter((r) => r.spanId).map((r) => [r.spanId, r.parentSpanId]));
+  const ids = new Set(subset.map((r) => r.spanId).filter((id): id is string => !!id));
+  const hasAncestorInSubset = (spanId: string) => {
+    const seen = new Set<string>([spanId]);
+    let found = false;
+    let parentId = parents.get(spanId);
+    while (parentId) {
+      if (seen.has(parentId)) return false;
+      seen.add(parentId);
+      if (ids.has(parentId)) found = true;
+      parentId = parents.get(parentId);
+    }
+    return found;
+  };
+  return subset.filter((r) => !r.spanId || !hasAncestorInSubset(r.spanId));
+};
 
 /**
  * The spans that represent one trace in Agent Traces, by the same rule everywhere: a trace root
@@ -80,6 +108,24 @@ export const aiRootsOf = <T extends SpanRowLike>(rows: T[]): T[] => {
     .filter((r) => isMarkedAiRoot(r.rawDocument))
     .sort((a, b) => rawStartOf(a).localeCompare(rawStartOf(b)));
 };
+
+/**
+ * The one span that stands for a trace, where its trace-level evaluation results show (the
+ * evaluation views and the trace flyout use this one rule): its AI root (`aiRootsOf`), else its
+ * earliest outermost GenAI span (an agent behind an HTTP handler without the marker), else its
+ * root, else the first row. The rows need `spanId` and `parentSpanId`, so a nested GenAI span
+ * loses to its ancestor even when both start in the same millisecond.
+ */
+export const aiRootWithFallbackOf = <T extends SpanRowLike>(rows: T[]): T | undefined =>
+  aiRootsOf(rows)[0] ??
+  byStart(
+    outermostOf(
+      rows,
+      rows.filter((r) => isGenAiSpanDocument(r.rawDocument))
+    )
+  )[0] ??
+  rows.find((r) => !r.parentSpanId) ??
+  rows[0];
 
 /** Whether this span is one that represents its trace (see `aiRootsOf`). */
 export const isAiRootRow = (row: SpanRowLike): boolean =>

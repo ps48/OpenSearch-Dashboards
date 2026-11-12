@@ -11,8 +11,8 @@
  *
  * Aggregations end in `head 10000`; raw documents are read only for one page of results (25),
  * one case (100), one document per run (100) or per case (500), one per evaluation of a run
- * (100), the judged spans of one or two results (1 / 2), up to 10 AI-root candidates of a trace, one
- * trace (200), the two traces of Compare traces (2000)
+ * (100), the judged spans of one or two results (1 / 2), up to 10 AI-root candidates and 10
+ * marked spans of a trace, one trace (200), the two traces of Compare traces (2000)
  * and the turns of one session (50).
  *
  * Attribute names follow OTel; OpenSearch gap fields mirror them under `opensearch.*`
@@ -241,6 +241,21 @@ const join = (commands: string[]) => commands.join(' | ');
 export const buildDataCheckQuery = (index: string, fields: string[]): string =>
   join([...base(index), `fields ${fields.map(fld).join(', ')}`, 'head 1']);
 
+/**
+ * Whether PPL keeps a group whose key is null, which `verdictStats` and every `stats ... by` on an
+ * optional field (the agent name, `error.type`) rely on: one result without `error.type`, grouped
+ * by it. A row with a null key means null groups are kept; none means they are dropped (Calcite
+ * PPL with `plugins.ppl.syntax.legacy.preferred` false). Run only after the data check read a
+ * result without `error.type`, so such a result exists.
+ */
+export const buildNullGroupsCheckQuery = (index: string): string =>
+  join([
+    ...base(index),
+    `where isnull(${fld(F.errorType)})`,
+    'head 1',
+    `stats count() as n by ${fld(F.errorType)}`,
+  ]);
+
 /** The number of results in an index (setup detection, Settings). */
 export const buildResultsTotalQuery = (index: string): string =>
   join([...base(index), 'stats count() as n']);
@@ -433,7 +448,11 @@ export const buildRunsLookupQuery = (index: string, suite: string): string =>
     head,
   ]);
 
-/** An aggregation that returned `AGG_LIMIT` rows may have been cut off. */
+/**
+ * An aggregation that returned `AGG_LIMIT` rows may have been cut off. Only the last stage can be:
+ * the first stage of `verdictStats` is not capped by `plugins.query.size_limit` or
+ * `plugins.query.buckets` (checked on OpenSearch 3.9 with both set to 2).
+ */
 export const isTruncated = (rows: unknown[]): boolean => rows.length >= AGG_LIMIT;
 
 const runsWhere = (runIds: string[]) =>
@@ -567,7 +586,8 @@ export const buildResultSpansQuery = (
  * GenAI spans, earliest first (the root and the outermost GenAI spans start first). The browser
  * picks the AI root by Agent Traces' rule (`aiRootSpanOf`): a GenAI or marked root, else the
  * earliest marked span, else the earliest GenAI span (an agent behind an HTTP handler), else the
- * root. The marker is read from the documents, not named in PPL (it may be unmapped).
+ * root. The marker is read from the documents, not named in PPL (it may be unmapped); marked
+ * spans are read apart (`buildMarkedSpansQuery`) once the marker is known to be mapped.
  */
 export const buildAiRootCandidatesQuery = (spansIndex: string, traceId: string): string =>
   join([
@@ -577,6 +597,23 @@ export const buildAiRootCandidatesQuery = (spansIndex: string, traceId: string):
     )}))`,
     'sort startTime',
     `head ${AI_ROOT_CANDIDATES_LIMIT}`,
+  ]);
+
+/**
+ * The spans of one or two traces marked as AI roots (`derived.gen_ai.is_root`), earliest first,
+ * for results without a span id. Read apart from `buildAiRootCandidatesQuery`, so earlier GenAI
+ * spans cannot push a marked span past that query's limit, and marked spans without
+ * `gen_ai.operation.name` count (as in `buildSessionRootsQuery`). Only run when the span index
+ * maps the marker: PPL rejects a query that names an unmapped field.
+ */
+export const buildMarkedSpansQuery = (spansIndex: string, traceIds: string[]): string =>
+  join([
+    `source = ${spansIndex}`,
+    `where ${traceIds.length > 1 ? `(${anyOf(SF.traceId, traceIds)})` : anyOf(SF.traceId, traceIds)} and ${fld(
+      AI_ROOT_FIELD
+    )} = true`,
+    'sort startTime',
+    `head ${AI_ROOT_CANDIDATES_LIMIT * traceIds.length}`,
   ]);
 
 /**

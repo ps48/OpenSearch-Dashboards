@@ -16,17 +16,17 @@ import {
 } from '../pages/traces/hooks/genai_message_preview';
 import {
   AI_ROOT_FIELD,
-  aiRootsOf,
+  aiRootWithFallbackOf,
   ensureAiRootFieldChecked,
   hasAiRootField,
   isAiRootFieldChecked,
-  isGenAiSpanDocument,
   useAiRootFieldVersion,
 } from '../utils/ai_root';
 import { PplRecord, get, str } from './eval_model';
 import {
   SF,
   buildAiRootCandidatesQuery,
+  buildMarkedSpansQuery,
   buildResultSpansQuery,
   buildSessionRootsQuery,
 } from './ppl_queries';
@@ -86,19 +86,23 @@ export interface JudgedTarget {
 }
 
 /**
- * The AI root among `buildAiRootCandidatesQuery` rows (earliest first), by Agent Traces' rule
- * (`aiRootsOf`): a GenAI or marked root, else the earliest marked span; else the earliest GenAI
- * span (an agent behind an HTTP handler, without the marker); else the root.
+ * The AI root among span rows of one trace (`buildAiRootCandidatesQuery` and
+ * `buildMarkedSpansQuery`, or `buildSessionRootsQuery`), by the rule the trace flyout uses too
+ * (`aiRootWithFallbackOf`): a GenAI or marked root, else the earliest outermost marked span; else
+ * the earliest outermost GenAI span (an agent behind an HTTP handler, without the marker); else
+ * the root.
  */
 export const aiRootSpanOf = (rows: PplRecord[]): PplRecord | undefined => {
-  // PPL rows name fields flat or nested: the two the rule reads are put where it looks.
+  // PPL rows name fields flat or nested: the ones the rule reads are put where it looks.
   const spans = rows.map((row) => {
     const attributes = (row.attributes ?? {}) as Record<string, unknown>;
     return {
       row,
+      spanId: str(get(row, SF.spanId)),
       parentSpanId: str(get(row, SF.parentSpanId)) ?? '',
       rawDocument: {
         ...(row as Record<string, unknown>),
+        startTime: get(row, SF.startTime),
         attributes: {
           ...attributes,
           'gen_ai.operation.name': attributes['gen_ai.operation.name'] ?? get(row, SF.operation),
@@ -107,18 +111,22 @@ export const aiRootSpanOf = (rows: PplRecord[]): PplRecord | undefined => {
       },
     };
   });
-  return (
-    aiRootsOf(spans)[0]?.row ??
-    spans.find((s) => isGenAiSpanDocument(s.rawDocument))?.row ??
-    spans.find((s) => !s.parentSpanId)?.row
-  );
+  return aiRootWithFallbackOf(spans)?.row;
+};
+
+/** The rows of `more` whose span is not in `rows` yet, after `rows`. */
+const withSpans = (rows: PplRecord[], more: PplRecord[]): PplRecord[] => {
+  if (!more.length) return rows;
+  const ids = new Set(rows.map((r) => str(get(r, SF.spanId))));
+  return [...rows, ...more.filter((r) => !ids.has(str(get(r, SF.spanId))))];
 };
 
 /**
  * What one or two results judged (case input and output, the result flyout): the span each
  * points to (one query by exact trace and span id), else, without a span id, its trace's AI root
- * (one query per such trace, `aiRootSpanOf`), so an agent behind an HTTP handler shows the
- * agent span, not the handler. Keyed by trace id; at most two targets; none: nothing runs.
+ * (`aiRootSpanOf` on one candidates query per such trace and, once the marker is known to be
+ * mapped, one query for their marked spans), so an agent behind an HTTP handler shows the agent
+ * span, not the handler. Keyed by trace id; at most two targets; none: nothing runs.
  */
 export const useJudgedSpans = (targets: JudgedTarget[]): SpanIOState => {
   const { spans, refreshKey } = useEvalContext();
@@ -134,6 +142,7 @@ export const useJudgedSpans = (targets: JudgedTarget[]): SpanIOState => {
     .slice(0, 2);
   const refs = unique.filter((t): t is { traceId: string; spanId: string } => !!t.spanId);
   const bare = unique.filter((t) => !t.spanId).map((t) => t.traceId);
+  const marker = useAiRootMarker(spans, bare.length > 0, refreshKey);
   const bySpan = usePplRows(
     spans,
     refs.length ? buildResultSpansQuery(spans.title, refs) : undefined,
@@ -153,36 +162,47 @@ export const useJudgedSpans = (targets: JudgedTarget[]): SpanIOState => {
     undefined,
     refreshKey
   );
+  const marked = usePplRows(
+    spans,
+    bare.length && marker ? buildMarkedSpansQuery(spans.title, bare) : undefined,
+    undefined,
+    refreshKey
+  );
+  const bareKey = bare.join('\n');
   const byTrace = useMemo(() => {
+    const traceIds = bareKey.split('\n');
     const map = new Map<string, SpanIO>();
     bySpan.rows.forEach((row) => {
       const io = spanIOOf(row);
       if (io.traceId) map.set(io.traceId, io);
     });
-    [rootA.rows, rootB.rows].forEach((rows) => {
-      const root = aiRootSpanOf(rows);
+    [rootA.rows, rootB.rows].forEach((rows, i) => {
+      const own = marked.rows.filter((r) => str(get(r, SF.traceId)) === traceIds[i]);
+      const root = aiRootSpanOf(withSpans(rows, own));
       const io = root ? spanIOOf(root) : undefined;
       if (io?.traceId && !map.has(io.traceId)) map.set(io.traceId, io);
     });
     return map;
-  }, [bySpan.rows, rootA.rows, rootB.rows]);
+  }, [bareKey, bySpan.rows, rootA.rows, rootB.rows, marked.rows]);
   const parts = [
     ...(refs.length ? [bySpan] : []),
     ...(bare[0] ? [rootA] : []),
     ...(bare[1] ? [rootB] : []),
+    ...(bare.length && marker ? [marked] : []),
   ];
+  const waiting = bare.length > 0 && marker === undefined;
   return {
     byTrace,
-    loading: parts.some((p) => p.loading),
-    loaded: parts.length > 0 && parts.every((p) => p.loaded),
+    loading: waiting || parts.some((p) => p.loading),
+    loaded: !waiting && parts.length > 0 && parts.every((p) => p.loaded),
     error: parts.find((p) => p.error)?.error,
   };
 };
 
 /**
  * Whether the span index maps the AI-root marker, checked once per dataset as Agent Traces does
- * (`ensureAiRootFieldChecked`, shared cache); undefined until the check answered. No dataset:
- * nothing runs.
+ * (`ensureAiRootFieldChecked`, shared cache); undefined until the check has run, and after a
+ * failed check the last cached answer, else false. No dataset: nothing runs.
  */
 export const useAiRootMarker = (
   dataset: Dataset | undefined,
@@ -201,10 +221,11 @@ export const useAiRootMarker = (
     let live = true;
     const ppl = data ? new PPLService(data) : undefined;
     ensureAiRootFieldChecked(ppl, dataset, `source = ${dataset.title}`).then(() => {
-      // Only an answered check (mapped, or reported missing) is known. A failed probe (a timeout,
-      // a 5xx) leaves the marker unknown: the turns wait, and Refresh probes again.
-      if (live && isAiRootFieldChecked(dataset.id))
-        setKnown({ key, present: hasAiRootField(dataset.id) });
+      // An answered check says whether the marker is mapped. A failed probe (a timeout, a 5xx)
+      // falls back to the last answer cached for the dataset, else to unmapped: the queries never
+      // name the marker then, so they stay valid and GenAI roots still show; the next answered
+      // probe (Refresh, or after the cache period) adds the marked spans.
+      if (live) setKnown({ key, present: hasAiRootField(dataset.id) });
     });
     return () => {
       live = false;
@@ -220,8 +241,8 @@ export const useAiRootMarker = (
 };
 
 /**
- * One turn per trace among `buildSessionRootsQuery` rows (oldest first): the trace's AI root by
- * the Agent Traces rule (`aiRootsOf`): its GenAI or marked root, else its earliest marked span.
+ * One turn per trace among `buildSessionRootsQuery` rows (oldest first): the trace's AI root
+ * (`aiRootSpanOf`): its GenAI or marked root, else its earliest outermost marked span.
  */
 export const sessionTurnsOf = (rows: PplRecord[]): PplRecord[] => {
   const byTrace = new Map<string, PplRecord[]>();

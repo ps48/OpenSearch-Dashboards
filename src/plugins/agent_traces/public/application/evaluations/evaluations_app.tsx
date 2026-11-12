@@ -31,7 +31,7 @@ import {
 } from '../../../../opensearch_dashboards_utils/public';
 import { syncQueryStateWithUrl } from '../../../../data/public';
 import { TimeRange } from '../../../../data/common';
-import { EvalResult, parseTime, runNamesOf } from './eval_model';
+import { EvalResult, get, parseTime, runNamesOf } from './eval_model';
 import {
   AGENTS_ROUTE,
   APP_STATE_KEY,
@@ -45,7 +45,13 @@ import {
 } from './eval_routes';
 import { EvalContext, EvalScreenContext } from './eval_context';
 import { evalsDataset, evalsLookupDataset, spansDataset, usePplRows } from './use_ppl_rows';
-import { buildDataCheckQuery, buildRunNamesQuery, buildRunWindowQuery } from './ppl_queries';
+import {
+  F,
+  buildDataCheckQuery,
+  buildNullGroupsCheckQuery,
+  buildRunNamesQuery,
+  buildRunWindowQuery,
+} from './ppl_queries';
 import { CORE_FIELDS, DataIssue, classifyDataIssue } from './eval_data_issue';
 import {
   EvalsDatasetConfig,
@@ -377,26 +383,59 @@ const useRunWindow = (
   return { window, loading: !!query && !loaded, missing: !!query && loaded && !window, error };
 };
 
+interface DataCheck {
+  checking: boolean;
+  issue?: DataIssue;
+}
+
 /**
  * Whether the evaluations dataset can be read, checked once per config and Refresh
  * (`buildDataCheckQuery`): a missing index, field or data source, or no result at all, gives
  * the one empty state every page shows instead of its queries' errors (`classifyDataIssue`).
- * An error of another kind does not block the pages (they show it).
+ * An error of another kind does not block the pages (they show it). When the result read has no
+ * `error.type`, a second one-row query checks that PPL keeps null groups
+ * (`buildNullGroupsCheckQuery`): every count by an optional field relies on them.
+ *
+ * While a Refresh runs, the last answer stays: the issue shown does not flip to "no results",
+ * and pages shown after an unclassified error are not unmounted.
  */
 export const useDataCheck = (
   config: EvalsDatasetConfig | undefined,
   refreshKey: number
-): { checking: boolean; issue?: DataIssue } => {
+): DataCheck => {
   const dataset = useMemo(
     () => (config ? evalsLookupDataset(config.index, evalsDataSourceOf(config)) : undefined),
     [config]
   );
+  const dataSource = !!evalsDataSourceOf(config);
   const query = config ? buildDataCheckQuery(config.index, CORE_FIELDS) : undefined;
-  const { rows, loaded, error } = usePplRows(dataset, query, undefined, refreshKey);
+  const check = usePplRows(dataset, query, undefined, refreshKey);
+  const checkDone = check.loaded && !check.loading;
+  const probeQuery =
+    config && checkDone && !check.error && check.rows[0] && get(check.rows[0], F.errorType) == null
+      ? buildNullGroupsCheckQuery(config.index)
+      : undefined;
+  const probe = usePplRows(dataset, probeQuery, undefined, refreshKey);
+  const last = useRef<{ key?: string; result: DataCheck }>();
   if (!query) return { checking: false };
-  if (!loaded) return { checking: true };
-  if (error) return { checking: false, issue: classifyDataIssue(error) };
-  return { checking: false, issue: rows.length ? undefined : { kind: 'no-results' } };
+  const key = `${dataset?.id}|${query}`;
+  const answer = ((): DataCheck | undefined => {
+    if (!checkDone) return undefined;
+    if (check.error)
+      return { checking: false, issue: classifyDataIssue(check.error, { dataSource }) };
+    if (!check.rows.length) return { checking: false, issue: { kind: 'no-results' } };
+    if (!probeQuery) return { checking: false };
+    if (!probe.loaded || probe.loading) return undefined;
+    // A failed probe does not block the pages: their own queries show the error.
+    if (probe.error) return { checking: false };
+    return { checking: false, issue: probe.rows.length ? undefined : { kind: 'null-groups' } };
+  })();
+  if (answer) {
+    last.current = { key, result: answer };
+    return answer;
+  }
+  // Running (a Refresh): the last answer for this query, else checking.
+  return last.current?.key === key ? last.current.result : { checking: true };
 };
 
 export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ params }) => {
@@ -607,7 +646,13 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
           onGettingStarted={() => setTourOpen(true)}
         />
       );
-    if (config && onRunPage && run.error) return <QueryErrorCallout message={run.error} />;
+    // In the context, so a classified error names the index and links to Settings.
+    if (context && onRunPage && run.error)
+      return (
+        <EvalContext.Provider value={context}>
+          <QueryErrorCallout message={run.error} />
+        </EvalContext.Provider>
+      );
     if (config && onRunPage && run.loading) return <EuiLoadingContent lines={6} />;
     if (config && onRunPage && run.missing)
       return (

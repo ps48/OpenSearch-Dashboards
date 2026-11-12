@@ -200,7 +200,7 @@ const CompareCaseDetail: React.FC<{
   return (
     <div className="agtEvlCaseResults" data-test-subj={`agtEvlCompareCase-${row.caseId}`}>
       {/* A failed span read is an error, not missing input or output. */}
-      {roots.error && <QueryErrorCallout message={roots.error} />}
+      {roots.error && <QueryErrorCallout message={roots.error} on="spans" />}
       <SpanIOView
         idPrefix={`agtEvlCompareCase-${row.caseId}`}
         testId="agtEvlCompareIO"

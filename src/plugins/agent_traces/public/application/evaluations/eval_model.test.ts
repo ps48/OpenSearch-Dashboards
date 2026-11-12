@@ -640,6 +640,12 @@ describe('run names', () => {
     expect(rows[1]).toEqual({ runId: 'r2' });
     const same = [{ runId: 'r1' }];
     expect(withRunNames(same, new Map())).toBe(same);
+    // The CI link stays out of the runs tables' rows (no CI column; the type says so too).
+    const withCi = withRunNames(
+      [{ runId: 'r1' }],
+      new Map([['r1', { name: 'n', ciUrl: 'https://ci/runs/1' }]])
+    );
+    expect(withCi[0]).toEqual({ runId: 'r1', name: 'n', description: undefined });
   });
 });
 

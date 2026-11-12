@@ -216,8 +216,11 @@ export const TraceEvaluationsTab: React.FC<{
 }> = ({ evals, spanLabelOf }) => {
   const [open, setOpen] = useState<EvalResult>();
   const evalsIndex = useEvalsIndexPattern();
+  const evalsDataSource = useEvalsDataSource();
   if (evals.isLoading) return <EuiLoadingContent lines={4} />;
-  const issue = evals.error ? classifyDataIssue(evals.error) : undefined;
+  const issue = evals.error
+    ? classifyDataIssue(evals.error, { dataSource: !!evalsDataSource })
+    : undefined;
   if (issue) {
     // Data Agent Evaluations cannot read: say what is missing, not the raw error.
     return (

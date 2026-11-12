@@ -405,6 +405,18 @@ const ISSUE_TITLE: Record<DataIssueView['kind'], (v: { index: string; field?: st
       i18n.translate('agentTraces.evalsIssue.dataSourceTitle', {
         defaultMessage: 'The data source of the evaluations dataset is not available',
       }),
+    'data-source-auth': () =>
+      i18n.translate('agentTraces.evalsIssue.dataSourceAuthTitle', {
+        defaultMessage: 'The data source of the evaluations dataset cannot sign in',
+      }),
+    unreachable: () =>
+      i18n.translate('agentTraces.evalsIssue.unreachableTitle', {
+        defaultMessage: 'The cluster of the evaluations dataset is not reachable',
+      }),
+    'null-groups': () =>
+      i18n.translate('agentTraces.evalsIssue.nullGroupsTitle', {
+        defaultMessage: 'This cluster drops empty groups from PPL aggregations',
+      }),
   };
 
 const ISSUE_BODY: Record<DataIssueView['kind'], (v: { index: string; field?: string }) => string> =
@@ -427,18 +439,47 @@ const ISSUE_BODY: Record<DataIssueView['kind'], (v: { index: string; field?: str
         values: { index },
       }),
     'field-missing': ({ index, field }) =>
-      i18n.translate('agentTraces.evalsIssue.fieldMissingBody', {
-        defaultMessage:
-          'The indices behind {index} were created without the evaluation index template (otel-v1-genai-evaluation-index-template), which maps {field} and every other field these views query. Install the template (Getting started shows how); the next index it creates, at the next rollover or result, has the fields. Or choose another dataset in Settings.',
-        values: { index, field: field ?? 'the fields' },
-      }),
+      field
+        ? i18n.translate('agentTraces.evalsIssue.fieldMissingBody', {
+            defaultMessage:
+              'The indices behind {index} were created without the evaluation index template (otel-v1-genai-evaluation-index-template), which maps {field} and every other field these views query. Install the template (Getting started shows how); the next index it creates, at the next rollover or result, has the fields. Or choose another dataset in Settings.',
+            values: { index, field },
+          })
+        : i18n.translate('agentTraces.evalsIssue.fieldMissingBodyAny', {
+            defaultMessage:
+              'The indices behind {index} were created without the evaluation index template (otel-v1-genai-evaluation-index-template), which maps every field these views query. Install the template (Getting started shows how); the next index it creates, at the next rollover or result, has the fields. Or choose another dataset in Settings.',
+            values: { index },
+          }),
     'data-source': ({ index }) =>
       i18n.translate('agentTraces.evalsIssue.dataSourceBody', {
         defaultMessage:
           'The data source the index pattern {index} reads from was deleted or does not answer. Check it in Data sources, or choose another evaluations dataset in Settings.',
         values: { index },
       }),
+    'data-source-auth': ({ index }) =>
+      i18n.translate('agentTraces.evalsIssue.dataSourceAuthBody', {
+        defaultMessage:
+          'The cluster behind the data source of {index} rejected its credentials, or the stored credentials cannot be read. Update the credentials in Data sources, or choose another evaluations dataset in Settings.',
+        values: { index },
+      }),
+    unreachable: ({ index }) =>
+      i18n.translate('agentTraces.evalsIssue.unreachableBody', {
+        defaultMessage:
+          'The cluster that holds {index} did not answer. Check that it is running and reachable, then Refresh.',
+        values: { index },
+      }),
+    'null-groups': () =>
+      i18n.translate('agentTraces.evalsIssue.nullGroupsBody', {
+        defaultMessage:
+          'Agent Evaluations counts results by fields most results leave empty, such as error.type. PPL on this cluster drops those empty groups (plugins.ppl.syntax.legacy.preferred is false), so the counts would leave most results out. Set plugins.ppl.syntax.legacy.preferred to true, the default, to read the results here.',
+      }),
   };
+
+const OFFLINE_KINDS: Array<DataIssueView['kind']> = [
+  'data-source',
+  'data-source-auth',
+  'unreachable',
+];
 
 /** The one-line title of a data issue (Agent Traces shows it where evaluations would be). */
 export const dataIssueTitle = (issue: DataIssueView, index: string): string =>
@@ -510,7 +551,7 @@ export const DataIssuePrompt: React.FC<{
     );
   return (
     <EuiEmptyPrompt
-      iconType={issue.kind === 'data-source' ? 'offline' : 'indexClose'}
+      iconType={OFFLINE_KINDS.includes(issue.kind) ? 'offline' : 'indexClose'}
       title={<h3>{title}</h3>}
       body={
         <EuiText size="s">

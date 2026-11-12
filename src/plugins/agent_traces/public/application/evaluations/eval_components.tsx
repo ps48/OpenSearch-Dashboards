@@ -371,12 +371,18 @@ export const SourceFilter: React.FC<{
 
 /**
  * A failed query. Data the page cannot read (no index, a missing field, no results, the data
- * source down: `classifyDataIssue`) shows what is missing and links to Settings and Getting
- * started instead of the raw error; other errors show their message.
+ * source or cluster down: `classifyDataIssue`) shows what is missing and links to Settings and
+ * Getting started instead of the raw error; other errors show their message. Only errors of the
+ * evaluations dataset are classified: a query on the span index (`on="spans"`) shows its error
+ * with the span index named, since the evaluation index advice would name the wrong index.
  */
-export const QueryErrorCallout: React.FC<{ message: string }> = ({ message }) => {
-  const { index, openSettings, openGettingStarted } = useEvalContext();
-  const issue = classifyDataIssue(message);
+export const QueryErrorCallout: React.FC<{ message: string; on?: 'evaluations' | 'spans' }> = ({
+  message,
+  on = 'evaluations',
+}) => {
+  const { index, dataset, spans, openSettings, openGettingStarted } = useEvalContext();
+  if (on === 'spans') return <QueryFailedCallout message={message} spansIndex={spans.title} />;
+  const issue = classifyDataIssue(message, { dataSource: !!dataset.dataSource });
   if (issue)
     return (
       <DataIssuePrompt
@@ -390,14 +396,24 @@ export const QueryErrorCallout: React.FC<{ message: string }> = ({ message }) =>
   return <QueryFailedCallout message={message} />;
 };
 
-const QueryFailedCallout: React.FC<{ message: string }> = ({ message }) => (
+const QueryFailedCallout: React.FC<{ message: string; spansIndex?: string }> = ({
+  message,
+  spansIndex,
+}) => (
   <EuiCallOut
     color="danger"
     iconType="alert"
     size="s"
-    title={i18n.translate('agentTraces.evals.queryError', {
-      defaultMessage: 'The query failed',
-    })}
+    title={
+      spansIndex
+        ? i18n.translate('agentTraces.evals.spansQueryError', {
+            defaultMessage: 'The query on the span index {index} failed',
+            values: { index: spansIndex },
+          })
+        : i18n.translate('agentTraces.evals.queryError', {
+            defaultMessage: 'The query failed',
+          })
+    }
     data-test-subj="agtEvlQueryError"
   >
     <EuiText size="xs">

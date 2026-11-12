@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nProvider } from '@osd/i18n/react';
 import {
   DeltaCell,
@@ -322,5 +322,39 @@ describe('QueryErrorCallout', () => {
   it('another error: its message', () => {
     wrap(<QueryErrorCallout message="Timed out" />);
     expect(screen.getByTestId('agtEvlQueryError')).toHaveTextContent('Timed out');
+  });
+
+  const inContext = (ui: React.ReactElement, dataSource?: { id: string; title: string }) =>
+    render(
+      <I18nProvider>
+        <EvalContext.Provider value={defaultEvalContext('evals-*', 'spans-*', dataSource as never)}>
+          {ui}
+        </EvalContext.Provider>
+      </I18nProvider>
+    );
+
+  it('a span-index query: not classified as an evaluation-index issue, the span index named', () => {
+    inContext(<QueryErrorCallout on="spans" message="no such index [spans-*]" />);
+    const callout = screen.getByTestId('agtEvlQueryError');
+    expect(callout).toHaveTextContent('The query on the span index spans-* failed');
+    expect(callout).toHaveTextContent('no such index [spans-*]');
+    expect(screen.queryByTestId('agtEvlDataIssue-index-missing')).not.toBeInTheDocument();
+    cleanup();
+    inContext(<QueryErrorCallout on="spans" message="Field [attributes.x] not found." />);
+    expect(screen.queryByText(/evaluation index template/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('agtEvlQueryError')).toHaveTextContent('Field [attributes.x]');
+  });
+
+  it('a connection error: the data source only when the dataset has one', () => {
+    inContext(<QueryErrorCallout message="connect ECONNREFUSED 127.0.0.1:9200" />);
+    expect(screen.getByTestId('agtEvlDataIssue-unreachable')).toHaveTextContent(
+      'The cluster of the evaluations dataset is not reachable'
+    );
+    cleanup();
+    inContext(<QueryErrorCallout message="connect ECONNREFUSED 10.0.0.1:443" />, {
+      id: 'ds1',
+      title: 'remote',
+    });
+    expect(screen.getByTestId('agtEvlDataIssue-data-source')).toBeInTheDocument();
   });
 });

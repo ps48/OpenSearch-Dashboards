@@ -20,7 +20,7 @@ jest.mock('../../../../data/public', () => ({
 const mockPpl = fakePpl();
 jest.mock('./use_ppl_rows', () => ({
   ...jest.requireActual('./use_ppl_rows'),
-  usePplRows: (...args: [unknown, string | undefined, unknown]) => mockPpl.hook(...args),
+  usePplRows: (...args: [unknown, string | undefined, unknown, number?]) => mockPpl.hook(...args),
 }));
 interface MockDataset {
   status: string;
@@ -38,7 +38,17 @@ jest.mock('./eval_dataset', () => ({
   useEvalsDataset: () => mockDataset,
 }));
 // The screens and dialogs have their own tests: stubs that show they are open.
-jest.mock('./agents_home', () => ({ AgentsHome: () => <div data-test-subj="agentsHome" /> }));
+let mockHomeMounts = 0;
+jest.mock('./agents_home', () => ({
+  AgentsHome: () => {
+    // Counts mounts: a Refresh must not remount the page.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('react').useEffect(() => {
+      mockHomeMounts += 1;
+    }, []);
+    return <div data-test-subj="agentsHome" />;
+  },
+}));
 jest.mock('./runs_view', () => ({ RunsView: () => <div data-test-subj="runsView" /> }));
 jest.mock('./results_view', () => ({
   ResultsView: () => <div data-test-subj="resultsView" />,
@@ -75,10 +85,19 @@ jest.mock('./eval_onboarding', () => ({
   ),
 }));
 
-/** The app's data check finds a result; other queries answer `fn`. */
+/**
+ * The app's data check finds a result (without `error.type`), and PPL keeps null groups (the
+ * probe that follows has its null row); other queries answer `fn`.
+ */
 const isDataCheck = (q: string) => q.includes('| fields `@timestamp`') && q.endsWith('| head 1');
+const isNullGroupsCheck = (q: string) =>
+  q.endsWith('| head 1 | stats count() as n by `attributes.error.type`');
 const withData = (fn: (q: string) => Array<Record<string, unknown>>) => (q: string) =>
-  isDataCheck(q) ? [{ '@timestamp': '2026-10-28 07:00:00' }] : fn(q);
+  isDataCheck(q)
+    ? [{ '@timestamp': '2026-10-28 07:00:00' }]
+    : isNullGroupsCheck(q)
+      ? [{ n: 1, 'attributes.error.type': null }]
+      : fn(q);
 
 const CONFIG = {
   index: 'otel-v1-genai-evaluation*',
@@ -321,6 +340,17 @@ describe('EvaluationsApp', () => {
         () => failCheck('Data Source Error: No Living connections'),
         'data-source',
       ],
+      [
+        'the local cluster down (no data source)',
+        () => failCheck('connect ECONNREFUSED 127.0.0.1:9200'),
+        'unreachable',
+      ],
+      [
+        'PPL drops null groups',
+        () =>
+          mockPpl.answer((q) => (isDataCheck(q) ? [{ '@timestamp': '2026-10-28 07:00:00' }] : [])),
+        'null-groups',
+      ],
     ];
     it.each(cases)('%s', (_name, setUp, kind) => {
       PAGES.forEach((hash) => {
@@ -332,8 +362,9 @@ describe('EvaluationsApp', () => {
         expect(issue).not.toHaveTextContent('Field [');
         expect(issue).not.toHaveTextContent('no such index');
         expect(issue).not.toHaveTextContent('Living connections');
-        // Only the data check ran: no page queries, no error callouts, no spinners.
-        expect(mockPpl.queries.every(isDataCheck)).toBe(true);
+        // Only the data check (and its null-groups probe) ran: no page queries, no error
+        // callouts, no spinners.
+        expect(mockPpl.queries.every((q) => isDataCheck(q) || isNullGroupsCheck(q))).toBe(true);
         expect(screen.queryByTestId('agtEvlQueryError')).not.toBeInTheDocument();
         expect(document.querySelector('.euiLoadingContent')).not.toBeInTheDocument();
         expect(screen.queryByTestId('agentsHome')).not.toBeInTheDocument();
@@ -358,6 +389,74 @@ describe('EvaluationsApp', () => {
       expect(screen.getByTestId('settingsModal')).toBeInTheDocument();
       fireEvent.click(screen.getByTestId('agtEvlDataIssueGettingStarted'));
       expect(screen.getByTestId('tour')).toBeInTheDocument();
+    });
+
+    it('a result with error.type set: no null-groups probe (it could not tell)', () => {
+      mockPpl.answer((q) =>
+        isDataCheck(q)
+          ? [{ '@timestamp': '2026-10-28 07:00:00', 'attributes.error.type': 'Timeout' }]
+          : []
+      );
+      mount('#/agents');
+      expect(screen.getByTestId('agentsHome')).toBeInTheDocument();
+      expect(mockPpl.queries.some(isNullGroupsCheck)).toBe(false);
+    });
+
+    it('a failed null-groups probe does not block the pages', () => {
+      mockPpl.answer((q) => {
+        if (isNullGroupsCheck(q)) throw new Error('Timed out');
+        return isDataCheck(q) ? [{ '@timestamp': '2026-10-28 07:00:00' }] : [];
+      });
+      mount('#/agents');
+      expect(screen.getByTestId('agentsHome')).toBeInTheDocument();
+    });
+
+    it('Refresh after a failed data check keeps the issue (no flip to no results)', () => {
+      failCheck('no such index [otel-v1-genai-evaluation*]');
+      mount('#/runs/run_1');
+      expect(screen.getByTestId('agtEvlDataIssue-index-missing')).toBeInTheDocument();
+      // The check runs again: `usePplRows` reports loading, no error, no rows meanwhile.
+      mockPpl.refreshing(isDataCheck);
+      fireEvent.click(screen.getByTestId('agtEvlRefresh'));
+      expect(screen.getByTestId('agtEvlDataIssue-index-missing')).toBeInTheDocument();
+      expect(screen.queryByTestId('agtEvlDataIssue-no-results')).not.toBeInTheDocument();
+      // It answers again: still the issue.
+      mockPpl.refreshing(() => false);
+      fireEvent.click(screen.getByTestId('agtEvlRefresh'));
+      expect(screen.getByTestId('agtEvlDataIssue-index-missing')).toBeInTheDocument();
+    });
+
+    it('Refresh after an unclassified check error keeps the pages mounted', () => {
+      failCheck('Timed out');
+      mount('#/agents');
+      expect(screen.getByTestId('agentsHome')).toBeInTheDocument();
+      const mounts = mockHomeMounts;
+      // Consulted only for queries run with a Refresh key.
+      let refreshed = false;
+      mockPpl.refreshing((q) => {
+        refreshed = refreshed || isDataCheck(q);
+        return isDataCheck(q);
+      });
+      // The date picker's button refreshes when the range is unchanged.
+      fireEvent.click(screen.getByTestId('superDatePickerApplyTimeButton'));
+      expect(refreshed).toBe(true);
+      expect(screen.getByTestId('agentsHome')).toBeInTheDocument();
+      expect(screen.queryByTestId('agtEvlDataIssue-no-results')).not.toBeInTheDocument();
+      expect(mockHomeMounts).toBe(mounts);
+    });
+
+    it('a classified run-window error names the index and links to Settings', () => {
+      mockPpl.answer(
+        withData((q) => {
+          if (q.includes('as first, max')) throw new Error('Field [attributes.x] not found.');
+          return [];
+        })
+      );
+      mount('#/runs/run_1');
+      const issue = screen.getByTestId('agtEvlDataIssue-field-missing');
+      expect(issue).toHaveTextContent('The indices behind otel-v1-genai-evaluation* were created');
+      fireEvent.click(within(issue).getByTestId('agtEvlDataIssueSettings'));
+      expect(screen.getByTestId('settingsModal')).toBeInTheDocument();
     });
 
     it('another error does not block the pages (they show it)', () => {

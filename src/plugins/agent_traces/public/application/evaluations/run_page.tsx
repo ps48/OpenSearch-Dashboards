@@ -124,7 +124,7 @@ const CaseDetail: React.FC<{ runId: string; caseRow: CaseRow }> = ({ runId, case
   return (
     <div className="agtEvlCaseResults" data-test-subj={`agtEvlCaseResults-${caseId}`}>
       {/* A failed span read is an error, not missing input or output. */}
-      {root.error && <QueryErrorCallout message={root.error} />}
+      {root.error && <QueryErrorCallout message={root.error} on="spans" />}
       <SpanIOView
         idPrefix={`agtEvlCase-${caseId}`}
         testId="agtEvlCaseIO"
