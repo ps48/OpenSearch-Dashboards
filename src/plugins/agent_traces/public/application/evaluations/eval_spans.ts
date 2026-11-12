@@ -186,31 +186,37 @@ export const useJudgedSpans = (targets: JudgedTarget[]): SpanIOState => {
  */
 export const useAiRootMarker = (
   dataset: Dataset | undefined,
-  enabled = true
+  enabled = true,
+  refreshKey = 0
 ): boolean | undefined => {
   const { services } = useOpenSearchDashboards<{ data: DataPublicPluginStart }>();
   const data = services?.data;
   // Re-renders when a check changes what is known (here or in Agent Traces).
   useAiRootFieldVersion();
   const key = enabled && dataset ? `${dataset.id}|${dataset.title}` : undefined;
-  const [checked, setChecked] = useState<string>();
+  // The last answered check of this dataset: kept while the cache is re-checked.
+  const [known, setKnown] = useState<{ key: string; present: boolean }>();
   useEffect(() => {
     if (!key || !dataset) return;
     let live = true;
     const ppl = data ? new PPLService(data) : undefined;
-    ensureAiRootFieldChecked(ppl, dataset, `source = ${dataset.title}`).finally(() => {
-      if (live) setChecked(key);
+    ensureAiRootFieldChecked(ppl, dataset, `source = ${dataset.title}`).then(() => {
+      // Only an answered check (mapped, or reported missing) is known. A failed probe (a timeout,
+      // a 5xx) leaves the marker unknown: the turns wait, and Refresh probes again.
+      if (live && isAiRootFieldChecked(dataset.id))
+        setKnown({ key, present: hasAiRootField(dataset.id) });
     });
     return () => {
       live = false;
     };
-    // The dataset is identified by its id and title (in `key`).
+    // The dataset is identified by its id and title (in `key`); Refresh probes again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, key]);
+  }, [data, key, refreshKey]);
   if (!key) return undefined;
-  // Known already (a recent check here or in Agent Traces), or nothing to check with.
-  if (checked !== key && data && !isAiRootFieldChecked(dataset?.id)) return undefined;
-  return hasAiRootField(dataset?.id);
+  // Nothing to check with (no data service): the marker is not named.
+  if (!data) return hasAiRootField(dataset?.id);
+  if (isAiRootFieldChecked(dataset?.id)) return hasAiRootField(dataset?.id);
+  return known?.key === key ? known.present : undefined;
 };
 
 /**
@@ -239,7 +245,7 @@ export const useSessionTurns = (
   conversationId?: string
 ): { turns: SpanIO[]; loading: boolean; loaded: boolean; error?: string } => {
   const { spans, refreshKey } = useEvalContext();
-  const marker = useAiRootMarker(spans, !!conversationId);
+  const marker = useAiRootMarker(spans, !!conversationId, refreshKey);
   const query =
     conversationId && marker !== undefined
       ? buildSessionRootsQuery(spans.title, conversationId, marker)

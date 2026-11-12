@@ -209,21 +209,53 @@ export const findEvalsConfig = async (
   };
 };
 
+/** A saved-object lookup that answered "not found" (404), as opposed to one that failed. */
+const isNotFound = (error: unknown): boolean => {
+  const e = error as
+    | {
+        statusCode?: number;
+        status?: number;
+        res?: { status?: number };
+        body?: { statusCode?: number };
+      }
+    | undefined;
+  return (
+    e?.statusCode === 404 ||
+    e?.status === 404 ||
+    e?.res?.status === 404 ||
+    e?.body?.statusCode === 404
+  );
+};
+
+/**
+ * The index pattern `id`; undefined only when it does not exist (404). A lookup that fails
+ * (network, 5xx, permissions) throws: the app shows "could not read the settings", never "the
+ * dataset was deleted".
+ */
 const getDataset = async (client: Client, id: string): Promise<DatasetRef | undefined> => {
+  let o;
   try {
-    const o = await client.get<IndexPatternAttrs>('index-pattern', id);
-    if (!o || (o as { error?: unknown }).error || !o.attributes?.title) return undefined;
-    return {
-      id: o.id,
-      title: o.attributes.title,
-      displayName: o.attributes.displayName,
-      signalType: o.attributes.signalType,
-      timeFieldName: o.attributes.timeFieldName,
-      dataSource: dataSourceOf(o.references),
-    };
-  } catch {
-    return undefined;
+    o = await client.get<IndexPatternAttrs>('index-pattern', id);
+  } catch (e) {
+    if (isNotFound(e)) return undefined;
+    throw e;
   }
+  const failed = o && (o as { error?: unknown }).error;
+  if (failed) {
+    if (isNotFound(failed)) return undefined;
+    throw new Error(
+      String((failed as { message?: unknown }).message ?? 'The index pattern could not be read')
+    );
+  }
+  if (!o?.attributes?.title) return undefined;
+  return {
+    id: o.id,
+    title: o.attributes.title,
+    displayName: o.attributes.displayName,
+    signalType: o.attributes.signalType,
+    timeFieldName: o.attributes.timeFieldName,
+    dataSource: dataSourceOf(o.references),
+  };
 };
 
 export interface LoadedEvalsConfig {

@@ -119,6 +119,37 @@ describe('evaluations app config', () => {
     });
   });
 
+  it('a failed index pattern lookup is not "deleted": the load fails (could not read)', async () => {
+    const failing = (error: unknown, rejects: boolean) => ({
+      ...makeClient([evalsConfig]),
+      get: jest.fn(async () => {
+        if (rejects) throw error;
+        return { id: 'ev', error };
+      }),
+    });
+    // A 5xx in the bulk get answer, and a rejected request.
+    await expect(
+      loadEvalsConfig(
+        failing({ statusCode: 500, message: 'Internal error' }, false) as never,
+        'ws1'
+      )
+    ).rejects.toThrow('Internal error');
+    await expect(
+      loadEvalsConfig(failing(new Error('Network down'), true) as never, 'ws1')
+    ).rejects.toThrow('Network down');
+    // The store keeps the error, without datasetMissing: the app shows "Could not read".
+    const state = await loadEvalsDataset(failing(new Error('Network down'), true) as never, {
+      force: true,
+      workspaceId: 'ws1',
+    });
+    expect(state).toEqual({ status: 'error', error: 'Network down' });
+    // A rejected 404 is a missing pattern.
+    expect(await loadEvalsConfig(failing({ res: { status: 404 } }, true) as never, 'ws1')).toEqual({
+      configId: 'c1',
+      datasetMissing: true,
+    });
+  });
+
   it('keeps a config whose traces dataset is gone, without it', async () => {
     const noTraces = correlation('c4', 'AgentEvals-Config-ws1', 'gone', 'ev', 'evaluationsDataset');
     const { config } = await loadEvalsConfig(makeClient([noTraces]) as never, 'ws1');
