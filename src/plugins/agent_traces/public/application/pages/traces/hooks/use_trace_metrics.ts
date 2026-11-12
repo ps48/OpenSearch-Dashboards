@@ -67,8 +67,7 @@ const parseStatsResponse = (response: any): Record<string, any> => {
 // concurrently, reuse the in-flight promise instead of firing duplicate PPL queries.
 let pendingMetrics: { key: string; promise: Promise<TraceMetrics> } | null = null;
 
-/** The summary's metrics (exported for tests). */
-export const doFetchMetrics = async (
+const doFetchMetrics = async (
   pplService: PPLService,
   datasetParam: Dataset,
   sourceOnlyQuery: string,
@@ -93,10 +92,10 @@ export const doFetchMetrics = async (
   // When a user types `| head 10`, it limits the data display but should not affect aggregate counts
   // or statistics. The UI hides the "of X total" text when head is detected (see queryEndsWithHead).
   const [countStats, filteredStats, filteredCounts, sessionStats] = await Promise.all([
-    // Query A, counts with the user's where clauses (like the table): the summary's Total
-    // Traces, Total Spans and their error counts describe the traces the table lists.
+    // Query A — Counts (source-only, no user filter):
+    // Total Traces, Total Spans, and their error counts are unaffected by user query filters
     (async () => {
-      const countsQuery = `${whereQuery} | ${spanFilter} | stats sum(case(${isGenAiSpan}, 1 else 0)) as total_spans, sum(case(${rootCase}, 1 else 0)) as total_traces, sum(case(\`status.code\` = 2 AND ${isGenAiSpan}, 1 else 0)) as error_spans, sum(case(\`status.code\` = 2 AND (${rootCase}), 1 else 0)) as error_traces`;
+      const countsQuery = `${sourceOnlyQuery} | ${spanFilter} | stats sum(case(${isGenAiSpan}, 1 else 0)) as total_spans, sum(case(${rootCase}, 1 else 0)) as total_traces, sum(case(\`status.code\` = 2 AND ${isGenAiSpan}, 1 else 0)) as error_spans, sum(case(\`status.code\` = 2 AND (${rootCase}), 1 else 0)) as error_traces`;
       const countsResponse = await pplService.executeQuery(datasetParam, countsQuery);
       return parseStatsResponse(countsResponse);
     })(),
@@ -115,12 +114,12 @@ export const doFetchMetrics = async (
       const response = await pplService.executeQuery(datasetParam, query);
       return parseStatsResponse(response);
     })(),
-    // Query D, Total Sessions: with the user's where clauses (like Total Traces). Isolated
-    // with its own catch: indices without the session field would otherwise fail the batch.
+    // Query D — Total Sessions (source-only, like Total Traces). Isolated with its own
+    // catch: indices without the session field would otherwise fail the whole batch.
     (async () => {
       try {
         const sessionField = `\`${AGENT_TRACES_SESSION_ID_FIELD}\``;
-        const query = `${whereQuery} | where isnotnull(${sessionField}) | stats distinct_count(${sessionField}) as total_sessions`;
+        const query = `${sourceOnlyQuery} | where isnotnull(${sessionField}) | stats distinct_count(${sessionField}) as total_sessions`;
         const response = await pplService.executeQuery(datasetParam, query);
         return parseStatsResponse(response);
       } catch {
