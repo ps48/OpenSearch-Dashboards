@@ -38,7 +38,7 @@ import { AgentsEmptyState } from './eval_empty_states';
 
 const RATE_TIP = i18n.translate('agentTraces.evals.agents.rateTip', {
   defaultMessage:
-    "Mean of the version's evaluation pass rates. Faded: fewer than {min} results with a pass rule.",
+    "Share of the version's results with a pass rule that passed. Faded: fewer than {min} results with a pass rule.",
   values: { min: MIN_N },
 });
 

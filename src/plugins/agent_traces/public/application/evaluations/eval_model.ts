@@ -130,7 +130,7 @@ export interface VersionStat {
   first: number;
   last: number;
   tally: Tally;
-  /** Mean of the version's evaluation pass rates (each evaluation counts the same). */
+  /** Share of the version's results with a pass rule that passed: pass / (pass + fail). */
   rate?: number;
   /** Results with a pass rule (pass + fail). */
   decided: number;
@@ -156,14 +156,6 @@ const finishEval = (a: EvalAcc): EvalStat => {
     top: top && a.tally.n ? { label: top[0], share: top[1] / a.tally.n } : undefined,
     direction: a.direction,
   };
-};
-
-/** Mean of the pass rates of the evaluations that have a pass rule. */
-export const meanPassRate = (evaluations: Iterable<EvalStat>): number | undefined => {
-  const rates = [...evaluations].filter((e) => e.hasPassRule && e.rate !== undefined);
-  return rates.length
-    ? rates.reduce((s, e) => s + (e.rate as number), 0) / rates.length
-    : undefined;
 };
 
 /**
@@ -217,7 +209,7 @@ export const versionsOf = (rows: PplRecord[]): VersionStat[] => {
       return {
         ...v,
         evaluations,
-        rate: meanPassRate(evaluations.values()),
+        rate: passRate(v.tally),
         decided: v.tally.pass + v.tally.fail,
       };
     })
@@ -267,7 +259,7 @@ export interface AgentVersionRow {
   agent: string;
   /** Undefined: results without `gen_ai.agent.version`. */
   version?: string;
-  /** Mean of the version's evaluation pass rates. */
+  /** Share of the version's results with a pass rule that passed: pass / (pass + fail). */
   rate?: number;
   /** Results with a pass rule (pass + fail). */
   decided: number;

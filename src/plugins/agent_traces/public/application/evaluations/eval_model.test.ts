@@ -22,7 +22,6 @@ import {
   addToTally,
   evaluationRows,
   latestRunPerVersion,
-  meanPassRate,
   otherRunsOfSuite,
   parseTime,
   passRate,
@@ -120,11 +119,11 @@ describe('agents', () => {
     extra: Record<string, unknown> = {}
   ) => ({ n, first, last, [A]: agent, [V]: version, [N]: name, verdict, ...extra });
   const rows = [
-    // v1: acc 8/10, tone 10/10 -> mean 0.9
+    // v1: acc 8/10, tone 10/10 -> 18/20
     row('tp', 'v1', 'acc', 'pass', 8, '2026-10-25 10:00:00', '2026-10-27 10:00:00'),
     row('tp', 'v1', 'acc', 'fail', 2, '2026-10-25 10:00:00', '2026-10-27 10:00:00'),
     row('tp', 'v1', 'tone', 'pass', 10, '2026-10-25 10:00:00', '2026-10-27 10:00:00'),
-    // v2: acc 6/10, tone 2/10, help scored only -> mean 0.4
+    // v2: acc 6/10, tone 2/10, help scored only -> 8/20
     row('tp', 'v2', 'acc', 'pass', 6, '2026-10-28 10:00:00', '2026-10-30 10:00:00'),
     row('tp', 'v2', 'acc', 'fail', 4, '2026-10-28 11:00:00', '2026-10-30 12:00:00'),
     row('tp', 'v2', 'tone', 'pass', 2, '2026-10-28 10:00:00', '2026-10-30 10:00:00'),
@@ -133,15 +132,30 @@ describe('agents', () => {
     row(null, null, 'tox', 'pass', 5, '2026-10-29 10:00:00', '2026-10-29 11:00:00'),
   ];
 
-  it('rates a version as the mean of its evaluation pass rates', () => {
+  it('rates a version as the share of its results with a pass rule that passed', () => {
     const [v1, v2] = versionsOf(rows.filter((r) => r[A] === 'tp'));
     expect(v1.version).toBe('v1');
     expect(v1.rate).toBeCloseTo(0.9);
     expect(v1.decided).toBe(20);
-    // A pooled rate would be 8/20; each evaluation counts the same.
+    // 8 of 20; the scored-only evaluation is left out.
     expect(v2.rate).toBeCloseTo(0.4);
     expect(v2.evaluations.get('help')).toMatchObject({ hasPassRule: false, rate: undefined });
-    expect(meanPassRate([])).toBeUndefined();
+  });
+
+  it('weights each result the same, not each evaluation', () => {
+    const [v] = versionsOf([
+      row('tp', 'v3', 'acc', 'pass', 8, '2026-10-28 10:00:00', '2026-10-30 10:00:00'),
+      row('tp', 'v3', 'acc', 'fail', 1, '2026-10-28 10:00:00', '2026-10-30 10:00:00'),
+      row('tp', 'v3', 'tone', 'fail', 1, '2026-10-28 10:00:00', '2026-10-30 10:00:00'),
+      row('tp', 'v3', 'tone', 'error', 3, '2026-10-28 10:00:00', '2026-10-30 10:00:00'),
+    ]);
+    // 8 of 10 (a mean of the two evaluations' rates would be 0.44); errors are left out.
+    expect(v.rate).toBeCloseTo(0.8);
+    expect(v.decided).toBe(10);
+    const [none] = versionsOf([
+      row('tp', 'v4', 'help', 'scored', 2, '2026-10-28 10:00:00', '2026-10-30 10:00:00'),
+    ]);
+    expect(none.rate).toBeUndefined();
   });
 
   it('lists versions with the most recent result first, and agents without a version', () => {
