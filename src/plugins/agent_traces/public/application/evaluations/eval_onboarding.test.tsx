@@ -130,6 +130,20 @@ describe('GettingStartedModal', () => {
     expect(CODING_AGENT_PROMPT).not.toContain('\u2014');
   });
 
+  it('the coding agent prompt pins the minimum SDK versions and keeps judge tracing optional', () => {
+    expect(CODING_AGENT_PROMPT).toContain(
+      'pip install "opensearch-genai-observability-sdk-py>=0.3.0"'
+    );
+    expect(CODING_AGENT_PROMPT).toContain(
+      'npm install "@opensearch-project/genai-observability-sdk-ts@>=0.2.0"'
+    );
+    expect(CODING_AGENT_PROMPT).toContain(
+      'its SDK install spec is `opensearch-genai-observability-sdk-py>=0.3.0`'
+    );
+    expect(CODING_AGENT_PROMPT).toContain('Tracing the judge is optional');
+    expect(CODING_AGENT_PROMPT).not.toContain('Use an SDK release that has');
+  });
+
   it('jumps to a screen from its step', () => {
     renderTour();
     fireEvent.click(screen.getByTestId('agtEvlTourStep-offline'));
