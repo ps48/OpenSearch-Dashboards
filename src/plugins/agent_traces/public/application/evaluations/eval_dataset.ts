@@ -275,7 +275,10 @@ export const loadEvalsConfig = async (
   const found = await findEvalsConfig(client, workspaceId);
   if (!found) return {};
   const [tracesDataset, evaluationsDataset] = await Promise.all([
-    found.tracesDatasetId ? getDataset(client, found.tracesDatasetId) : undefined,
+    // The traces dataset only serves span lookups: a failed read leaves it out, as a deleted one.
+    found.tracesDatasetId
+      ? getDataset(client, found.tracesDatasetId).catch(() => undefined)
+      : undefined,
     found.evaluationsDatasetId ? getDataset(client, found.evaluationsDatasetId) : undefined,
   ]);
   if (!evaluationsDataset || !isPplSafeIndex(evaluationsDataset.title)) {

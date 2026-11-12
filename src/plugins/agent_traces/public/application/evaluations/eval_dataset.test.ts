@@ -157,6 +157,20 @@ describe('evaluations app config', () => {
     expect(config?.index).toBe('otel-v1-genai-evaluation*');
   });
 
+  it('keeps a config whose traces dataset cannot be read, without it', async () => {
+    const base = makeClient([evalsConfig]);
+    const client = {
+      ...base,
+      get: jest.fn(async (type: string, id: string) => {
+        if (id === 'tr') throw new Error('Network down');
+        return (base.get as (t: string, i: string) => Promise<unknown>)(type, id);
+      }),
+    };
+    const { config } = await loadEvalsConfig(client as never, 'ws1');
+    expect(config?.tracesDataset).toBeUndefined();
+    expect(config?.index).toBe('otel-v1-genai-evaluation*');
+  });
+
   it('reads the workspace from the workspaces service, else the URL', () => {
     expect(
       currentWorkspaceId({ workspaces: { currentWorkspaceId$: { getValue: () => 'ws1' } } })
