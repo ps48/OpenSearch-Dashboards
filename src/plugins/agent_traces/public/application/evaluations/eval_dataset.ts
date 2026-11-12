@@ -231,6 +231,8 @@ export interface LoadedEvalsConfig {
   config?: EvalsDatasetConfig;
   /** The saved object, whatever its datasets: Settings updates it in place. */
   configId?: string;
+  /** The saved config's evaluations dataset (index pattern) no longer exists. */
+  datasetMissing?: boolean;
 }
 
 /** The workspace's config with its datasets resolved. */
@@ -245,7 +247,7 @@ export const loadEvalsConfig = async (
     found.evaluationsDatasetId ? getDataset(client, found.evaluationsDatasetId) : undefined,
   ]);
   if (!evaluationsDataset || !isPplSafeIndex(evaluationsDataset.title)) {
-    return { configId: found.configId };
+    return { configId: found.configId, datasetMissing: !evaluationsDataset };
   }
   return {
     configId: found.configId,
@@ -300,6 +302,8 @@ export interface EvalsDatasetState {
   config?: EvalsDatasetConfig;
   /** The saved config object, even when its datasets do not resolve. */
   configId?: string;
+  /** The saved config's evaluations dataset was deleted. */
+  datasetMissing?: boolean;
   error?: string;
 }
 

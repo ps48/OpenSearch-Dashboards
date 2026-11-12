@@ -10,6 +10,7 @@ import { EvalResult, recordsToResults } from '../../../evaluations/eval_model';
 import { buildSessionResultsQuery, buildTraceResultsQuery } from '../../../evaluations/ppl_queries';
 import { useEvalsDataSource, useEvalsIndexPattern } from '../../../evaluations/eval_dataset';
 import { errorMessage, evalsDataset, runPpl } from '../../../evaluations/use_ppl_rows';
+import { isIndexMissing } from '../../../evaluations/eval_data_issue';
 
 export interface TraceEvaluations {
   /** Every result of the trace, failures first. */
@@ -39,9 +40,6 @@ export const groupBySpan = (
   });
   return out;
 };
-
-const isMissingIndex = (message: string) =>
-  /no such index|index_not_found|IndexNotFound/i.test(message);
 
 interface ResultsState {
   results: EvalResult[];
@@ -91,7 +89,7 @@ const useEvalResults = (
         setState({
           results: [],
           isLoading: false,
-          error: isMissingIndex(message) ? undefined : message,
+          error: isIndexMissing(message) ? undefined : message,
         });
       });
     return () => controller.abort();

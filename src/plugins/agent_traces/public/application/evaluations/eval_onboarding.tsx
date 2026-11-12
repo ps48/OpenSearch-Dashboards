@@ -8,6 +8,7 @@ import {
   EuiButton,
   EuiButtonEmpty,
   EuiCodeBlock,
+  EuiCopy,
   EuiFlexGroup,
   EuiFlexItem,
   EuiIcon,
@@ -107,6 +108,89 @@ export const SdkLinks: React.FC = () => (
       </EuiLink>
     </p>
   </EuiText>
+);
+
+const COPY_PROMPT_LABEL = i18n.translate('agentTraces.evalsOnboarding.copyPrompt', {
+  defaultMessage: 'Copy prompt for your coding agent',
+});
+
+/**
+ * One click copies the coding agent prompt (`CODING_AGENT_PROMPT`), with a "Copied"
+ * confirmation: offered first in Getting started (its footer, on every step, and its first
+ * step) and in the empty states.
+ */
+export const CopyCodingAgentPromptButton: React.FC<{
+  fill?: boolean;
+  empty?: boolean;
+  'data-test-subj'?: string;
+}> = ({ fill, empty, ...rest }) => (
+  <EuiCopy
+    textToCopy={CODING_AGENT_PROMPT}
+    beforeMessage={i18n.translate('agentTraces.evalsOnboarding.copyPromptTip', {
+      defaultMessage:
+        'A prompt that instruments your agent app for Agent Traces and Agent Evaluations',
+    })}
+    afterMessage={i18n.translate('agentTraces.evalsOnboarding.copied', {
+      defaultMessage: 'Copied',
+    })}
+  >
+    {(copy) =>
+      empty ? (
+        <EuiButtonEmpty
+          size="s"
+          iconType="copyClipboard"
+          onClick={copy}
+          data-test-subj={rest['data-test-subj'] ?? 'agtEvlCopyPrompt'}
+        >
+          {COPY_PROMPT_LABEL}
+        </EuiButtonEmpty>
+      ) : (
+        <EuiButton
+          size="s"
+          fill={fill}
+          iconType="copyClipboard"
+          onClick={copy}
+          data-test-subj={rest['data-test-subj'] ?? 'agtEvlCopyPrompt'}
+        >
+          {COPY_PROMPT_LABEL}
+        </EuiButton>
+      )
+    }
+  </EuiCopy>
+);
+
+/**
+ * The quickest start, shown at the top of Getting started and of the empty states: copy the
+ * prompt into a coding agent, which instruments the app and sends traces and results.
+ */
+export const CodingAgentQuickStart: React.FC<{ 'data-test-subj'?: string }> = (props) => (
+  <EuiPanel
+    color="subdued"
+    hasShadow={false}
+    paddingSize="s"
+    data-test-subj={props['data-test-subj'] ?? 'agtEvlPromptQuickStart'}
+  >
+    <EuiFlexGroup gutterSize="m" alignItems="center" responsive={false} wrap>
+      <EuiFlexItem>
+        <EuiText size="s">
+          <p>
+            <strong>
+              {i18n.translate('agentTraces.evalsOnboarding.quickStartTitle', {
+                defaultMessage: 'Quickest start: let your coding agent do it.',
+              })}
+            </strong>{' '}
+            {i18n.translate('agentTraces.evalsOnboarding.quickStartBody', {
+              defaultMessage:
+                'Copy the prompt, paste it into your coding agent, and fill in the values in angle brackets: it instruments your agent app for traces and evaluations and checks the results in OpenSearch.',
+            })}
+          </p>
+        </EuiText>
+      </EuiFlexItem>
+      <EuiFlexItem grow={false}>
+        <CopyCodingAgentPromptButton fill data-test-subj="agtEvlCopyPromptQuickStart" />
+      </EuiFlexItem>
+    </EuiFlexGroup>
+  </EuiPanel>
 );
 
 /**
@@ -262,6 +346,8 @@ const TOUR_SCREENS: TourScreen[] = [
     }),
     body: (
       <>
+        <CodingAgentQuickStart data-test-subj="agtEvlTourQuickStart" />
+        <EuiSpacer size="m" />
         <EuiText size="s">
           <p>
             {i18n.translate('agentTraces.evalsTour.whatBody', {
@@ -401,7 +487,8 @@ export const GettingStartedModal: React.FC<{
     <EuiOverlayMask>
       <EuiModal
         onClose={onClose}
-        style={{ width: 880, maxWidth: '92vw' }}
+        // One size on every step: the step body scrolls, the footer stays put.
+        className="agtEvlTourModal"
         data-test-subj="agtEvlGettingStarted"
       >
         <EuiModalHeader>
@@ -421,21 +508,29 @@ export const GettingStartedModal: React.FC<{
             }))}
           />
           <EuiSpacer size="m" />
-          <EuiTitle size="s">
-            <h2 data-test-subj="agtEvlTourTitle">{screen.title}</h2>
-          </EuiTitle>
-          <EuiSpacer size="s" />
-          <div data-test-subj={`agtEvlTourScreen-${screen.id}`}>{screen.body}</div>
+          <div className="agtEvlTourModal__body">
+            <EuiTitle size="s">
+              <h2 data-test-subj="agtEvlTourTitle">{screen.title}</h2>
+            </EuiTitle>
+            <EuiSpacer size="s" />
+            <div data-test-subj={`agtEvlTourScreen-${screen.id}`}>{screen.body}</div>
+          </div>
         </EuiModalBody>
         <EuiModalFooter>
+          <CopyCodingAgentPromptButton empty data-test-subj="agtEvlTourCopyPrompt" />
+          <span className="agtEvlTourModal__spacer" />
           <EuiButtonEmpty size="s" onClick={onClose} data-test-subj="agtEvlTourClose">
             {i18n.translate('agentTraces.evalsTour.close', { defaultMessage: 'Close' })}
           </EuiButtonEmpty>
-          {step > 0 && (
-            <EuiButton size="s" onClick={() => setStep(step - 1)} data-test-subj="agtEvlTourBack">
-              {i18n.translate('agentTraces.evalsTour.back', { defaultMessage: 'Back' })}
-            </EuiButton>
-          )}
+          {/* Always there (disabled on the first step), so the buttons never move. */}
+          <EuiButton
+            size="s"
+            isDisabled={step === 0}
+            onClick={() => setStep(step - 1)}
+            data-test-subj="agtEvlTourBack"
+          >
+            {i18n.translate('agentTraces.evalsTour.back', { defaultMessage: 'Back' })}
+          </EuiButton>
           {!last ? (
             <EuiButton
               size="s"

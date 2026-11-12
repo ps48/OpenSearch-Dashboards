@@ -112,10 +112,10 @@ describe('AgentPage', () => {
     expect(within(acc).getByTestId('agtEvlDelta')).toHaveTextContent('-40 pts');
     expect(within(acc).getByText('n 50/40')).toBeInTheDocument();
     expect(within(acc).getByText('50')).toBeInTheDocument();
-    // Fewer than 30 results with a pass rule: greyed.
-    expect(
-      within(screen.getByTestId('agtEvlEvalRow-tone')).getByTestId('agtEvlDeltaLow')
-    ).toHaveTextContent('-30 pts');
+    // A small sample is shown as is (not greyed).
+    const tone = screen.getByTestId('agtEvlEvalRow-tone');
+    expect(within(tone).getByTestId('agtEvlDelta')).toHaveTextContent('-30 pts');
+    expect(within(tone).getByTestId('agtEvlDelta')).toHaveClass('agtEvlDelta--bad');
     // No pass rule, numeric: average, lower is better.
     const latency = screen.getByTestId('agtEvlEvalRow-latency');
     expect(latency).toHaveTextContent('avg 2.00');
@@ -300,7 +300,7 @@ describe('AgentPage', () => {
     );
   });
 
-  it('offline: each version at its latest run, exact change (never greyed for n)', () => {
+  it('offline: each version at its latest run', () => {
     const RUN = 'attributes.test.suite.run.id';
     const run = (version: string, runId: string, verdict: string, n: number, day: number) =>
       evalRow('accuracy', version, verdict, n, day, { [RUN]: runId });
@@ -325,8 +325,6 @@ describe('AgentPage', () => {
     expect(within(acc).getByText('50%')).toBeInTheDocument();
     // v1 at r1 only (80%), not pooled with r0 (40%).
     expect(within(acc).getByText('80%')).toBeInTheDocument();
-    // 10 results each, under 30, but a suite run is a fixed set: not greyed.
-    expect(within(acc).queryByTestId('agtEvlDeltaLow')).not.toBeInTheDocument();
     expect(within(acc).getByTestId('agtEvlDelta')).toHaveTextContent('-30 pts');
     expect(screen.getByTestId('agtEvlAgentMeta')).toHaveTextContent('Last offline result');
     // The tip only explains the "All" label.

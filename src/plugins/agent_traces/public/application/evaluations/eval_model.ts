@@ -104,9 +104,6 @@ const maxT = (a: number, b: number) => (Number.isNaN(a) ? b : Number.isNaN(b) ? 
 
 // ---------------------------------------------------------------------- Agents and versions
 
-/** Under this many results with a pass rule on either side, a change is shown greyed. */
-export const MIN_N = 30;
-
 /** One evaluation within one version. */
 export interface EvalStat {
   tally: Tally;

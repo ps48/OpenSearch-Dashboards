@@ -233,6 +233,14 @@ const join = (commands: string[]) => commands.join(' | ');
 
 // ---------------------------------------------------------------------- Setup and settings
 
+/**
+ * The app's data check: one result with `fields` (the fields every page's aggregations name),
+ * read without a time bound. A missing index, field or data source fails it, and no row means
+ * the indices hold no results: the app then shows one empty state (`classifyDataIssue`).
+ */
+export const buildDataCheckQuery = (index: string, fields: string[]): string =>
+  join([...base(index), `fields ${fields.map(fld).join(', ')}`, 'head 1']);
+
 /** The number of results in an index (setup detection, Settings). */
 export const buildResultsTotalQuery = (index: string): string =>
   join([...base(index), 'stats count() as n']);

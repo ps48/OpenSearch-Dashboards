@@ -22,7 +22,7 @@ Read-only screens over `gen_ai.evaluation.result` events in the workspace's eval
   `opensearch.test.case.expected` / `.expected_truncated` (offline results only).
 - Level: `opensearch.gen_ai.evaluation.level`, else span when `spanId` is set, else trace.
 - A version's pass rate is the mean of its evaluations' pass rates (each evaluation counts the
-  same). A change with fewer than 30 results with a pass rule on either side is greyed.
+  same). Values are never faded for a small sample; the tooltips give n.
 - Evaluations without a pass rule: numeric ones show the average score (direction-aware change,
   `score.direction` `minimize` means lower is better), categorical ones the most common label.
 - Results without `gen_ai.agent.name` show as "(no agent name)" (route key `~none`).

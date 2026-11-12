@@ -43,6 +43,7 @@ import {
 } from './eval_dataset';
 import { errorMessage, evalsLookupDataset, runPpl } from './use_ppl_rows';
 import { buildResultsTotalQuery } from './ppl_queries';
+import { isIndexMissing } from './eval_data_issue';
 import { num } from './eval_model';
 import type { EvaluationsServices } from '.';
 
@@ -89,7 +90,7 @@ export const countEvaluationResults = async (
     );
     return num(rows[0]?.n) ?? 0;
   } catch (e) {
-    if (/no such index|index_not_found|IndexNotFound/i.test(errorMessage(e))) return undefined;
+    if (isIndexMissing(errorMessage(e))) return undefined;
     throw e;
   }
 };

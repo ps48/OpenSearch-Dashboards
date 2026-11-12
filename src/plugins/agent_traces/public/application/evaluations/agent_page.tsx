@@ -136,10 +136,7 @@ const ScoreText: React.FC<{ stat?: EvalStat }> = ({ stat }) => {
 };
 
 /** Change, B against A: pass rate points, average score (direction-aware) or top label share. */
-const ChangeCell: React.FC<{ row: EvaluationRow; exact?: boolean }> = ({
-  row: { a, b, hasPassRule },
-  exact,
-}) => {
+const ChangeCell: React.FC<{ row: EvaluationRow }> = ({ row: { a, b, hasPassRule } }) => {
   if (!a || !b) return <span className="agtEvlDim">{DASH}</span>;
   if (hasPassRule)
     return (
@@ -147,7 +144,6 @@ const ChangeCell: React.FC<{ row: EvaluationRow; exact?: boolean }> = ({
         delta={rateDelta(a.rate, b.rate)}
         na={a.tally.pass + a.tally.fail}
         nb={b.tally.pass + b.tally.fail}
-        exact={exact}
       />
     );
   if (a.avg !== undefined && b.avg !== undefined)
@@ -369,7 +365,7 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
       name: i18n.translate('agentTraces.evals.agent.change', { defaultMessage: 'Change' }),
       align: 'right',
       sortable: (r: EvaluationRow) => r.delta ?? Number.POSITIVE_INFINITY,
-      render: (_: unknown, r: EvaluationRow) => <ChangeCell row={r} exact={offline} />,
+      render: (_: unknown, r: EvaluationRow) => <ChangeCell row={r} />,
     },
     {
       field: 'n',

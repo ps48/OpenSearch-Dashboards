@@ -53,7 +53,12 @@ export const fakePpl = () => {
       if (!query) return { rows: [], loading: false, loaded: false };
       queries.push(query);
       ranges.set(query, timeRange);
-      return { rows: answer(query), loading: false, loaded: true };
+      // An answer that throws is the query failing with that message.
+      try {
+        return { rows: answer(query), loading: false, loaded: true };
+      } catch (e) {
+        return { rows: [], loading: false, loaded: true, error: (e as Error).message };
+      }
     },
   };
 };

@@ -15,7 +15,7 @@ import {
   Screenshot,
   SdkLinks,
 } from './eval_onboarding';
-import { NoEvalsDatasetPrompt } from './eval_empty_states';
+import { AgentsEmptyState, DataIssuePrompt, NoEvalsDatasetPrompt } from './eval_empty_states';
 import { CODING_AGENT_PROMPT } from './coding_agent_prompt';
 import { EvalGettingStartedButton, EvalHeader, ExperimentalBadge } from './eval_header';
 
@@ -68,6 +68,30 @@ describe('Screenshot and links', () => {
 });
 
 describe('GettingStartedModal', () => {
+  it('offers the coding agent prompt first: in the footer on every step and atop the first', () => {
+    withServices(<GettingStartedModal onClose={jest.fn()} />);
+    expect(screen.getByTestId('agtEvlGettingStarted')).toHaveClass('agtEvlTourModal');
+    expect(
+      within(screen.getByTestId('agtEvlTourScreen-what')).getByTestId('agtEvlTourQuickStart')
+    ).toHaveTextContent('Copy prompt for your coding agent');
+    STEPS.forEach((id, i) => {
+      if (i > 0) fireEvent.click(screen.getByTestId('agtEvlTourNext'));
+      expect(screen.getByTestId(`agtEvlTourScreen-${id}`)).toBeInTheDocument();
+      expect(screen.getByTestId('agtEvlTourCopyPrompt')).toHaveTextContent(
+        'Copy prompt for your coding agent'
+      );
+      expect(screen.getByTestId('agtEvlTourBack')).toBeInTheDocument();
+    });
+  });
+
+  it('the copy button copies the prompt and confirms', () => {
+    const exec = jest.fn(() => true);
+    (document as unknown as { execCommand: typeof exec }).execCommand = exec;
+    withServices(<GettingStartedModal onClose={jest.fn()} />);
+    fireEvent.click(screen.getByTestId('agtEvlTourCopyPrompt'));
+    expect(exec).toHaveBeenCalledWith('copy');
+  });
+
   const renderTour = (props: Partial<React.ComponentProps<typeof GettingStartedModal>> = {}) => {
     const onClose = jest.fn();
     withServices(<GettingStartedModal onClose={onClose} {...props} />);
@@ -83,7 +107,8 @@ describe('GettingStartedModal', () => {
     const { onClose } = renderTour();
     STEPS.forEach((id) => expect(screen.getByTestId(`agtEvlTourStep-${id}`)).toBeInTheDocument());
     expect(screenId()).toBe('what');
-    expect(screen.queryByTestId('agtEvlTourBack')).not.toBeInTheDocument();
+    // Back is always there (disabled on the first step): the footer never moves.
+    expect(screen.getByTestId('agtEvlTourBack')).toBeDisabled();
     expect(screen.getByTestId('agtEvlTourScreen-what')).toHaveTextContent('Online evaluations');
     STEPS.slice(1).forEach((id) => {
       fireEvent.click(screen.getByTestId('agtEvlTourNext'));
@@ -191,6 +216,17 @@ describe('NoEvalsDatasetPrompt', () => {
     expect(onSetUp).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId('agtEvlTour'));
     expect(onGettingStarted).toHaveBeenCalledTimes(1);
+    // The coding agent prompt, next to Set up.
+    expect(within(prompt).getByTestId('agtEvlCopyPromptHero')).toHaveTextContent(
+      'Copy prompt for your coding agent'
+    );
+  });
+
+  it('the Agents empty state (no results) offers the prompt at its top', () => {
+    withServices(<AgentsEmptyState range="Last 24 hours" />);
+    expect(
+      within(screen.getByTestId('agtEvlAgentsEmpty')).getByTestId('agtEvlCopyPromptQuickStart')
+    ).toBeInTheDocument();
   });
 
   it('shows a lookup error', () => {
@@ -263,5 +299,46 @@ describe('EvalHeader', () => {
     const badgeEl = (badge?.controls[0] as { renderComponent: React.ReactElement }).renderComponent;
     expect(badgeEl.type).toBe(ExperimentalBadge);
     expect(right?.controls).toHaveLength(1);
+  });
+});
+
+describe('DataIssuePrompt', () => {
+  const kinds: Array<[React.ComponentProps<typeof DataIssuePrompt>['issue'], string, string]> = [
+    [{ kind: 'dataset-missing' }, 'The evaluations dataset was deleted', 'Settings'],
+    [{ kind: 'index-missing' }, 'No index matches evals-*', 'evals-*'],
+    [{ kind: 'no-results' }, 'No evaluation results in evals-* yet', 'gen_ai.evaluation.result'],
+    [
+      { kind: 'field-missing', field: 'attributes.error.type' },
+      'The evaluation indices have no field attributes.error.type',
+      'otel-v1-genai-evaluation-index-template',
+    ],
+    [
+      { kind: 'data-source' },
+      'The data source of the evaluations dataset is not available',
+      'Data sources',
+    ],
+  ];
+  it.each(kinds)('%p: what is missing, Settings and Getting started', (issue, title, body) => {
+    const onSettings = jest.fn();
+    const onGettingStarted = jest.fn();
+    withServices(
+      <DataIssuePrompt
+        issue={issue}
+        index="evals-*"
+        onSettings={onSettings}
+        onGettingStarted={onGettingStarted}
+      />
+    );
+    const prompt = screen.getByTestId(`agtEvlDataIssue-${issue.kind}`);
+    expect(prompt).toHaveTextContent(title);
+    expect(prompt).toHaveTextContent(body);
+    fireEvent.click(screen.getByTestId('agtEvlDataIssueSettings'));
+    fireEvent.click(screen.getByTestId('agtEvlDataIssueGettingStarted'));
+    expect(onSettings).toHaveBeenCalledTimes(1);
+    expect(onGettingStarted).toHaveBeenCalledTimes(1);
+    // Nothing sent yet: the coding agent prompt too.
+    expect(!!screen.queryByTestId('agtEvlDataIssueCopyPrompt')).toBe(
+      issue.kind === 'no-results' || issue.kind === 'index-missing'
+    );
   });
 });

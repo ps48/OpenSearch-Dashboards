@@ -9,6 +9,7 @@ import { I18nProvider } from '@osd/i18n/react';
 import {
   DeltaCell,
   PassRateCell,
+  QueryErrorCallout,
   ResultRows,
   RunSelectList,
   TargetLink,
@@ -19,6 +20,7 @@ import {
   scoreScale,
 } from './eval_components';
 import { EvalResult, RunRow, Verdict, emptyTally } from './eval_model';
+import { EvalContext, defaultEvalContext } from './eval_context';
 
 // jsdom has no layout: AutoSizer would measure 0x0 and EuiSelectable would list no rows.
 jest.mock('react-virtualized-auto-sizer', () => ({
@@ -185,13 +187,12 @@ describe('SourceFilter', () => {
 });
 
 describe('DeltaCell', () => {
-  it('greys a change under the minimum sample size, unless the set is exact', () => {
-    const { unmount } = wrap(<DeltaCell delta={-0.3} na={10} nb={10} />);
-    expect(screen.getByTestId('agtEvlDeltaLow')).toHaveTextContent('-30 pts');
-    unmount();
-    wrap(<DeltaCell delta={-0.3} na={10} nb={10} exact />);
-    expect(screen.queryByTestId('agtEvlDeltaLow')).not.toBeInTheDocument();
-    expect(screen.getByTestId('agtEvlDelta')).toHaveTextContent('-30 pts');
+  it('colors a change whatever the sample size, and gives n', () => {
+    wrap(<DeltaCell delta={-0.3} na={10} nb={9} />);
+    const cell = screen.getByTestId('agtEvlDelta');
+    expect(cell).toHaveTextContent('-30 pts');
+    expect(cell).toHaveClass('agtEvlDelta--bad');
+    expect(screen.getByText('n 9/10')).toBeInTheDocument();
   });
 });
 
@@ -297,5 +298,29 @@ describe('TargetLink', () => {
     wrap(<TargetLink r={r({ level: 'trace' })} />);
     expect(screen.queryByTestId(/^agtEvlTarget-/)).not.toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+});
+
+describe('QueryErrorCallout', () => {
+  it('a data issue: what is missing, not the raw error', () => {
+    const openSettings = jest.fn();
+    render(
+      <I18nProvider>
+        <EvalContext.Provider value={{ ...defaultEvalContext('evals-*', 'spans-*'), openSettings }}>
+          <QueryErrorCallout message="Field [attributes.test.suite.run.id] not found." />
+        </EvalContext.Provider>
+      </I18nProvider>
+    );
+    const issue = screen.getByTestId('agtEvlDataIssue-field-missing');
+    expect(issue).toHaveTextContent('no field attributes.test.suite.run.id');
+    expect(issue).not.toHaveTextContent('Field [');
+    expect(screen.queryByTestId('agtEvlQueryError')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agtEvlDataIssueSettings'));
+    expect(openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('another error: its message', () => {
+    wrap(<QueryErrorCallout message="Timed out" />);
+    expect(screen.getByTestId('agtEvlQueryError')).toHaveTextContent('Timed out');
   });
 });

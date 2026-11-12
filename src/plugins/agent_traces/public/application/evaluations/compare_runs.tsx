@@ -539,7 +539,7 @@ export const CompareRuns: React.FC<{ runA: string; runB: string }> = ({ runA, ru
       align: 'right',
       sortable: (r: CompareEvalRow) => r.delta ?? Number.POSITIVE_INFINITY,
       render: (d: number | undefined, r: CompareEvalRow) => (
-        <DeltaCell delta={d} na={r.nA} nb={r.nB} exact />
+        <DeltaCell delta={d} na={r.nA} nb={r.nB} />
       ),
     },
   ];

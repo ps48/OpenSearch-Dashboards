@@ -28,6 +28,7 @@ interface MockDataset {
   configId?: string;
   workspaceId?: string;
   unavailable: boolean;
+  datasetMissing?: boolean;
   error?: string;
   refresh: jest.Mock;
 }
@@ -73,6 +74,11 @@ jest.mock('./eval_onboarding', () => ({
     </div>
   ),
 }));
+
+/** The app's data check finds a result; other queries answer `fn`. */
+const isDataCheck = (q: string) => q.includes('| fields `@timestamp`') && q.endsWith('| head 1');
+const withData = (fn: (q: string) => Array<Record<string, unknown>>) => (q: string) =>
+  isDataCheck(q) ? [{ '@timestamp': '2026-10-28 07:00:00' }] : fn(q);
 
 const CONFIG = {
   index: 'otel-v1-genai-evaluation*',
@@ -134,6 +140,7 @@ const controlIds = () =>
 describe('EvaluationsApp', () => {
   beforeEach(() => {
     mockPpl.reset();
+    mockPpl.answer(withData(() => []));
     mockWizard.mockClear();
     mockDataset = { status: 'ready', config: CONFIG, unavailable: false, refresh: jest.fn() };
   });
@@ -197,10 +204,12 @@ describe('EvaluationsApp', () => {
   });
 
   it('a run page: Refresh instead of the date picker', () => {
-    mockPpl.answer((q) =>
-      q.includes('as first, max')
-        ? [{ first: '2026-10-28 07:00:00', last: '2026-10-28 07:05:00' }]
-        : []
+    mockPpl.answer(
+      withData((q) =>
+        q.includes('as first, max')
+          ? [{ first: '2026-10-28 07:00:00', last: '2026-10-28 07:05:00' }]
+          : []
+      )
     );
     mount('#/runs/run_1');
     const header = screen.getByTestId('agtEvlInPageHeader');
@@ -280,5 +289,98 @@ describe('EvaluationsApp', () => {
       history.push('/#/agents?openSettings=true');
     });
     expect(screen.getByTestId('settingsModal')).toBeInTheDocument();
+  });
+
+  describe('data the pages cannot read: one empty state on every page', () => {
+    const PAGES = [
+      '#/agents',
+      '#/runs',
+      '#/results',
+      '#/agents/tp',
+      '#/agents/tp?tab=suites',
+      '#/agents/tp?tab=results',
+      '#/suites/golden',
+      '#/runs/run_1',
+      '#/compare/run_1/run_2',
+    ];
+    const failCheck = (message: string) =>
+      mockPpl.answer((q) => {
+        if (isDataCheck(q)) throw new Error(message);
+        return [];
+      });
+    const cases: Array<[string, () => void, string]> = [
+      ['no index', () => failCheck('no such index [otel-v1-genai-evaluation*]'), 'index-missing'],
+      ['no results', () => mockPpl.answer(() => []), 'no-results'],
+      [
+        'a missing field',
+        () => failCheck('Field [attributes.error.type] not found.'),
+        'field-missing',
+      ],
+      [
+        'the data source down',
+        () => failCheck('Data Source Error: No Living connections'),
+        'data-source',
+      ],
+    ];
+    it.each(cases)('%s', (_name, setUp, kind) => {
+      PAGES.forEach((hash) => {
+        cleanup();
+        mockPpl.reset();
+        setUp();
+        mount(hash);
+        const issue = screen.getByTestId(`agtEvlDataIssue-${kind}`);
+        expect(issue).not.toHaveTextContent('Field [');
+        expect(issue).not.toHaveTextContent('no such index');
+        expect(issue).not.toHaveTextContent('Living connections');
+        // Only the data check ran: no page queries, no error callouts, no spinners.
+        expect(mockPpl.queries.every(isDataCheck)).toBe(true);
+        expect(screen.queryByTestId('agtEvlQueryError')).not.toBeInTheDocument();
+        expect(document.querySelector('.euiLoadingContent')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('agentsHome')).not.toBeInTheDocument();
+      });
+    });
+
+    it('names the missing field and the template that maps it', () => {
+      failCheck('Field [attributes.error.type] not found.');
+      mount('#/agents');
+      const issue = screen.getByTestId('agtEvlDataIssue-field-missing');
+      expect(issue).toHaveTextContent('The evaluation indices have no field attributes.error.type');
+      expect(issue).toHaveTextContent('otel-v1-genai-evaluation-index-template');
+    });
+
+    it('links to Settings and Getting started', () => {
+      failCheck('no such index [otel-v1-genai-evaluation*]');
+      mount('#/agents');
+      expect(screen.getByTestId('agtEvlDataIssue-index-missing')).toHaveTextContent(
+        'No index matches otel-v1-genai-evaluation*'
+      );
+      fireEvent.click(screen.getByTestId('agtEvlDataIssueSettings'));
+      expect(screen.getByTestId('settingsModal')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('agtEvlDataIssueGettingStarted'));
+      expect(screen.getByTestId('tour')).toBeInTheDocument();
+    });
+
+    it('another error does not block the pages (they show it)', () => {
+      failCheck('Timed out');
+      mount('#/agents');
+      expect(screen.getByTestId('agentsHome')).toBeInTheDocument();
+    });
+
+    it('the settings point to a deleted index pattern: says so, with Settings', () => {
+      mockDataset = {
+        status: 'ready',
+        unavailable: false,
+        configId: 'c1',
+        datasetMissing: true,
+        refresh: jest.fn(),
+      } as MockDataset;
+      mount('#/agents');
+      expect(screen.getByTestId('agtEvlDataIssue-dataset-missing')).toHaveTextContent(
+        'The evaluations dataset was deleted'
+      );
+      expect(screen.queryByTestId('agtEvlNoDataset')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('agtEvlDataIssueSettings'));
+      expect(screen.getByTestId('settingsModal')).toBeInTheDocument();
+    });
   });
 });

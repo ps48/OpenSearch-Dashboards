@@ -11,3 +11,23 @@
   outline: 2px dashed $euiColorWarning;
   outline-offset: 2px;
 }
+
+// Getting started: one box on every step (fixed width; the step body has a fixed height and
+// scrolls inside it), so the footer buttons stay put.
+.agtEvlTourModal {
+  width: 880px;
+  max-width: 92vw;
+}
+
+.agtEvlTourModal__body {
+  height: 500px;
+
+  // The modal is at most 75vh: room for the header, the steps and the footer.
+  max-height: calc(75vh - 276px);
+  overflow-y: auto;
+  padding-right: $euiSizeS;
+}
+
+.agtEvlTourModal__spacer {
+  flex: 1 1 auto;
+}

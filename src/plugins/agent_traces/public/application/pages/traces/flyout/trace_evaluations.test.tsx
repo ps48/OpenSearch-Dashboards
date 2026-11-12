@@ -157,6 +157,41 @@ describe('Agent Traces evaluation marks', () => {
     expect(screen.getByText('No evaluations for this trace.')).toBeInTheDocument();
   });
 
+  it('an evaluation index it cannot read: says why, not the raw error', () => {
+    wrap(
+      <TraceEvaluationsTab
+        evals={{
+          results: [],
+          bySpanId: {},
+          isLoading: false,
+          error: 'Field [attributes.error.type] not found.',
+        }}
+      />
+    );
+    const issue = screen.getByTestId('agtEvlTraceEvalsIssue');
+    expect(issue).toHaveTextContent(
+      'Evaluations are not available: The evaluation indices have no field attributes.error.type'
+    );
+    expect(issue).not.toHaveTextContent('Field [');
+    expect(document.querySelector('.euiCallOut--danger')).not.toBeInTheDocument();
+  });
+
+  it('the data source down: says so', () => {
+    wrap(
+      <TraceEvaluationsTab
+        evals={{
+          results: [],
+          bySpanId: {},
+          isLoading: false,
+          error: 'Data Source Error: No Living connections',
+        }}
+      />
+    );
+    expect(screen.getByTestId('agtEvlTraceEvalsIssue')).toHaveTextContent(
+      'The data source of the evaluations dataset is not available'
+    );
+  });
+
   it('the result flyout reads the case and the run before over the Agent Traces range', () => {
     const FROM = '2026-11-02T00:00:00.000Z';
     mockServices.data = {

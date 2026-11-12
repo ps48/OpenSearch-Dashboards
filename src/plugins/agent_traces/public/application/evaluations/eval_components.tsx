@@ -19,10 +19,13 @@ import {
   EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { CaseStatus, EvalResult, MIN_N, RunRow, Tally, Verdict } from './eval_model';
+import { CaseStatus, EvalResult, RunRow, Tally, Verdict } from './eval_model';
 import { AGG_LIMIT, EvalSource, NO_AGENT } from './ppl_queries';
 import { formatInZone } from './eval_time';
 import { ResultTarget, targetOf } from './eval_links';
+import { useEvalContext } from './eval_context';
+import { classifyDataIssue } from './eval_data_issue';
+import { DataIssuePrompt } from './eval_empty_states';
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
   pass: i18n.translate('agentTraces.evals.verdict.pass', { defaultMessage: 'Pass' }),
@@ -192,46 +195,36 @@ export const PassRateCell: React.FC<{ rate?: number; bare?: boolean }> = ({ rate
     </span>
   );
 
-const sampleTip = (na: number, nb: number, low: boolean) =>
+const sampleTip = (na: number, nb: number) =>
   i18n.translate('agentTraces.evals.deltaN', {
     defaultMessage: 'n = {na} vs {nb}',
     values: { na: na.toLocaleString(), nb: nb.toLocaleString() },
-  }) +
-  (low
-    ? i18n.translate('agentTraces.evals.deltaLowN', {
-        defaultMessage: '. Fewer than {min} results with a pass rule on one side: treat with care.',
-        values: { min: MIN_N },
-      })
-    : '');
+  });
 
 /**
  * A change b - a. Pass rates are in points (3 or more is colored); with `score`, the average
  * score's change (0.05 or more is colored), where `minimize` means lower is better. `na` / `nb`:
- * results with a pass rule behind each side, shown with the change; under 30 on either side the
- * change is greyed.
+ * results with a pass rule behind each side, shown with the change.
  */
 export const DeltaCell: React.FC<{
   delta?: number;
   na?: number;
   nb?: number;
   score?: { direction?: string };
-  /** A fixed set (a suite run's cases): no minimum sample size, never greyed for n. */
-  exact?: boolean;
-}> = ({ delta, na, nb, score, exact }) => {
+}> = ({ delta, na, nb, score }) => {
   if (delta === undefined) return <span className="agtEvlDim">{DASH}</span>;
   const hasN = na !== undefined && nb !== undefined;
-  const low = !exact && hasN && ((na as number) < MIN_N || (nb as number) < MIN_N);
   let text: string;
   let tone: 'bad' | 'good' | 'flat';
   if (score) {
     const better = score.direction === 'minimize' ? delta < 0 : delta > 0;
     const big = Math.abs(delta) >= 0.05;
-    tone = low || !big ? 'flat' : better ? 'good' : 'bad';
+    tone = !big ? 'flat' : better ? 'good' : 'bad';
     const sign = delta > 0 ? '+' : delta < 0 ? '-' : '±';
     text = `${sign}${Math.abs(delta).toFixed(2)}`;
   } else {
     const d = Math.round(delta * 100);
-    tone = low || Math.abs(d) < 3 ? 'flat' : d > 0 ? 'good' : 'bad';
+    tone = Math.abs(d) < 3 ? 'flat' : d > 0 ? 'good' : 'bad';
     const sign = d > 0 ? '+' : d < 0 ? '-' : '±';
     text = i18n.translate('agentTraces.evals.deltaPoints', {
       defaultMessage: '{sign}{points} pts',
@@ -239,17 +232,14 @@ export const DeltaCell: React.FC<{
     });
   }
   const cell = (
-    <span
-      className={`agtEvlDelta agtEvlDelta--${tone}`}
-      data-test-subj={low ? 'agtEvlDeltaLow' : 'agtEvlDelta'}
-    >
+    <span className={`agtEvlDelta agtEvlDelta--${tone}`} data-test-subj="agtEvlDelta">
       {text}
     </span>
   );
   if (!hasN) return cell;
   return (
     <span>
-      <EuiToolTip content={sampleTip(na as number, nb as number, low)}>{cell}</EuiToolTip>
+      <EuiToolTip content={sampleTip(na as number, nb as number)}>{cell}</EuiToolTip>
       <span className="agtEvlDim agtEvlSmall agtEvlDelta__n">
         {i18n.translate('agentTraces.evals.deltaNShort', {
           defaultMessage: 'n {nb}/{na}',
@@ -379,7 +369,28 @@ export const SourceFilter: React.FC<{
   </div>
 );
 
-export const QueryErrorCallout: React.FC<{ message: string }> = ({ message }) => (
+/**
+ * A failed query. Data the page cannot read (no index, a missing field, no results, the data
+ * source down: `classifyDataIssue`) shows what is missing and links to Settings and Getting
+ * started instead of the raw error; other errors show their message.
+ */
+export const QueryErrorCallout: React.FC<{ message: string }> = ({ message }) => {
+  const { index, openSettings, openGettingStarted } = useEvalContext();
+  const issue = classifyDataIssue(message);
+  if (issue)
+    return (
+      <DataIssuePrompt
+        compact
+        issue={issue}
+        index={index}
+        onSettings={openSettings}
+        onGettingStarted={openGettingStarted}
+      />
+    );
+  return <QueryFailedCallout message={message} />;
+};
+
+const QueryFailedCallout: React.FC<{ message: string }> = ({ message }) => (
   <EuiCallOut
     color="danger"
     iconType="alert"

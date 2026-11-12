@@ -41,6 +41,8 @@ import {
   targetOf,
 } from '../../../evaluations/eval_links';
 import { TraceEvaluations } from './use_trace_evaluations';
+import { classifyDataIssue } from '../../../evaluations/eval_data_issue';
+import { dataIssueTitle } from '../../../evaluations/eval_empty_states';
 import { TraceFlyoutContext } from './trace_flyout_state';
 import { useEvalTimezone } from '../../../evaluations/eval_time';
 
@@ -213,7 +215,27 @@ export const TraceEvaluationsTab: React.FC<{
   spanLabelOf?: (spanId: string) => string | undefined;
 }> = ({ evals, spanLabelOf }) => {
   const [open, setOpen] = useState<EvalResult>();
+  const evalsIndex = useEvalsIndexPattern();
   if (evals.isLoading) return <EuiLoadingContent lines={4} />;
+  const issue = evals.error ? classifyDataIssue(evals.error) : undefined;
+  if (issue) {
+    // Data Agent Evaluations cannot read: say what is missing, not the raw error.
+    return (
+      <EuiText
+        size="s"
+        color="subdued"
+        className="agtEvlTraceEvals"
+        data-test-subj="agtEvlTraceEvalsIssue"
+      >
+        <p>
+          {i18n.translate('agentTraces.flyout.evaluationsUnavailable', {
+            defaultMessage: 'Evaluations are not available: {reason}. See Agent Evaluations.',
+            values: { reason: dataIssueTitle(issue, evalsIndex ?? '') },
+          })}
+        </p>
+      </EuiText>
+    );
+  }
   if (evals.error) {
     return (
       <EuiCallOut color="danger" size="s" iconType="alert" title={evals.error}>

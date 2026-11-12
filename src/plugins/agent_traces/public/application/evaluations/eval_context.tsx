@@ -38,6 +38,9 @@ export interface EvalScreenContext {
   openTrace: (traceId: string, aroundMs: number) => void;
   /** A URL to the session, trace or span a result judged (opened in a new tab). */
   hrefOf?: (result: EvalResult) => string | undefined;
+  /** Open Settings / Getting started (the data issue empty states link to them). */
+  openSettings?: () => void;
+  openGettingStarted?: () => void;
 }
 
 const noop = () => undefined;

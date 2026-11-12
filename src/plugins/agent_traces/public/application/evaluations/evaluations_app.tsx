@@ -45,7 +45,8 @@ import {
 } from './eval_routes';
 import { EvalContext, EvalScreenContext } from './eval_context';
 import { evalsDataset, evalsLookupDataset, spansDataset, usePplRows } from './use_ppl_rows';
-import { buildRunNamesQuery, buildRunWindowQuery } from './ppl_queries';
+import { buildDataCheckQuery, buildRunNamesQuery, buildRunWindowQuery } from './ppl_queries';
+import { CORE_FIELDS, DataIssue, classifyDataIssue } from './eval_data_issue';
 import {
   EvalsDatasetConfig,
   evalsDataSourceOf,
@@ -64,7 +65,7 @@ import { EvalGettingStartedButton, EvalHeader, EvalSettingsButton } from './eval
 import { GettingStartedModal } from './eval_onboarding';
 import { EvalSetupWizard } from './eval_setup_wizard';
 import { takeHashParam } from '../pages/traces/deep_link';
-import { NoEvalsDatasetPrompt } from './eval_empty_states';
+import { DataIssuePrompt, NoEvalsDatasetPrompt } from './eval_empty_states';
 import { QueryErrorCallout, agentLabel, shortId } from './eval_components';
 import { useEvalTimezone } from './eval_time';
 import { AgentsHome } from './agents_home';
@@ -376,6 +377,28 @@ const useRunWindow = (
   return { window, loading: !!query && !loaded, missing: !!query && loaded && !window, error };
 };
 
+/**
+ * Whether the evaluations dataset can be read, checked once per config and Refresh
+ * (`buildDataCheckQuery`): a missing index, field or data source, or no result at all, gives
+ * the one empty state every page shows instead of its queries' errors (`classifyDataIssue`).
+ * An error of another kind does not block the pages (they show it).
+ */
+export const useDataCheck = (
+  config: EvalsDatasetConfig | undefined,
+  refreshKey: number
+): { checking: boolean; issue?: DataIssue } => {
+  const dataset = useMemo(
+    () => (config ? evalsLookupDataset(config.index, evalsDataSourceOf(config)) : undefined),
+    [config]
+  );
+  const query = config ? buildDataCheckQuery(config.index, CORE_FIELDS) : undefined;
+  const { rows, loaded, error } = usePplRows(dataset, query, undefined, refreshKey);
+  if (!query) return { checking: false };
+  if (!loaded) return { checking: true };
+  if (error) return { checking: false, issue: classifyDataIssue(error) };
+  return { checking: false, issue: rows.length ? undefined : { kind: 'no-results' } };
+};
+
 export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ params }) => {
   const { services } = useOpenSearchDashboards<EvaluationsServices>();
   const timezone = useEvalTimezone(services.uiSettings);
@@ -391,7 +414,10 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
   const [setupOpen, setSetupOpen] = useState(false);
 
   const [result, setResult] = useState<EvalResult>();
-  const runName = useRouteRunName(config, route);
+  const dataCheck = useDataCheck(config, time.refreshKey);
+  // The app's own lookups (run name, run window) wait for the data check too.
+  const readable = config && !dataCheck.checking && !dataCheck.issue ? config : undefined;
+  const runName = useRouteRunName(readable, route);
 
   // A new screen closes the result flyout.
   useEffect(() => setResult(undefined), [route]);
@@ -472,7 +498,7 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
 
   const runIds = runsOfRoute(route);
   const runKey = runIds.join('|');
-  const run = useRunWindow(config, runIds, time.refreshKey);
+  const run = useRunWindow(readable, runIds, time.refreshKey);
   const onRunPage = runIds.length > 0;
   // Other runs (the run before, Compare with): the global range, reaching back at least
   // RUN_LOOKBACK_MS before the run, so a run opened from a link still finds the run before it.
@@ -504,6 +530,8 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
             openResult: setResult,
             openTrace,
             hrefOf,
+            openSettings: () => setSettingsOpen(true),
+            openGettingStarted: () => setTourOpen(true),
           }
         : undefined,
     [
@@ -559,6 +587,26 @@ export const EvaluationsApp: React.FC<{ params: AppMountParameters }> = ({ param
 
   const renderContent = () => {
     if (datasetLoading && !config) return <EuiLoadingContent lines={6} />;
+    // One empty state for data the pages cannot read, instead of an error on each panel.
+    if (config && dataCheck.checking) return <EuiLoadingContent lines={6} />;
+    if (config && dataCheck.issue)
+      return (
+        <DataIssuePrompt
+          issue={dataCheck.issue}
+          index={config.index}
+          onSettings={() => setSettingsOpen(true)}
+          onGettingStarted={() => setTourOpen(true)}
+        />
+      );
+    if (!config && dataset.datasetMissing)
+      return (
+        <DataIssuePrompt
+          issue={{ kind: 'dataset-missing' }}
+          index=""
+          onSettings={() => setSettingsOpen(true)}
+          onGettingStarted={() => setTourOpen(true)}
+        />
+      );
     if (config && onRunPage && run.error) return <QueryErrorCallout message={run.error} />;
     if (config && onRunPage && run.loading) return <EuiLoadingContent lines={6} />;
     if (config && onRunPage && run.missing)

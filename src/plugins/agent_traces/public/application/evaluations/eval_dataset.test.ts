@@ -106,12 +106,17 @@ describe('evaluations app config', () => {
   });
 
   it('keeps the object id when its evaluations dataset is missing or PPL cannot take it', async () => {
+    // Deleted: said so (the app shows "The evaluations dataset was deleted").
     const gone = correlation('c2', 'AgentEvals-Config-ws1', 'tr', 'gone', 'evaluationsDataset');
     expect(await loadEvalsConfig(makeClient([gone]) as never, 'ws1')).toEqual({
       configId: 'c2',
+      datasetMissing: true,
     });
     const bad = correlation('c3', 'AgentEvals-Config-ws1', 'tr', 'bad', 'evaluationsDataset');
-    expect(await loadEvalsConfig(makeClient([bad]) as never, 'ws1')).toEqual({ configId: 'c3' });
+    expect(await loadEvalsConfig(makeClient([bad]) as never, 'ws1')).toEqual({
+      configId: 'c3',
+      datasetMissing: false,
+    });
   });
 
   it('keeps a config whose traces dataset is gone, without it', async () => {

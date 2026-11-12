@@ -21,7 +21,7 @@ import {
   EuiToolTip,
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
-import { AgentVersionRow, MIN_N, agentVersionRows } from './eval_model';
+import { AgentVersionRow, agentVersionRows } from './eval_model';
 import { NO_AGENT, buildAgentsQuery } from './ppl_queries';
 import { useEvalContext } from './eval_context';
 import { usePplRows } from './use_ppl_rows';
@@ -37,12 +37,10 @@ import {
 import { AgentsEmptyState } from './eval_empty_states';
 
 const RATE_TIP = i18n.translate('agentTraces.evals.agents.rateTip', {
-  defaultMessage:
-    "Share of the version's results with a pass rule that passed. Faded: fewer than {min} results with a pass rule.",
-  values: { min: MIN_N },
+  defaultMessage: "Share of the version's results with a pass rule that passed.",
 });
 
-/** A version's pass rate, faded under the minimum sample size; the tooltip gives n. */
+/** A version's pass rate; the tooltip gives n. */
 export const VersionRateCell: React.FC<{ row: AgentVersionRow }> = ({ row }) => (
   <EuiToolTip
     content={i18n.translate('agentTraces.evals.agents.nTip', {
@@ -50,10 +48,7 @@ export const VersionRateCell: React.FC<{ row: AgentVersionRow }> = ({ row }) => 
       values: { n: row.decided.toLocaleString() },
     })}
   >
-    <span
-      className={row.decided < MIN_N ? 'agtEvlLowN' : undefined}
-      data-test-subj={`agtEvlVersionRate-${row.id}`}
-    >
+    <span data-test-subj={`agtEvlVersionRate-${row.id}`}>
       <PassRateCell rate={row.rate} />
     </span>
   </EuiToolTip>

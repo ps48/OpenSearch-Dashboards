@@ -69,8 +69,8 @@ describe('AgentsHome', () => {
     ]);
     const v2 = screen.getByTestId('agtEvlVersionRate-travel_planner/v2');
     expect(v2).toHaveTextContent('60%');
-    // Under 30 results with a pass rule: faded.
-    expect(v2).toHaveClass('agtEvlLowN');
+    // A small sample is not faded.
+    expect(v2).not.toHaveClass('agtEvlLowN');
     const v1 = screen.getByTestId('agtEvlVersionRate-travel_planner/v1');
     expect(v1).toHaveTextContent('95%');
     expect(v1).not.toHaveClass('agtEvlLowN');

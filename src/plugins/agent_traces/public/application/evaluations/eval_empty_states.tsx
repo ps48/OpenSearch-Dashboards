@@ -22,7 +22,14 @@ import {
 } from '@elastic/eui';
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
-import { EvalScreenshot, OnlineOfflineCards, Screenshot } from './eval_onboarding';
+import type { DataIssue } from './eval_data_issue';
+import {
+  CodingAgentQuickStart,
+  CopyCodingAgentPromptButton,
+  EvalScreenshot,
+  OnlineOfflineCards,
+  Screenshot,
+} from './eval_onboarding';
 
 /** The Agent evaluations docs (producing results, pass rules) and the AI observability docs. */
 export const AGENT_EVALS_DOCS_URL = 'https://observability.opensearch.org/docs/agent-evals/';
@@ -41,6 +48,8 @@ score(name="answer_quality", value=4, score_min=1, score_max=5,
 /** The Agents home with no results in the range: how to send them (SDK snippet, links). */
 export const AgentsEmptyState: React.FC<{ range: string }> = ({ range }) => (
   <div className="agtEvlSnippet" data-test-subj="agtEvlAgentsEmpty">
+    <CodingAgentQuickStart />
+    <EuiSpacer size="m" />
     <EuiText size="s" textAlign="left">
       <h3>
         {i18n.translate('agentTraces.evalsEmpty.agentsTitle', {
@@ -185,6 +194,9 @@ export const NoEvalsDatasetPrompt: React.FC<{
                   defaultMessage: 'Set up evaluations',
                 })}
               </EuiButton>
+            </EuiFlexItem>
+            <EuiFlexItem grow={false}>
+              <CopyCodingAgentPromptButton data-test-subj="agtEvlCopyPromptHero" />
             </EuiFlexItem>
             <EuiFlexItem grow={false}>
               <EuiButton
@@ -360,3 +372,153 @@ export const NoResultsInRange: React.FC<{
     }
   />
 );
+
+/** What `DataIssuePrompt` explains: a classified query error, or a deleted dataset. */
+export type DataIssueView = DataIssue | { kind: 'dataset-missing'; field?: undefined };
+
+const ISSUE_TITLE: Record<DataIssueView['kind'], (v: { index: string; field?: string }) => string> =
+  {
+    'dataset-missing': () =>
+      i18n.translate('agentTraces.evalsIssue.datasetMissingTitle', {
+        defaultMessage: 'The evaluations dataset was deleted',
+      }),
+    'index-missing': ({ index }) =>
+      i18n.translate('agentTraces.evalsIssue.indexMissingTitle', {
+        defaultMessage: 'No index matches {index}',
+        values: { index },
+      }),
+    'no-results': ({ index }) =>
+      i18n.translate('agentTraces.evalsIssue.noResultsTitle', {
+        defaultMessage: 'No evaluation results in {index} yet',
+        values: { index },
+      }),
+    'field-missing': ({ field }) =>
+      field
+        ? i18n.translate('agentTraces.evalsIssue.fieldMissingTitle', {
+            defaultMessage: 'The evaluation indices have no field {field}',
+            values: { field },
+          })
+        : i18n.translate('agentTraces.evalsIssue.fieldMissingTitleAny', {
+            defaultMessage: 'The evaluation indices lack fields these views query',
+          }),
+    'data-source': () =>
+      i18n.translate('agentTraces.evalsIssue.dataSourceTitle', {
+        defaultMessage: 'The data source of the evaluations dataset is not available',
+      }),
+  };
+
+const ISSUE_BODY: Record<DataIssueView['kind'], (v: { index: string; field?: string }) => string> =
+  {
+    'dataset-missing': () =>
+      i18n.translate('agentTraces.evalsIssue.datasetMissingBody', {
+        defaultMessage:
+          'The Agent Evaluations settings point to an index pattern that no longer exists. Choose the evaluations dataset again in Settings, or set it up again.',
+      }),
+    'index-missing': ({ index }) =>
+      i18n.translate('agentTraces.evalsIssue.indexMissingBody', {
+        defaultMessage:
+          'The evaluations dataset reads {index}, and no index on its cluster matches it yet. The index appears with the first result your code sends; Getting started shows how. Or choose another dataset in Settings.',
+        values: { index },
+      }),
+    'no-results': ({ index }) =>
+      i18n.translate('agentTraces.evalsIssue.noResultsBody', {
+        defaultMessage:
+          'The indices behind {index} hold no gen_ai.evaluation.result events. Results appear here a few seconds after your code sends them; Getting started shows how.',
+        values: { index },
+      }),
+    'field-missing': ({ index, field }) =>
+      i18n.translate('agentTraces.evalsIssue.fieldMissingBody', {
+        defaultMessage:
+          'The indices behind {index} were created without the evaluation index template (otel-v1-genai-evaluation-index-template), which maps {field} and every other field these views query. Install the template (Getting started shows how); the next index it creates, at the next rollover or result, has the fields. Or choose another dataset in Settings.',
+        values: { index, field: field ?? 'the fields' },
+      }),
+    'data-source': ({ index }) =>
+      i18n.translate('agentTraces.evalsIssue.dataSourceBody', {
+        defaultMessage:
+          'The data source the index pattern {index} reads from was deleted or does not answer. Check it in Data sources, or choose another evaluations dataset in Settings.',
+        values: { index },
+      }),
+  };
+
+/** The one-line title of a data issue (Agent Traces shows it where evaluations would be). */
+export const dataIssueTitle = (issue: DataIssueView, index: string): string =>
+  ISSUE_TITLE[issue.kind]({ index, field: issue.field });
+
+/**
+ * Why the evaluation results cannot be read (`classifyDataIssue`), as an empty state rather than
+ * an error: what is missing, and Settings and Getting started to fix it. `compact`: a callout,
+ * for a panel of a page.
+ */
+export const DataIssuePrompt: React.FC<{
+  issue: DataIssueView;
+  index: string;
+  onSettings?: () => void;
+  onGettingStarted?: () => void;
+  compact?: boolean;
+}> = ({ issue, index, onSettings, onGettingStarted, compact }) => {
+  const values = { index, field: issue.field };
+  const title = ISSUE_TITLE[issue.kind](values);
+  const body = ISSUE_BODY[issue.kind](values);
+  const testId = `agtEvlDataIssue-${issue.kind}`;
+  const actions = (
+    <EuiFlexGroup
+      gutterSize="s"
+      justifyContent={compact ? 'flexStart' : 'center'}
+      responsive={false}
+      wrap
+    >
+      {onSettings && (
+        <EuiFlexItem grow={false}>
+          <EuiButton
+            size="s"
+            fill={!compact}
+            iconType="gear"
+            onClick={onSettings}
+            data-test-subj="agtEvlDataIssueSettings"
+          >
+            {i18n.translate('agentTraces.evalsIssue.settings', { defaultMessage: 'Settings' })}
+          </EuiButton>
+        </EuiFlexItem>
+      )}
+      {onGettingStarted && (
+        <EuiFlexItem grow={false}>
+          <EuiButton
+            size="s"
+            iconType="help"
+            onClick={onGettingStarted}
+            data-test-subj="agtEvlDataIssueGettingStarted"
+          >
+            {i18n.translate('agentTraces.evalsIssue.gettingStarted', {
+              defaultMessage: 'Getting started',
+            })}
+          </EuiButton>
+        </EuiFlexItem>
+      )}
+      {(issue.kind === 'no-results' || issue.kind === 'index-missing') && (
+        <EuiFlexItem grow={false}>
+          <CopyCodingAgentPromptButton data-test-subj="agtEvlDataIssueCopyPrompt" />
+        </EuiFlexItem>
+      )}
+    </EuiFlexGroup>
+  );
+  if (compact)
+    return (
+      <EuiCallOut size="s" color="warning" iconType="help" title={title} data-test-subj={testId}>
+        <p>{body}</p>
+        {(onSettings || onGettingStarted) && actions}
+      </EuiCallOut>
+    );
+  return (
+    <EuiEmptyPrompt
+      iconType={issue.kind === 'data-source' ? 'offline' : 'indexClose'}
+      title={<h3>{title}</h3>}
+      body={
+        <EuiText size="s">
+          <p>{body}</p>
+        </EuiText>
+      }
+      actions={actions}
+      data-test-subj={testId}
+    />
+  );
+};
