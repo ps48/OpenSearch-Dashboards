@@ -10,6 +10,11 @@ Read-only screens over `gen_ai.evaluation.result` events in the workspace's eval
 - One verdict rule, computed in PPL (`VERDICT_EVAL` in `ppl_queries.ts`): `error.type` set is an
   evaluator error; `score.label` `pass` / `fail` is Pass / Fail; anything else is Scored. Pass
   rate = pass / (pass + fail). The UI never evaluates thresholds.
+- PPL never runs an `eval` before a `stats` or a `where`: pushed down as a script, it fails on the
+  backing indices that do not map a field it names (a fresh index after a rollover) and silently
+  drops their results. Aggregations by verdict group by the raw `error.type` and `score.label`
+  first and compute the verdict on those rows (`verdictStats`); the verdict filter is plain
+  conditions on the raw fields (`verdictCond`). Averages are recomputed from sums and counts.
 - Online results have no `test.suite.run.id`; offline results (suite runs) have one.
 - Attribute names follow OTel; OpenSearch gap fields mirror them under `opensearch.*`:
   `opensearch.gen_ai.evaluation.*` (score.min, score.max, score.threshold, score.direction,

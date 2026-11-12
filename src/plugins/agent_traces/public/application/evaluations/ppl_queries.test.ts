@@ -45,6 +45,13 @@ import {
   isTruncated,
   likeLiteral,
   trendStep,
+  verdictStats,
+  verdictCond,
+  countOf,
+  sumOf,
+  minOf,
+  maxOf,
+  VERDICT,
 } from './ppl_queries';
 
 const I = 'evals-*';
@@ -55,10 +62,34 @@ const VERD =
   "`attributes.gen_ai.evaluation.score.label` = 'pass', 'pass', " +
   "`attributes.gen_ai.evaluation.score.label` = 'fail', 'fail' else 'scored')";
 
-const EVALS_STATS =
-  'stats count() as n, count(`attributes.gen_ai.evaluation.score.value`) as nv, avg(`attributes.gen_ai.evaluation.score.value`) as avg_score, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict, `attributes.gen_ai.evaluation.score.label`, `attributes.opensearch.gen_ai.evaluation.score.direction`';
-const RUN_STATS =
-  'stats count() as n, min(`@timestamp`) as t0, max(`@timestamp`) as t1 by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`';
+/** Grouped by before the verdict exists (stats first: an `eval` first drops results). */
+const VKEYS = '`attributes.error.type`, `attributes.gen_ai.evaluation.score.label`';
+
+/** Evaluations table, the `by` list per stage (the label is a group already: not twice). */
+const EVALS_BY_1 =
+  '`attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, `attributes.error.type`, `attributes.gen_ai.evaluation.score.label`, `attributes.opensearch.gen_ai.evaluation.score.direction`';
+const EVALS_BY_2 =
+  '`attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict, `attributes.gen_ai.evaluation.score.label`, `attributes.opensearch.gen_ai.evaluation.score.direction`';
+const EVALS_AGGS_1 =
+  'stats count() as n, count(`attributes.gen_ai.evaluation.score.value`) as nv, sum(`attributes.gen_ai.evaluation.score.value`) as sum_score, min(`@timestamp`) as first, max(`@timestamp`) as last by ';
+const EVALS_AGGS_2 =
+  'stats sum(n) as n, sum(nv) as nv, sum(sum_score) as sum_score, min(first) as first, max(last) as last by ';
+const EVALS_AVG = ['eval avg_score = sum_score / nv', 'fields - sum_score'];
+
+const RUN_STATS = [
+  'stats count() as n, min(`@timestamp`) as t0, max(`@timestamp`) as t1 by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.gen_ai.evaluation.name`, `attributes.error.type`, `attributes.gen_ai.evaluation.score.label`, `traceId`',
+  VERD,
+  'stats sum(n) as n, min(t0) as t0, max(t1) as t1 by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`',
+];
+
+/** The verdict filter on raw fields, one condition per verdict. */
+const W_PASS =
+  "`attributes.gen_ai.evaluation.score.label` = 'pass' and isnull(`attributes.error.type`)";
+const W_FAIL =
+  "`attributes.gen_ai.evaluation.score.label` = 'fail' and isnull(`attributes.error.type`)";
+const W_SCORED =
+  "isnull(`attributes.error.type`) and (isnull(`attributes.gen_ai.evaluation.score.label`) or (`attributes.gen_ai.evaluation.score.label` != 'pass' and `attributes.gen_ai.evaluation.score.label` != 'fail'))";
+const W_ERROR = 'isnotnull(`attributes.error.type`)';
 
 /** The exact PPL of every screen (each was run on a cluster with the P0 data contract). */
 describe('evaluation PPL', () => {
@@ -66,8 +97,9 @@ describe('evaluation PPL', () => {
     expect(buildAgentsQuery(I, 'all')).toBe(
       [
         ...BASE,
+        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.gen_ai.evaluation.name`, `attributes.error.type`, `attributes.gen_ai.evaluation.score.label`',
         VERD,
-        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.gen_ai.evaluation.name`, verdict',
+        'stats sum(n) as n, min(first) as first, max(last) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.gen_ai.evaluation.name`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -79,8 +111,9 @@ describe('evaluation PPL', () => {
         ...BASE,
         'where isnull(`attributes.test.suite.run.id`)',
         "where like(`attributes.gen_ai.agent.name`, '%o\\'brien%')",
+        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.gen_ai.evaluation.name`, `attributes.error.type`, `attributes.gen_ai.evaluation.score.label`',
         VERD,
-        'stats count() as n, min(`@timestamp`) as first, max(`@timestamp`) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.gen_ai.evaluation.name`, verdict',
+        'stats sum(n) as n, min(first) as first, max(last) as last by `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.gen_ai.evaluation.name`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -91,8 +124,10 @@ describe('evaluation PPL', () => {
       [
         ...BASE,
         "where `attributes.gen_ai.agent.name` = 'travel_planner'",
+        EVALS_AGGS_1 + EVALS_BY_1,
         VERD,
-        EVALS_STATS,
+        EVALS_AGGS_2 + EVALS_BY_2,
+        ...EVALS_AVG,
         'head 10000',
       ].join(' | ')
     );
@@ -104,9 +139,11 @@ describe('evaluation PPL', () => {
         ...BASE,
         'where isnull(`attributes.gen_ai.agent.name`)',
         'where isnotnull(`attributes.test.suite.run.id`)',
-        VERD,
         // Offline: by run too, so each version is read at its latest run.
-        `${EVALS_STATS}, \`attributes.test.suite.run.id\``,
+        `${EVALS_AGGS_1}${EVALS_BY_1}, \`attributes.test.suite.run.id\``,
+        VERD,
+        `${EVALS_AGGS_2}${EVALS_BY_2}, \`attributes.test.suite.run.id\``,
+        ...EVALS_AVG,
         'head 10000',
       ].join(' | ')
     );
@@ -118,9 +155,10 @@ describe('evaluation PPL', () => {
         ...BASE,
         "where `attributes.gen_ai.agent.name` = 'travel_planner'",
         'where isnull(`attributes.test.suite.run.id`)',
+        `where (${W_PASS}) or (${W_FAIL})`,
+        `stats count() as n by span(\`@timestamp\`, 3h) as t, \`attributes.gen_ai.agent.version\`, ${VKEYS}`,
         VERD,
-        "where verdict = 'pass' or verdict = 'fail'",
-        'stats count() as n by span(`@timestamp`, 3h) as t, `attributes.gen_ai.agent.version`, verdict',
+        'stats sum(n) as n by t, `attributes.gen_ai.agent.version`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -132,8 +170,9 @@ describe('evaluation PPL', () => {
         ...BASE,
         "where `attributes.gen_ai.agent.name` = 'support_bot'",
         'where isnotnull(`attributes.test.suite.run.id`)',
+        `stats count() as n, min(\`@timestamp\`) as started by \`attributes.test.suite.name\`, \`attributes.test.suite.run.id\`, \`attributes.gen_ai.agent.version\`, ${VKEYS}`,
         VERD,
-        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.name`, `attributes.test.suite.run.id`, `attributes.gen_ai.agent.version`, verdict',
+        'stats sum(n) as n, min(started) as started by `attributes.test.suite.name`, `attributes.test.suite.run.id`, `attributes.gen_ai.agent.version`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -144,8 +183,9 @@ describe('evaluation PPL', () => {
       [
         ...BASE,
         "where `attributes.test.suite.name` = 'golden'",
+        `stats count() as n, min(\`@timestamp\`) as started by \`attributes.test.suite.run.id\`, \`attributes.gen_ai.agent.name\`, \`attributes.gen_ai.agent.version\`, ${VKEYS}`,
         VERD,
-        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict',
+        'stats sum(n) as n, min(started) as started by `attributes.test.suite.run.id`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -156,7 +196,8 @@ describe('evaluation PPL', () => {
       [
         ...BASE,
         "where `attributes.test.suite.name` = 'it\\'s'",
-        "eval bad = if(isnotnull(`attributes.error.type`) or `attributes.gen_ai.evaluation.score.label` = 'fail', 1, 0), good = if(`attributes.gen_ai.evaluation.score.label` = 'pass', 1, 0)",
+        `stats count() as n by \`attributes.test.suite.run.id\`, \`attributes.test.case.id\`, ${VKEYS}`,
+        "eval bad = if(isnotnull(`attributes.error.type`) or `attributes.gen_ai.evaluation.score.label` = 'fail', n, 0), good = if(`attributes.gen_ai.evaluation.score.label` = 'pass', n, 0)",
         'stats sum(bad) as bad, sum(good) as good by `attributes.test.suite.run.id`, `attributes.test.case.id`',
         // A case with scores only (no pass rule) has not passed.
         'eval ok = if(bad = 0 and good > 0, 1, 0)',
@@ -167,13 +208,16 @@ describe('evaluation PPL', () => {
   });
 
   describe('Eval runs', () => {
-    const RUNS_STATS =
-      'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict';
+    const RUNS_STATS = [
+      `stats count() as n, min(\`@timestamp\`) as started by \`attributes.test.suite.run.id\`, \`attributes.test.suite.name\`, \`attributes.gen_ai.agent.name\`, \`attributes.gen_ai.agent.version\`, ${VKEYS}`,
+      VERD,
+      'stats sum(n) as n, min(started) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, verdict',
+    ];
     const OFFLINE = 'where isnotnull(`attributes.test.suite.run.id`)';
 
     it('every run: the suite runs aggregation without the suite, by suite, latest first', () => {
       expect(buildEvalRunsQuery(I, EMPTY_RUNS_FILTERS)).toBe(
-        [...BASE, OFFLINE, VERD, RUNS_STATS, 'sort - started', 'head 10000'].join(' | ')
+        [...BASE, OFFLINE, ...RUNS_STATS, 'sort - started', 'head 10000'].join(' | ')
       );
     });
 
@@ -187,14 +231,15 @@ describe('evaluation PPL', () => {
         `where like(\`attributes.test.suite.run.id\`, ${pattern}) or like(\`attributes.test.suite.name\`, ${pattern}) or like(\`attributes.gen_ai.agent.name\`, ${pattern})`,
       ];
       expect(buildEvalRunsQuery(I, filters)).toBe(
-        [...BASE, ...where, VERD, RUNS_STATS, 'sort - started', 'head 10000'].join(' | ')
+        [...BASE, ...where, ...RUNS_STATS, 'sort - started', 'head 10000'].join(' | ')
       );
       // Cases passed per run: the same filters, the suite page's two aggregations.
       expect(buildEvalRunCasesQuery(I, filters)).toBe(
         [
           ...BASE,
           ...where,
-          "eval bad = if(isnotnull(`attributes.error.type`) or `attributes.gen_ai.evaluation.score.label` = 'fail', 1, 0), good = if(`attributes.gen_ai.evaluation.score.label` = 'pass', 1, 0)",
+          `stats count() as n by \`attributes.test.suite.run.id\`, \`attributes.test.case.id\`, ${VKEYS}`,
+          "eval bad = if(isnotnull(`attributes.error.type`) or `attributes.gen_ai.evaluation.score.label` = 'fail', n, 0), good = if(`attributes.gen_ai.evaluation.score.label` = 'pass', n, 0)",
           'stats sum(bad) as bad, sum(good) as good by `attributes.test.suite.run.id`, `attributes.test.case.id`',
           'eval ok = if(bad = 0 and good > 0, 1, 0)',
           'stats count() as cases, sum(ok) as passed by `attributes.test.suite.run.id`',
@@ -223,13 +268,9 @@ describe('evaluation PPL', () => {
 
   it('Run: by run, case, evaluation, verdict and trace (no case name or CI URL)', () => {
     expect(buildRunCasesQuery(I, 'run_1')).toBe(
-      [
-        ...BASE,
-        "where `attributes.test.suite.run.id` = 'run_1'",
-        VERD,
-        RUN_STATS,
-        'head 10000',
-      ].join(' | ')
+      [...BASE, "where `attributes.test.suite.run.id` = 'run_1'", ...RUN_STATS, 'head 10000'].join(
+        ' | '
+      )
     );
   });
 
@@ -345,13 +386,24 @@ describe('evaluation PPL', () => {
     );
   });
 
-  it('Result flyout, session results: the root spans of the session turns, oldest first', () => {
+  it('Result flyout, session results: the AI-root spans of the session turns, oldest first', () => {
+    // The marker is unmapped: parentless GenAI spans only (as Agent Traces).
     expect(buildSessionRootsQuery('spans-*', "conv'1")).toBe(
       [
         'source = spans-*',
-        "where `attributes.gen_ai.conversation.id` = 'conv\\'1' and `parentSpanId` = ''",
+        "where `attributes.gen_ai.conversation.id` = 'conv\\'1' and (parentSpanId = \"\" AND isnotnull(`attributes.gen_ai.operation.name`))",
         'sort `startTime`',
-        'fields `traceId`, `startTime`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
+        'fields `traceId`, `spanId`, `parentSpanId`, `startTime`, `attributes.gen_ai.operation.name`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
+        'head 50',
+      ].join(' | ')
+    );
+    // The marker is mapped: marked spans too, and the marker is read.
+    expect(buildSessionRootsQuery('spans-*', 'c', true)).toBe(
+      [
+        'source = spans-*',
+        'where `attributes.gen_ai.conversation.id` = \'c\' and ((parentSpanId = "" AND isnotnull(`attributes.gen_ai.operation.name`)) OR `attributes.derived.gen_ai.is_root` = true)',
+        'sort `startTime`',
+        'fields `traceId`, `spanId`, `parentSpanId`, `startTime`, `attributes.gen_ai.operation.name`, `attributes.derived.gen_ai.is_root`, `attributes.gen_ai.input.messages`, `attributes.gen_ai.output.messages`',
         'head 50',
       ].join(' | ')
     );
@@ -420,8 +472,9 @@ describe('evaluation PPL', () => {
       [
         ...BASE,
         "where `attributes.test.suite.run.id` = 'run_a' or `attributes.test.suite.run.id` = 'run_b'",
+        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.gen_ai.evaluation.name`, `attributes.error.type`, `attributes.gen_ai.evaluation.score.label`, `traceId`',
         VERD,
-        'stats count() as n, min(`@timestamp`) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`',
+        'stats sum(n) as n, min(started) as started by `attributes.test.suite.run.id`, `attributes.test.suite.name`, `attributes.gen_ai.agent.name`, `attributes.gen_ai.agent.version`, `attributes.test.case.id`, `attributes.gen_ai.evaluation.name`, verdict, `traceId`',
         'head 10000',
       ].join(' | ')
     );
@@ -459,8 +512,9 @@ describe('evaluation PPL', () => {
       [
         ...BASE,
         "where `traceId` = 't1' or `traceId` = 't2'",
+        `stats count() as n by \`traceId\`, ${VKEYS}`,
         VERD,
-        'stats count() as n by `traceId`, verdict',
+        'stats sum(n) as n by `traceId`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -471,8 +525,9 @@ describe('evaluation PPL', () => {
       [
         ...BASE,
         "where `traceId` = 't1'",
+        `stats count() as n by \`traceId\`, \`spanId\`, ${VKEYS}`,
         VERD,
-        'stats count() as n by `traceId`, `spanId`, verdict',
+        'stats sum(n) as n by `traceId`, `spanId`, verdict',
         'head 10000',
       ].join(' | ')
     );
@@ -506,8 +561,7 @@ describe('evaluation PPL', () => {
         "where `attributes.gen_ai.evaluation.name` = 'helpfulness'",
         'where isnull(`attributes.test.suite.run.id`)',
         "where like(`attributes.gen_ai.evaluation.explanation`, '%vague%')",
-        VERD,
-        "where verdict = 'fail' or verdict = 'scored'",
+        `where (${W_FAIL}) or (${W_SCORED})`,
         'sort `attributes.gen_ai.evaluation.score.value`',
         'head 25 from 50',
       ].join(' | ')
@@ -539,7 +593,7 @@ describe('evaluation PPL', () => {
 
   it('Results: total with a verdict filter', () => {
     expect(buildResultsCountQuery(I, { ...NONE, verdicts: ['fail'] })).toBe(
-      [...BASE, VERD, "where verdict = 'fail'", 'stats count() as total'].join(' | ')
+      [...BASE, `where ${W_FAIL}`, 'stats count() as total'].join(' | ')
     );
   });
 
@@ -560,8 +614,9 @@ describe('evaluation PPL', () => {
       [
         ...BASE,
         "where `attributes.gen_ai.evaluation.name` = 'x'",
+        `stats count() as n by ${VKEYS}`,
         VERD,
-        'stats count() as n by verdict',
+        'stats sum(n) as n by verdict',
         'sort - n',
         'head 50',
       ].join(' | ')
@@ -581,8 +636,7 @@ describe('evaluation PPL', () => {
         ...BASE,
         "where `attributes.gen_ai.agent.name` = 'a1'",
         "where `attributes.gen_ai.agent.version` = 'v2' or isnull(`attributes.gen_ai.agent.version`)",
-        VERD,
-        "where verdict = 'fail'",
+        `where ${W_FAIL}`,
         'sort - `@timestamp`',
         'head 25 from 0',
       ].join(' | ')
@@ -625,5 +679,90 @@ describe('evaluation PPL', () => {
     expect(trendStep(7 * 24 * H).step).toBe('3h');
     expect(trendStep(30 * 24 * H).step).toBe('12h');
     expect(trendStep(365 * 24 * H).step).toBe('1w');
+  });
+});
+
+/**
+ * PPL runs an `eval` before a `stats` or `where` as a script, which drops the results of indices
+ * that do not map a field it names: the verdict is computed after a first `stats` on raw fields.
+ */
+describe('verdict, stats first', () => {
+  it('no groups: by the raw verdict fields, then by verdict', () => {
+    expect(verdictStats([])).toEqual([
+      `stats count() as n by ${VKEYS}`,
+      VERD,
+      'stats sum(n) as n by verdict',
+    ]);
+  });
+
+  it('field groups, the verdict last; each aggregation re-aggregates its own column', () => {
+    expect(
+      verdictStats(
+        ['`a`', '`b`'],
+        [countOf('x', 'nx'), sumOf('x', 'sx'), minOf('t', 'first'), maxOf('t', 'last')]
+      )
+    ).toEqual([
+      `stats count() as n, count(\`x\`) as nx, sum(\`x\`) as sx, min(\`t\`) as first, max(\`t\`) as last by \`a\`, \`b\`, ${VKEYS}`,
+      VERD,
+      'stats sum(n) as n, sum(nx) as nx, sum(sx) as sx, min(first) as first, max(last) as last by `a`, `b`, verdict',
+    ]);
+  });
+
+  it('the verdict where VERDICT marks it, and a raw verdict field grouped by only once', () => {
+    expect(
+      verdictStats(['`a`', VERDICT, '`attributes.gen_ai.evaluation.score.label`', '`b`'])
+    ).toEqual([
+      'stats count() as n by `a`, `attributes.error.type`, `attributes.gen_ai.evaluation.score.label`, `b`',
+      VERD,
+      'stats sum(n) as n by `a`, verdict, `attributes.gen_ai.evaluation.score.label`, `b`',
+    ]);
+  });
+
+  it('a span bucket is re-grouped by its name', () => {
+    expect(verdictStats(['span(`@timestamp`, 1h) as t'])).toEqual([
+      `stats count() as n by span(\`@timestamp\`, 1h) as t, ${VKEYS}`,
+      VERD,
+      'stats sum(n) as n by t, verdict',
+    ]);
+  });
+
+  it('verdict filters are conditions on the raw fields (as the verdict rule)', () => {
+    expect(verdictCond('error')).toBe(W_ERROR);
+    expect(verdictCond('pass')).toBe(W_PASS);
+    expect(verdictCond('fail')).toBe(W_FAIL);
+    expect(verdictCond('scored')).toBe(W_SCORED);
+    expect(buildResultsCountQuery(I, { ...NONE, verdicts: ['error', 'pass'] })).toBe(
+      [...BASE, `where (${W_ERROR}) or (${W_PASS})`, 'stats count() as total'].join(' | ')
+    );
+  });
+
+  it('no builder runs an eval before an aggregation or a filter', () => {
+    const F_ALL = { ...NONE, verdicts: ['pass', 'fail', 'scored', 'error'] };
+    const runs = { agents: ['a'], suites: ['s'], q: 'x' };
+    const queries = [
+      buildAgentsQuery(I, 'all', 'x'),
+      buildAgentEvaluationsQuery(I, 'a', 'offline'),
+      buildAgentTrendQuery(I, 'a', 'all', '1h'),
+      buildAgentSuitesQuery(I, 'a'),
+      buildSuiteRunsQuery(I, 's'),
+      buildSuiteRunCasesQuery(I, 's'),
+      buildEvalRunsQuery(I, runs),
+      buildEvalRunCasesQuery(I, runs),
+      buildRunCasesQuery(I, 'r'),
+      buildCompareRunsQuery(I, 'a', 'b'),
+      buildTracesTallyQuery(I, ['t'], true),
+      buildResultsPageQuery(I, F_ALL, DEFAULT_RESULTS_SORT, 0),
+      buildResultsCountQuery(I, F_ALL),
+      buildFacetQuery(I, F_ALL, 'verdicts'),
+      buildFacetQuery(I, F_ALL, 'names'),
+    ];
+    queries.forEach((q) => {
+      const commands = q.split(' | ');
+      const firstStats = commands.findIndex((c) => c.startsWith('stats '));
+      commands.forEach((c, i) => {
+        if (c.startsWith('eval ')) expect(firstStats >= 0 && i > firstStats).toBe(true);
+      });
+      expect(q).not.toContain('where verdict');
+    });
   });
 });

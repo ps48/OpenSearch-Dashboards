@@ -3,14 +3,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Dataset } from '../../../../data/common';
+import { DataPublicPluginStart } from '../../../../data/public';
+import { useOpenSearchDashboards } from '../../../../opensearch_dashboards_react/public';
+import { PPLService } from '../pages/traces/trace_details/data_fetching/ppl_request_helpers';
 import {
   isExecuteToolSpan,
   previewSpanInput,
   previewSpanOutput,
   readAttribute,
 } from '../pages/traces/hooks/genai_message_preview';
-import { AI_ROOT_FIELD, aiRootsOf, isGenAiSpanDocument } from '../utils/ai_root';
+import {
+  AI_ROOT_FIELD,
+  aiRootsOf,
+  ensureAiRootFieldChecked,
+  hasAiRootField,
+  isAiRootFieldChecked,
+  isGenAiSpanDocument,
+  useAiRootFieldVersion,
+} from '../utils/ai_root';
 import { PplRecord, get, str } from './eval_model';
 import {
   SF,
@@ -167,13 +179,72 @@ export const useJudgedSpans = (targets: JudgedTarget[]): SpanIOState => {
   };
 };
 
-/** A session's turns (its root spans, oldest first); no id: nothing runs. */
+/**
+ * Whether the span index maps the AI-root marker, checked once per dataset as Agent Traces does
+ * (`ensureAiRootFieldChecked`, shared cache); undefined until the check answered. No dataset:
+ * nothing runs.
+ */
+export const useAiRootMarker = (
+  dataset: Dataset | undefined,
+  enabled = true
+): boolean | undefined => {
+  const { services } = useOpenSearchDashboards<{ data: DataPublicPluginStart }>();
+  const data = services?.data;
+  // Re-renders when a check changes what is known (here or in Agent Traces).
+  useAiRootFieldVersion();
+  const key = enabled && dataset ? `${dataset.id}|${dataset.title}` : undefined;
+  const [checked, setChecked] = useState<string>();
+  useEffect(() => {
+    if (!key || !dataset) return;
+    let live = true;
+    const ppl = data ? new PPLService(data) : undefined;
+    ensureAiRootFieldChecked(ppl, dataset, `source = ${dataset.title}`).finally(() => {
+      if (live) setChecked(key);
+    });
+    return () => {
+      live = false;
+    };
+    // The dataset is identified by its id and title (in `key`).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, key]);
+  if (!key) return undefined;
+  // Known already (a recent check here or in Agent Traces), or nothing to check with.
+  if (checked !== key && data && !isAiRootFieldChecked(dataset?.id)) return undefined;
+  return hasAiRootField(dataset?.id);
+};
+
+/**
+ * One turn per trace among `buildSessionRootsQuery` rows (oldest first): the trace's AI root by
+ * the Agent Traces rule (`aiRootsOf`): its GenAI or marked root, else its earliest marked span.
+ */
+export const sessionTurnsOf = (rows: PplRecord[]): PplRecord[] => {
+  const byTrace = new Map<string, PplRecord[]>();
+  rows.forEach((row) => {
+    const traceId = str(get(row, SF.traceId)) ?? '';
+    byTrace.set(traceId, [...(byTrace.get(traceId) ?? []), row]);
+  });
+  return [...byTrace.values()]
+    .map((traceRows) => aiRootSpanOf(traceRows))
+    .filter((row): row is PplRecord => !!row)
+    .sort((a, b) =>
+      String(get(a, SF.startTime) ?? '').localeCompare(String(get(b, SF.startTime) ?? ''))
+    );
+};
+
+/**
+ * A session's turns (one AI-root span per trace, oldest first); no id: nothing runs. The query
+ * waits for the AI-root marker check, so it names the marker only when it is mapped.
+ */
 export const useSessionTurns = (
   conversationId?: string
 ): { turns: SpanIO[]; loading: boolean; loaded: boolean; error?: string } => {
   const { spans, refreshKey } = useEvalContext();
-  const query = conversationId ? buildSessionRootsQuery(spans.title, conversationId) : undefined;
+  const marker = useAiRootMarker(spans, !!conversationId);
+  const query =
+    conversationId && marker !== undefined
+      ? buildSessionRootsQuery(spans.title, conversationId, marker)
+      : undefined;
   const { rows, loading, loaded, error } = usePplRows(spans, query, undefined, refreshKey);
-  const turns = useMemo(() => rows.map(spanIOOf), [rows]);
-  return { turns, loading, loaded, error };
+  const turns = useMemo(() => sessionTurnsOf(rows).map(spanIOOf), [rows]);
+  return { turns, loading: loading || (!!conversationId && marker === undefined), loaded, error };
 };

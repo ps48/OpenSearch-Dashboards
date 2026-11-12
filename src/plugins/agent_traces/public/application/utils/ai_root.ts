@@ -24,9 +24,11 @@ export const GENAI_ROOT_CONDITION = `parentSpanId = "" AND isnotnull(${OPERATION
  * known to be in the index mapping: PPL rejects a query that names an unmapped field.
  */
 export const aiRootCondition = (datasetId: string | undefined): string =>
-  hasAiRootField(datasetId)
-    ? `(${GENAI_ROOT_CONDITION}) OR ${AI_ROOT_FIELD_PPL} = true`
-    : GENAI_ROOT_CONDITION;
+  aiRootConditionOf(hasAiRootField(datasetId));
+
+/** The AI-root condition, naming the marker only when the caller knows it is mapped. */
+export const aiRootConditionOf = (markerMapped: boolean): string =>
+  markerMapped ? `(${GENAI_ROOT_CONDITION}) OR ${AI_ROOT_FIELD_PPL} = true` : GENAI_ROOT_CONDITION;
 
 /** Whether a span document is marked as an AI root. */
 export const isMarkedAiRoot = (source: Record<string, unknown> | undefined): boolean => {
@@ -144,6 +146,12 @@ const isFieldNotFound = (error: unknown): boolean => {
 
 export const hasAiRootField = (datasetId: string | undefined): boolean =>
   !!datasetId && !!checks.get(datasetId)?.present;
+
+/** Whether the marker check of a dataset answered recently (`hasAiRootField` is current). */
+export const isAiRootFieldChecked = (datasetId: string | undefined): boolean => {
+  const cached = datasetId ? checks.get(datasetId) : undefined;
+  return !!cached && Date.now() - cached.at < CHECK_TTL_MS;
+};
 
 export interface PPLRunner {
   executeQuery(dataset: Dataset, pplQuery: string): Promise<unknown>;

@@ -554,6 +554,32 @@ describe('ResultFlyout', () => {
     expect(screen.queryByTestId('agtEvlJudgeContext')).not.toBeInTheDocument();
   });
 
+  it('Evaluator: the evaluator name, else its type, else a dash; never the instrumentation scope', () => {
+    const withEvaluator = (evaluator?: Record<string, string>) =>
+      recordToResult({
+        '@timestamp': '2026-10-28 07:00:01',
+        traceId: 'trace1',
+        instrumentationScope: { name: 'opensearch-genai-observability-sdk-py' },
+        attributes: {
+          gen_ai: { evaluation: { name: 'helpfulness', score: { label: 'pass' } } },
+          ...(evaluator ? { opensearch: { gen_ai: { evaluation: { evaluator } } } } : {}),
+        },
+      });
+    renderFlyout(withEvaluator({ name: 'helpfulness_judge', type: 'llm_judge' }));
+    let row = screen.getByTestId('agtEvlFlyoutEvaluator');
+    expect(row).toHaveTextContent('helpfulness_judge');
+    expect(row).toHaveTextContent('llm_judge');
+    cleanup();
+    renderFlyout(withEvaluator({ type: 'llm_judge' }));
+    row = screen.getByTestId('agtEvlFlyoutEvaluator');
+    expect(row.textContent?.trim()).toBe('llm_judge');
+    cleanup();
+    renderFlyout(withEvaluator());
+    row = screen.getByTestId('agtEvlFlyoutEvaluator');
+    expect(row.textContent?.trim()).toBe('\u2014');
+    expect(row).not.toHaveTextContent('opensearch-genai-observability-sdk-py');
+  });
+
   it('promptLabel joins the prompt name and version', () => {
     expect(promptLabel({ promptName: 'p', promptVersion: '2' })).toBe('p@2');
     expect(promptLabel({ promptName: 'p' })).toBe('p');

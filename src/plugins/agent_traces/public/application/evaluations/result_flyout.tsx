@@ -680,9 +680,12 @@ export const ResultFlyout: React.FC<{
     {
       title: i18n.translate('agentTraces.evals.flyout.evaluator', { defaultMessage: 'Evaluator' }),
       description: (
-        <span>
-          {r.evaluatorName ?? r.scope ?? DASH}{' '}
-          {r.evaluatorType && <EuiBadge color="hollow">{r.evaluatorType}</EuiBadge>}
+        // The evaluator's name, else its type; never the instrumentation scope (the SDK's name).
+        <span data-test-subj="agtEvlFlyoutEvaluator">
+          {r.evaluatorName ?? r.evaluatorType ?? DASH}{' '}
+          {r.evaluatorName && r.evaluatorType && (
+            <EuiBadge color="hollow">{r.evaluatorType}</EuiBadge>
+          )}
         </span>
       ),
     },

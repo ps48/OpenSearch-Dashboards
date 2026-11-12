@@ -19,6 +19,8 @@
  * (`opensearch.gen_ai.evaluation.*`, `opensearch.test.case.*`).
  */
 
+import { AI_ROOT_FIELD, aiRootConditionOf } from '../utils/ai_root';
+
 export const EVAL_EVENT = 'gen_ai.evaluation.result';
 
 /**
@@ -111,6 +113,81 @@ export const VERDICT_EVAL = `eval verdict = case(isnotnull(${fld(F.errorType)}),
   F.label
 )} = 'pass', 'pass', ${fld(F.label)} = 'fail', 'fail' else 'scored')`;
 
+/**
+ * An aggregation of `verdictStats`: `first` runs on the result documents, `then` re-aggregates
+ * its column per verdict (counts and sums add up, min and max compose).
+ */
+export interface VerdictAgg {
+  first: string;
+  then: string;
+}
+
+export const countOf = (f: string, as: string): VerdictAgg => ({
+  first: `count(${fld(f)}) as ${as}`,
+  then: `sum(${as}) as ${as}`,
+});
+export const sumOf = (f: string, as: string): VerdictAgg => ({
+  first: `sum(${fld(f)}) as ${as}`,
+  then: `sum(${as}) as ${as}`,
+});
+export const minOf = (f: string, as: string): VerdictAgg => ({
+  first: `min(${fld(f)}) as ${as}`,
+  then: `min(${as}) as ${as}`,
+});
+export const maxOf = (f: string, as: string): VerdictAgg => ({
+  first: `max(${fld(f)}) as ${as}`,
+  then: `max(${as}) as ${as}`,
+});
+
+/** Where `verdictStats` groups by the verdict (else last). */
+export const VERDICT = 'verdict';
+
+/** The raw fields the verdict is computed from, grouped by before the verdict exists. */
+const VERDICT_KEYS = [fld(F.errorType), fld(F.label)];
+
+/**
+ * `stats count() as n, <aggs> by <groups>, verdict`, stats first: PPL runs an `eval` before a
+ * `stats` or `where` as a script on the documents, which fails (and silently drops their results)
+ * on the indices behind the pattern that do not map a field it names. So the documents are grouped
+ * by the raw `error.type` and `score.label` too (a missing value is a null group), the verdict is
+ * computed on those rows, and they are re-aggregated by verdict. `groups` are PPL group
+ * expressions (`` `field` `` or `span(...) as t`); `VERDICT` marks where the verdict goes.
+ */
+export const verdictStats = (groups: string[], aggs: VerdictAgg[] = []): string[] => {
+  const at = groups.includes(VERDICT) ? groups : [...groups, VERDICT];
+  const firstBy = at.flatMap((g) =>
+    g === VERDICT ? VERDICT_KEYS.filter((k) => !groups.includes(k)) : [g]
+  );
+  const thenBy = at.map((g) => g.replace(/^.* as (\w+)$/, '$1'));
+  const list = (head: string, more: string[]) => [head, ...more].join(', ');
+  return [
+    `stats ${list(
+      'count() as n',
+      aggs.map((a) => a.first)
+    )} by ${firstBy.join(', ')}`,
+    VERDICT_EVAL,
+    `stats ${list(
+      'sum(n) as n',
+      aggs.map((a) => a.then)
+    )} by ${thenBy.join(', ')}`,
+  ];
+};
+
+/** `where` conditions on the raw fields that select one verdict (as `VERDICT_EVAL`). */
+export const verdictCond = (verdict: string): string => {
+  const err = fld(F.errorType);
+  const label = fld(F.label);
+  switch (verdict) {
+    case 'error':
+      return `isnotnull(${err})`;
+    case 'pass':
+    case 'fail':
+      return `${label} = ${quote(verdict)} and isnull(${err})`;
+    default:
+      return `isnull(${err}) and (isnull(${label}) or (${label} != 'pass' and ${label} != 'fail'))`;
+  }
+};
+
 const base = (index: string) => [
   `source = ${index}`,
   `where ${fld(F.eventName)} = '${EVAL_EVENT}'`,
@@ -155,14 +232,10 @@ export const buildAgentsQuery = (index: string, source: EvalSource, q = ''): str
     ...base(index),
     ...sourceWhere(source),
     ...(q.trim() ? [like(F.agentName, q.trim())] : []),
-    VERDICT_EVAL,
-    `stats count() as n, min(${fld(F.time)}) as first, max(${fld(F.time)}) as last by ${[
-      F.agentName,
-      F.agentVersion,
-      F.name,
-    ]
-      .map(fld)
-      .join(', ')}, verdict`,
+    ...verdictStats([F.agentName, F.agentVersion, F.name].map(fld), [
+      minOf(F.time, 'first'),
+      maxOf(F.time, 'last'),
+    ]),
     head,
   ]);
 
@@ -181,15 +254,26 @@ export const buildAgentEvaluationsQuery = (
     ...base(index),
     agentWhere(agent),
     ...sourceWhere(source),
-    VERDICT_EVAL,
-    `stats count() as n, count(${fld(F.value)}) as nv, avg(${fld(
-      F.value
-    )}) as avg_score, min(${fld(F.time)}) as first, max(${fld(F.time)}) as last by ${fld(
-      F.name
-    )}, ${fld(F.agentVersion)}, verdict, ${fld(F.label)}, ${fld(F.scoreDirection)}${
-      // Offline: by run too, so each version can be read at its latest run.
-      source === 'offline' ? `, ${fld(F.runId)}` : ''
-    }`,
+    ...verdictStats(
+      [
+        fld(F.name),
+        fld(F.agentVersion),
+        VERDICT,
+        fld(F.label),
+        fld(F.scoreDirection),
+        // Offline: by run too, so each version can be read at its latest run.
+        ...(source === 'offline' ? [fld(F.runId)] : []),
+      ],
+      [
+        countOf(F.value, 'nv'),
+        sumOf(F.value, 'sum_score'),
+        minOf(F.time, 'first'),
+        maxOf(F.time, 'last'),
+      ]
+    ),
+    // The average from the sums (averages do not re-aggregate).
+    'eval avg_score = sum_score / nv',
+    'fields - sum_score',
     head,
   ]);
 
@@ -204,9 +288,8 @@ export const buildAgentTrendQuery = (
     ...base(index),
     agentWhere(agent),
     ...sourceWhere(source),
-    VERDICT_EVAL,
-    `where verdict = 'pass' or verdict = 'fail'`,
-    `stats count() as n by span(${fld(F.time)}, ${step}) as t, ${fld(F.agentVersion)}, verdict`,
+    `where (${verdictCond('pass')}) or (${verdictCond('fail')})`,
+    ...verdictStats([`span(${fld(F.time)}, ${step}) as t`, fld(F.agentVersion)]),
     head,
   ]);
 
@@ -216,36 +299,33 @@ export const buildAgentSuitesQuery = (index: string, agent: string): string =>
     ...base(index),
     agentWhere(agent),
     `where isnotnull(${fld(F.runId)})`,
-    VERDICT_EVAL,
-    `stats count() as n, min(${fld(F.time)}) as started by ${fld(F.suiteName)}, ${fld(
-      F.runId
-    )}, ${fld(F.agentVersion)}, verdict`,
+    ...runsStats([F.suiteName, F.runId, F.agentVersion]),
     head,
   ]);
 
 // ---------------------------------------------------------------------- Suite page
 
 /** The runs aggregation: results and first result time per run (and `by`) and verdict. */
-const runsStats = (by: string[]) =>
-  `stats count() as n, min(${fld(F.time)}) as started by ${by.map(fld).join(', ')}, verdict`;
+const runsStats = (by: string[]) => verdictStats(by.map(fld), [minOf(F.time, 'started')]);
 
 export const buildSuiteRunsQuery = (index: string, suite: string): string =>
   join([
     ...base(index),
     `where ${fld(F.suiteName)} = ${quote(suite)}`,
-    VERDICT_EVAL,
-    runsStats([F.runId, F.agentName, F.agentVersion]),
+    ...runsStats([F.runId, F.agentName, F.agentVersion]),
     head,
   ]);
 
 /**
  * Cases passed per run: a case passes when one of its results passed and none failed or
- * errored (as `caseStatusOf`). Two aggregations (per case, then per run): one row per run.
+ * errored (as `caseStatusOf`). Aggregations per case (on the raw fields, stats first, as
+ * `verdictStats`), then per run: one row per run.
  */
 const runCasesStats = [
-  `eval bad = if(isnotnull(${fld(F.errorType)}) or ${fld(F.label)} = 'fail', 1, 0), good = if(${fld(
+  `stats count() as n by ${[F.runId, F.caseId, F.errorType, F.label].map(fld).join(', ')}`,
+  `eval bad = if(isnotnull(${fld(F.errorType)}) or ${fld(F.label)} = 'fail', n, 0), good = if(${fld(
     F.label
-  )} = 'pass', 1, 0)`,
+  )} = 'pass', n, 0)`,
   `stats sum(bad) as bad, sum(good) as good by ${fld(F.runId)}, ${fld(F.caseId)}`,
   'eval ok = if(bad = 0 and good > 0, 1, 0)',
   `stats count() as cases, sum(ok) as passed by ${fld(F.runId)}`,
@@ -297,8 +377,7 @@ export const buildEvalRunsQuery = (index: string, filters: RunsFilters): string 
   join([
     ...base(index),
     ...runsFiltersWhere(filters),
-    VERDICT_EVAL,
-    runsStats([F.runId, F.suiteName, F.agentName, F.agentVersion]),
+    ...runsStats([F.runId, F.suiteName, F.agentName, F.agentVersion]),
     'sort - started',
     head,
   ]);
@@ -399,17 +478,14 @@ export const buildRunCasesQuery = (index: string, runId: string): string =>
   join([
     ...base(index),
     `where ${runsWhere([runId])}`,
-    VERDICT_EVAL,
-    `stats count() as n, min(${fld(F.time)}) as t0, max(${fld(F.time)}) as t1 by ${[
-      F.runId,
-      F.suiteName,
-      F.agentName,
-      F.agentVersion,
-      F.caseId,
-      F.name,
-    ]
-      .map(fld)
-      .join(', ')}, verdict, ${fld(F.traceId)}`,
+    ...verdictStats(
+      [
+        ...[F.runId, F.suiteName, F.agentName, F.agentVersion, F.caseId, F.name].map(fld),
+        VERDICT,
+        fld(F.traceId),
+      ],
+      [minOf(F.time, 't0'), maxOf(F.time, 't1')]
+    ),
     head,
   ]);
 
@@ -434,17 +510,14 @@ export const buildCompareRunsQuery = (index: string, runA: string, runB: string)
   join([
     ...base(index),
     `where ${fld(F.runId)} = ${quote(runA)} or ${fld(F.runId)} = ${quote(runB)}`,
-    VERDICT_EVAL,
-    `stats count() as n, min(${fld(F.time)}) as started by ${[
-      F.runId,
-      F.suiteName,
-      F.agentName,
-      F.agentVersion,
-      F.caseId,
-      F.name,
-    ]
-      .map(fld)
-      .join(', ')}, verdict, ${fld(F.traceId)}`,
+    ...verdictStats(
+      [
+        ...[F.runId, F.suiteName, F.agentName, F.agentVersion, F.caseId, F.name].map(fld),
+        VERDICT,
+        fld(F.traceId),
+      ],
+      [minOf(F.time, 'started')]
+    ),
     head,
   ]);
 
@@ -486,13 +559,36 @@ export const buildAiRootCandidatesQuery = (spansIndex: string, traceId: string):
     `head ${AI_ROOT_CANDIDATES_LIMIT}`,
   ]);
 
-/** The root spans of a session (`gen_ai.conversation.id`), oldest first: its turns. */
-export const buildSessionRootsQuery = (spansIndex: string, conversationId: string): string =>
+/**
+ * The turns of a session (`gen_ai.conversation.id`), oldest first: its spans that are AI roots by
+ * the Agent Traces rule (`aiRootConditionOf`): a GenAI span without a parent, or a span marked
+ * `derived.gen_ai.is_root`. The marker is named only when the span index maps it
+ * (`markerMapped`, checked as Agent Traces does): PPL rejects a query on an unmapped field. The
+ * browser keeps one span per trace (`sessionTurnsOf`).
+ */
+export const buildSessionRootsQuery = (
+  spansIndex: string,
+  conversationId: string,
+  markerMapped = false
+): string =>
   join([
     `source = ${spansIndex}`,
-    `where ${fld(SF.conversationId)} = ${quote(conversationId)} and ${fld(SF.parentSpanId)} = ''`,
+    `where ${fld(SF.conversationId)} = ${quote(conversationId)} and (${aiRootConditionOf(
+      markerMapped
+    )})`,
     `sort ${fld(SF.startTime)}`,
-    `fields ${[SF.traceId, SF.startTime, SF.input, SF.output].map(fld).join(', ')}`,
+    `fields ${[
+      SF.traceId,
+      SF.spanId,
+      SF.parentSpanId,
+      SF.startTime,
+      SF.operation,
+      ...(markerMapped ? [AI_ROOT_FIELD] : []),
+      SF.input,
+      SF.output,
+    ]
+      .map(fld)
+      .join(', ')}`,
     `head ${SESSION_TURNS_LIMIT}`,
   ]);
 
@@ -533,8 +629,7 @@ export const buildTracesTallyQuery = (index: string, traceIds: string[], bySpan 
   join([
     ...base(index),
     `where ${anyOf(F.traceId, traceIds)}`,
-    VERDICT_EVAL,
-    `stats count() as n by ${fld(F.traceId)}, ${bySpan ? `${fld(F.spanId)}, ` : ''}verdict`,
+    ...verdictStats([fld(F.traceId), ...(bySpan ? [fld(F.spanId)] : [])]),
     head,
   ]);
 
@@ -578,7 +673,7 @@ export const EMPTY_RESULTS_FILTERS: ResultsFilters = {
   q: '',
 };
 
-/** The `where` commands of the filters, without the verdict (it needs the `eval`). */
+/** The `where` commands of the filters, without the verdict (`verdictWhere`). */
 const resultsWhere = (f: ResultsFilters, except?: Facet): string[] => {
   const out: string[] = [];
   if (f.lockAgent) out.push(agentWhere(f.lockAgent));
@@ -592,9 +687,16 @@ const resultsWhere = (f: ResultsFilters, except?: Facet): string[] => {
   return out;
 };
 
+/** The verdict filter, as conditions on the raw fields (an `eval` first would drop results). */
 const verdictWhere = (f: ResultsFilters, except?: Facet): string[] =>
   f.verdicts.length && except !== 'verdicts'
-    ? [VERDICT_EVAL, `where ${f.verdicts.map((v) => `verdict = ${quote(v)}`).join(' or ')}`]
+    ? [
+        `where ${
+          f.verdicts.length > 1
+            ? f.verdicts.map((v) => `(${verdictCond(v)})`).join(' or ')
+            : verdictCond(f.verdicts[0])
+        }`,
+      ]
     : [];
 
 /** One page of result documents, sorted and paged on the server. */
@@ -624,19 +726,12 @@ export const buildResultsCountQuery = (index: string, filters: ResultsFilters): 
 /** A filter menu's values (top 50 with counts), with the other filters applied. */
 export const buildFacetQuery = (index: string, filters: ResultsFilters, facet: Facet): string => {
   const by =
-    facet === 'agents'
-      ? fld(F.agentName)
-      : facet === 'names'
-        ? fld(F.name)
-        : facet === 'versions'
-          ? fld(F.agentVersion)
-          : 'verdict';
+    facet === 'agents' ? fld(F.agentName) : facet === 'names' ? fld(F.name) : fld(F.agentVersion);
   return join([
     ...base(index),
     ...resultsWhere(filters, facet),
     ...verdictWhere(filters, facet),
-    ...(facet === 'verdicts' ? [VERDICT_EVAL] : []),
-    `stats count() as n by ${by}`,
+    ...(facet === 'verdicts' ? verdictStats([]) : [`stats count() as n by ${by}`]),
     'sort - n',
     `head ${FACET_LIMIT}`,
   ]);

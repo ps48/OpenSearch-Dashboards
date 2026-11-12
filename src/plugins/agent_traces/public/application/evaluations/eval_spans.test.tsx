@@ -7,7 +7,14 @@ import React from 'react';
 import { renderHook } from '@testing-library/react';
 import { EvalContext } from './eval_context';
 import { fakePpl, testContext } from './eval_test_utils';
-import { aiRootSpanOf, spanIOOf, useJudgedSpans, useSessionTurns } from './eval_spans';
+import {
+  aiRootSpanOf,
+  sessionTurnsOf,
+  spanIOOf,
+  useJudgedSpans,
+  useSessionTurns,
+} from './eval_spans';
+import { resetAiRootFieldChecks, setAiRootFieldPresent } from '../utils/ai_root';
 import {
   buildAiRootCandidatesQuery,
   buildResultSpansQuery,
@@ -169,5 +176,54 @@ describe('span hooks', () => {
     const turns = renderHook(() => useSessionTurns('conv-1'), { wrapper });
     expect(mockPpl.queries).toContain(buildSessionRootsQuery('spans-*', 'conv-1'));
     expect(turns.result.current.turns.map((t) => t.traceId)).toEqual(['t1', 't2']);
+  });
+
+  it('useSessionTurns names the marker once the span index is known to map it', () => {
+    setAiRootFieldPresent(ctx.spans.id ?? '', true);
+    try {
+      mockPpl.answer(() => []);
+      renderHook(() => useSessionTurns('conv-1'), { wrapper });
+      expect(mockPpl.queries).toContain(buildSessionRootsQuery('spans-*', 'conv-1', true));
+    } finally {
+      resetAiRootFieldChecks();
+    }
+  });
+
+  it('sessionTurnsOf keeps one span per trace by the AI-root rule, oldest first', () => {
+    const OP = 'attributes.gen_ai.operation.name';
+    const MARK = 'attributes.derived.gen_ai.is_root';
+    const rows = [
+      // Trace a: a GenAI root and a marked child: the root wins.
+      {
+        traceId: 'a',
+        spanId: 'a1',
+        parentSpanId: '',
+        startTime: '2026-11-01 10:00:00',
+        [OP]: 'invoke_agent',
+      },
+      {
+        traceId: 'a',
+        spanId: 'a2',
+        parentSpanId: 'a1',
+        startTime: '2026-11-01 10:00:01',
+        [MARK]: true,
+      },
+      // Trace b: an agent behind an HTTP handler: two marked spans, the earliest wins.
+      {
+        traceId: 'b',
+        spanId: 'b2',
+        parentSpanId: 'h',
+        startTime: '2026-11-01 09:00:02',
+        [MARK]: true,
+      },
+      {
+        traceId: 'b',
+        spanId: 'b3',
+        parentSpanId: 'h',
+        startTime: '2026-11-01 09:00:05',
+        [MARK]: 'true',
+      },
+    ];
+    expect(sessionTurnsOf(rows).map((r) => r.spanId)).toEqual(['b2', 'a1']);
   });
 });
