@@ -92,6 +92,18 @@
   max-width: $euiSizeXXL * 14;
   margin: 0 auto;
   padding: $euiSizeL $euiSize;
+
+  // Shown as a table's empty message, which centers its text.
+  text-align: left;
+
+  pre,
+  code {
+    text-align: left;
+  }
+}
+
+.agtEvlQuickStart__text {
+  min-width: $euiSizeXXL * 6;
 }
 
 .agtEvlTally {

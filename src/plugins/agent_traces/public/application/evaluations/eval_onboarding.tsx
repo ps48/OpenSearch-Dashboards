@@ -171,8 +171,8 @@ export const CodingAgentQuickStart: React.FC<{ 'data-test-subj'?: string }> = (p
     data-test-subj={props['data-test-subj'] ?? 'agtEvlPromptQuickStart'}
   >
     <EuiFlexGroup gutterSize="m" alignItems="center" responsive={false} wrap>
-      <EuiFlexItem>
-        <EuiText size="s">
+      <EuiFlexItem className="agtEvlQuickStart__text">
+        <EuiText size="s" textAlign="left">
           <p>
             <strong>
               {i18n.translate('agentTraces.evalsOnboarding.quickStartTitle', {

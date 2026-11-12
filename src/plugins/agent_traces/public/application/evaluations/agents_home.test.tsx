@@ -122,7 +122,7 @@ describe('AgentsHome', () => {
     renderWithContext(<AgentsHome />);
     const empty = screen.getByTestId('agtEvlAgentsEmpty');
     expect(empty).toHaveTextContent('No evaluation results in the range: Last 7 days');
-    expect(empty).toHaveTextContent('pip install opensearch-genai-observability-sdk-py');
+    expect(empty).toHaveTextContent('pip install "opensearch-genai-observability-sdk-py>=0.3.0"');
     expect(screen.getByTestId('agtEvlQuickstart')).toHaveTextContent('Quickstart');
     expect(screen.getByTestId('agtEvlSuiteInCi')).toHaveTextContent('Run a test suite in CI');
     // The AgentCore import link is gone.
