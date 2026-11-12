@@ -71,9 +71,11 @@ const EVALS_BY_1 =
 const EVALS_BY_2 =
   '`attributes.gen_ai.evaluation.name`, `attributes.gen_ai.agent.version`, verdict, `attributes.gen_ai.evaluation.score.label`, `attributes.opensearch.gen_ai.evaluation.score.direction`';
 const EVALS_AGGS_1 =
-  'stats count() as n, count(`attributes.gen_ai.evaluation.score.value`) as nv, sum(`attributes.gen_ai.evaluation.score.value`) as sum_score, min(`@timestamp`) as first, max(`@timestamp`) as last by ';
+  'stats count() as n, count(`attributes.gen_ai.evaluation.score.value`) as nv, avg(`attributes.gen_ai.evaluation.score.value`) as sum_score_avg, min(`@timestamp`) as first, max(`@timestamp`) as last by ';
 const EVALS_AGGS_2 =
   'stats sum(n) as n, sum(nv) as nv, sum(sum_score) as sum_score, min(first) as first, max(last) as last by ';
+// The sum as avg * count per group: `sum()` drops decimals where the score is mapped as long.
+const EVALS_VERD = `${VERD}, sum_score = sum_score_avg * nv`;
 const EVALS_AVG = ['eval avg_score = sum_score / nv', 'fields - sum_score'];
 
 const RUN_STATS = [
@@ -125,7 +127,7 @@ describe('evaluation PPL', () => {
         ...BASE,
         "where `attributes.gen_ai.agent.name` = 'travel_planner'",
         EVALS_AGGS_1 + EVALS_BY_1,
-        VERD,
+        EVALS_VERD,
         EVALS_AGGS_2 + EVALS_BY_2,
         ...EVALS_AVG,
         'head 10000',
@@ -141,7 +143,7 @@ describe('evaluation PPL', () => {
         'where isnotnull(`attributes.test.suite.run.id`)',
         // Offline: by run too, so each version is read at its latest run.
         `${EVALS_AGGS_1}${EVALS_BY_1}, \`attributes.test.suite.run.id\``,
-        VERD,
+        EVALS_VERD,
         `${EVALS_AGGS_2}${EVALS_BY_2}, \`attributes.test.suite.run.id\``,
         ...EVALS_AVG,
         'head 10000',

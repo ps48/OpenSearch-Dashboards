@@ -119,6 +119,8 @@ export const VERDICT_EVAL = `eval verdict = case(isnotnull(${fld(F.errorType)}),
  */
 export interface VerdictAgg {
   first: string;
+  /** An `eval` assignment on the first stats' rows, before they are re-aggregated. */
+  mid?: string;
   then: string;
 }
 
@@ -128,6 +130,16 @@ export const countOf = (f: string, as: string): VerdictAgg => ({
 });
 export const sumOf = (f: string, as: string): VerdictAgg => ({
   first: `sum(${fld(f)}) as ${as}`,
+  then: `sum(${as}) as ${as}`,
+});
+/**
+ * The sum of a numeric field as `avg * count` per group, so it stays a double: `sum()` of a
+ * field mapped as `long` in some indices (whole-number scores without the template) drops the
+ * decimals of the others. `count` names the `countOf` of the same field.
+ */
+export const decimalSumOf = (f: string, as: string, count: string): VerdictAgg => ({
+  first: `avg(${fld(f)}) as ${as}_avg`,
+  mid: `${as} = ${as}_avg * ${count}`,
   then: `sum(${as}) as ${as}`,
 });
 export const minOf = (f: string, as: string): VerdictAgg => ({
@@ -165,7 +177,7 @@ export const verdictStats = (groups: string[], aggs: VerdictAgg[] = []): string[
       'count() as n',
       aggs.map((a) => a.first)
     )} by ${firstBy.join(', ')}`,
-    VERDICT_EVAL,
+    [VERDICT_EVAL, ...aggs.flatMap((a) => (a.mid ? [a.mid] : []))].join(', '),
     `stats ${list(
       'sum(n) as n',
       aggs.map((a) => a.then)
@@ -266,7 +278,7 @@ export const buildAgentEvaluationsQuery = (
       ],
       [
         countOf(F.value, 'nv'),
-        sumOf(F.value, 'sum_score'),
+        decimalSumOf(F.value, 'sum_score', 'nv'),
         minOf(F.time, 'first'),
         maxOf(F.time, 'last'),
       ]
