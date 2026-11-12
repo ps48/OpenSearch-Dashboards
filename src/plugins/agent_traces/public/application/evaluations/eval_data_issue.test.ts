@@ -76,6 +76,25 @@ describe('classifyDataIssue', () => {
     ).toBeUndefined();
   });
 
+  it('a data source error with 401 or 403 only in its text is not a sign-in problem', () => {
+    // A host:port, a count or an id that happens to read 401 / 403.
+    expect(
+      classifyDataIssue('Data Source Error: connect ECONNREFUSED 10.0.0.7:403', {
+        dataSource: true,
+      })?.kind
+    ).toBe('data-source');
+    expect(
+      classifyDataIssue('Data Source Error: request for run 401 failed after 403 ms', {
+        dataSource: true,
+      })?.kind
+    ).toBe('data-source');
+    expect(
+      classifyDataIssue('Data Source Error: {"statusCode":403,"error":"Forbidden"}', {
+        dataSource: true,
+      })?.kind
+    ).toBe('data-source-auth');
+  });
+
   it('a data source that cannot sign in: rejected or unreadable credentials', () => {
     // A 401 from the remote cluster, cast to 400 with its body (`createDataSourceError`).
     expect(

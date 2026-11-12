@@ -79,7 +79,7 @@ const DATA_SOURCE_ERROR = /Data Source Error|\[data-source\/[^\]]*\] not found/i
  * stored for another endpoint ("contaminated").
  */
 const DATA_SOURCE_AUTH =
-  /security_exception|unauthorized|authentication|credential|encrypt|contaminated|"status"\s*:\s*(401|403)|\b401\b|\b403\b/i;
+  /security_exception|unauthorized|forbidden|authentication|credential|encrypt|contaminated|"status(Code)?"\s*:\s*(401|403)/i;
 /** No connection to the cluster. A bare timeout (ETIMEDOUT) is not classified: it may pass. */
 const UNREACHABLE =
   /No Living connections|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|socket hang up|getaddrinfo/i;

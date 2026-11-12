@@ -68,7 +68,14 @@ export const fakePpl = () => {
       if (!query) return { rows: [], loading: false, loaded: false };
       queries.push(query);
       ranges.set(query, timeRange);
-      if (refreshKey > 0 && refreshing(query)) return { rows: [], loading: true, loaded: true };
+      // In flight again: the rows of the last answer (none after a failure), as usePplRows keeps them.
+      if (refreshKey > 0 && refreshing(query)) {
+        try {
+          return { rows: answer(query), loading: true, loaded: true };
+        } catch {
+          return { rows: [], loading: true, loaded: true };
+        }
+      }
       // An answer that throws is the query failing with that message.
       try {
         return { rows: answer(query), loading: false, loaded: true };
