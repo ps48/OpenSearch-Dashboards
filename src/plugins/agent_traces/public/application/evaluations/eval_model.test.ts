@@ -34,6 +34,8 @@ import {
   trendSeries,
   verdictOf,
   versionsOf,
+  EvalStat,
+  allErrored,
 } from './eval_model';
 import { NO_AGENT } from './ppl_queries';
 
@@ -637,5 +639,17 @@ describe('Eval runs compatibility', () => {
     // Runs without an agent name compare with each other; runs without a suite do not.
     expect(isCompatibleRun(run('a', 'g'), run('b', 'g'))).toBe(true);
     expect(isCompatibleRun(run('a'), run('b'))).toBe(false);
+  });
+});
+
+describe('allErrored', () => {
+  const stat = (n: number, error: number) =>
+    ({ tally: { n, error, pass: 0, fail: 0, scored: n - error } }) as unknown as EvalStat;
+  it('is true only when every version of the row has errors only', () => {
+    expect(allErrored({ b: stat(3, 3), a: stat(2, 2) })).toBe(true);
+    expect(allErrored({ b: stat(3, 3) })).toBe(true);
+    expect(allErrored({ b: stat(3, 3), a: stat(2, 1) })).toBe(false);
+    expect(allErrored({ b: stat(4, 1) })).toBe(false);
+    expect(allErrored({})).toBe(false);
   });
 });

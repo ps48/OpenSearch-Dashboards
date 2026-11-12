@@ -30,6 +30,7 @@ import {
   SuiteRow,
   VersionStat,
   agentEvaluations,
+  allErrored,
   agentSuites,
   defaultVersionPair,
   evaluationRows,
@@ -322,7 +323,8 @@ const EvaluationsTab: React.FC<{ agent: string }> = ({ agent }) => {
               </EuiBadge>
             </>
           )}
-          {!r.hasPassRule && (
+          {/* All errors: no score or label to describe, the errors badge says it. */}
+          {!r.hasPassRule && !allErrored(r) && (
             <>
               {' '}
               <EuiToolTip

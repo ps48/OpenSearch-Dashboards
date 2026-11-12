@@ -304,6 +304,15 @@ export interface EvaluationRow {
   delta?: number;
 }
 
+/**
+ * Every result of the row (in each version it has) is an evaluator error: there is no score, label
+ * or pass rule to describe, so the row shows its errors only.
+ */
+export const allErrored = (r: Pick<EvaluationRow, 'a' | 'b'>): boolean => {
+  const sides = [r.b, r.a].filter((s): s is EvalStat => !!s);
+  return sides.length > 0 && sides.every((s) => s.tally.n > 0 && s.tally.error === s.tally.n);
+};
+
 export interface AgentEvaluations {
   /** The agent across its evaluations (versions, totals) for the page's header. */
   summary?: AgentRow;

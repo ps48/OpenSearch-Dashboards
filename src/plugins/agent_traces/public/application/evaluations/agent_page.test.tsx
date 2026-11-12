@@ -235,6 +235,37 @@ describe('AgentPage', () => {
     );
   });
 
+  it('Score only / Label: not on an evaluation whose results all errored', () => {
+    mockPpl.answer((q) =>
+      q.includes('avg_score')
+        ? [
+            // All errored in both versions: the errors badge only.
+            evalRow('faithfulness', 'v1', 'error', 2, 25),
+            evalRow('faithfulness', 'v2', 'error', 3, 28),
+            // Errors and scores, no pass rule: Score only stays.
+            evalRow('latency', 'v1', 'scored', 4, 25, { nv: 4, avg_score: 2.5 }),
+            evalRow('latency', 'v2', 'scored', 4, 28, { nv: 4, avg_score: 2.0 }),
+            evalRow('latency', 'v2', 'error', 1, 28),
+            // Pass and fail: no badge.
+            evalRow('accuracy', 'v1', 'pass', 3, 25),
+            evalRow('accuracy', 'v2', 'pass', 3, 28),
+            evalRow('accuracy', 'v2', 'fail', 1, 28),
+          ]
+        : []
+    );
+    renderWithContext(<AgentPage agent="tp" tab="evaluations" />);
+    const faith = screen.getByTestId('agtEvlEvalRow-faithfulness');
+    expect(within(faith).queryByTestId('agtEvlNoPassRule')).not.toBeInTheDocument();
+    expect(within(faith).getByTestId('agtEvlEvalErrors-faithfulness')).toHaveTextContent(
+      '3 errors'
+    );
+    const latency = screen.getByTestId('agtEvlEvalRow-latency');
+    expect(within(latency).getByTestId('agtEvlNoPassRule')).toHaveTextContent('Score only');
+    expect(within(latency).getByTestId('agtEvlEvalErrors-latency')).toHaveTextContent('1 error');
+    const accuracy = screen.getByTestId('agtEvlEvalRow-accuracy');
+    expect(within(accuracy).queryByTestId('agtEvlNoPassRule')).not.toBeInTheDocument();
+  });
+
   it('an evaluation with evaluator errors in B has a badge that opens them', () => {
     mockPpl.answer((q) =>
       q.includes('avg_score')
