@@ -88,24 +88,6 @@
   }
 }
 
-.agtEvlSnippet {
-  max-width: $euiSizeXXL * 14;
-  margin: 0 auto;
-  padding: $euiSizeL $euiSize;
-
-  // Shown as a table's empty message, which centers its text.
-  text-align: left;
-
-  pre,
-  code {
-    text-align: left;
-  }
-}
-
-.agtEvlQuickStart__text {
-  min-width: $euiSizeXXL * 6;
-}
-
 .agtEvlTally {
   display: inline-flex;
   gap: $euiSizeS;
@@ -465,4 +447,12 @@
     flex: 1 1 auto;
     margin: 0;
   }
+}
+
+// The Agents empty state: centered, wide enough for its one-line SDK sentence.
+.agtEvlAgentsEmpty {
+  max-width: $euiSizeXXL * 16;
+  margin: 0 auto;
+  padding: $euiSizeXL $euiSize;
+  text-align: center;
 }

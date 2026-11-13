@@ -16,6 +16,7 @@ import {
   SdkLinks,
 } from './eval_onboarding';
 import { AgentsEmptyState, DataIssuePrompt, NoEvalsDatasetPrompt } from './eval_empty_states';
+import { EvalContext, defaultEvalContext } from './eval_context';
 import { CODING_AGENT_PROMPT } from './coding_agent_prompt';
 import { EvalGettingStartedButton, EvalHeader, ExperimentalBadge } from './eval_header';
 
@@ -68,12 +69,16 @@ describe('Screenshot and links', () => {
 });
 
 describe('GettingStartedModal', () => {
-  it('offers the coding agent prompt first: in the footer on every step and atop the first', () => {
+  it('offers the coding agent prompt in the footer on every step, described once on the first', () => {
     withServices(<GettingStartedModal onClose={jest.fn()} />);
     expect(screen.getByTestId('agtEvlGettingStarted')).toHaveClass('agtEvlTourModal');
-    expect(
-      within(screen.getByTestId('agtEvlTourScreen-what')).getByTestId('agtEvlTourQuickStart')
-    ).toHaveTextContent('Copy prompt for your coding agent');
+    const what = screen.getByTestId('agtEvlTourScreen-what');
+    // One copy button on the first step (the footer's); its description sits at the bottom.
+    expect(screen.getAllByText('Copy prompt for your coding agent')).toHaveLength(1);
+    expect(within(what).getByTestId('agtEvlTourQuickStart')).toHaveTextContent(
+      'Quickest start: let your coding agent do it.'
+    );
+    expect(what.lastElementChild).toBe(within(what).getByTestId('agtEvlTourQuickStart'));
     STEPS.forEach((id, i) => {
       if (i > 0) fireEvent.click(screen.getByTestId('agtEvlTourNext'));
       expect(screen.getByTestId(`agtEvlTourScreen-${id}`)).toBeInTheDocument();
@@ -222,11 +227,19 @@ describe('NoEvalsDatasetPrompt', () => {
     );
   });
 
-  it('the Agents empty state (no results) offers the prompt at its top', () => {
-    withServices(<AgentsEmptyState range="Last 24 hours" />);
-    expect(
-      within(screen.getByTestId('agtEvlAgentsEmpty')).getByTestId('agtEvlCopyPromptQuickStart')
-    ).toBeInTheDocument();
+  it('the Agents empty state (no results): Getting started and the coding agent prompt', () => {
+    const openGettingStarted = jest.fn();
+    withServices(
+      <EvalContext.Provider
+        value={{ ...defaultEvalContext('otel-v1-genai-evaluation*', ''), openGettingStarted }}
+      >
+        <AgentsEmptyState range="Last 24 hours" />
+      </EvalContext.Provider>
+    );
+    const empty = screen.getByTestId('agtEvlAgentsEmpty');
+    expect(within(empty).getByTestId('agtEvlAgentsEmptyCopyPrompt')).toBeInTheDocument();
+    fireEvent.click(within(empty).getByTestId('agtEvlAgentsEmptyGettingStarted'));
+    expect(openGettingStarted).toHaveBeenCalled();
   });
 
   it('shows a lookup error', () => {

@@ -9,7 +9,6 @@ import {
   EuiButtonEmpty,
   EuiCallOut,
   EuiCode,
-  EuiCodeBlock,
   EuiEmptyPrompt,
   EuiFlexGrid,
   EuiFlexGroup,
@@ -23,8 +22,8 @@ import {
 import { i18n } from '@osd/i18n';
 import { FormattedMessage } from '@osd/i18n/react';
 import type { DataIssue } from './eval_data_issue';
+import { useEvalContext } from './eval_context';
 import {
-  CodingAgentQuickStart,
   CopyCodingAgentPromptButton,
   EvalScreenshot,
   OnlineOfflineCards,
@@ -38,63 +37,55 @@ export const AI_OBSERVABILITY_DOCS_URL =
 export const EVALS_QUICKSTART_URL = `${AGENT_EVALS_DOCS_URL}quickstart/`;
 export const EVALS_CI_URL = `${AGENT_EVALS_DOCS_URL}ci/`;
 
-export const SDK_SNIPPET = `pip install "opensearch-genai-observability-sdk-py>=0.3.0"
-
-from opensearch_genai_observability_sdk_py import register, score
-register(agent_name="travel_planner", agent_version="v3")
-score(name="answer_quality", value=4, score_min=1, score_max=5,
-      threshold=4, explanation="Used the tool results.")`;
-
-/** The Agents home with no results in the range: how to send them (SDK snippet, links). */
-export const AgentsEmptyState: React.FC<{ range: string }> = ({ range }) => (
-  <div className="agtEvlSnippet" data-test-subj="agtEvlAgentsEmpty">
-    <EuiText size="s" textAlign="left">
-      <h3>
-        {i18n.translate('agentTraces.evalsEmpty.agentsTitle', {
-          defaultMessage: 'No evaluation results in the range: {range}',
-          values: { range },
-        })}
-      </h3>
-      <p className="agtEvlDim">
-        {i18n.translate('agentTraces.evalsEmpty.agentsLead', {
-          defaultMessage: 'Results appear here a few seconds after your code sends them.',
-        })}
-      </p>
-    </EuiText>
-    <EuiSpacer size="s" />
-    <CodingAgentQuickStart />
-    <EuiSpacer size="m" />
-    <EuiText size="s" textAlign="left">
-      <p className="agtEvlDim">
-        {i18n.translate('agentTraces.evalsEmpty.agentsBody', {
-          defaultMessage: 'Or add the OpenSearch GenAI SDK yourself:',
-        })}
-      </p>
-    </EuiText>
-    <EuiCodeBlock language="python" fontSize="s" paddingSize="s" isCopyable>
-      {SDK_SNIPPET}
-    </EuiCodeBlock>
-    <EuiSpacer size="s" />
-    <EuiText size="s" textAlign="left">
-      <p>
-        <FormattedMessage
-          id="agentTraces.evalsEmpty.agentsProducers"
-          defaultMessage="Any OpenTelemetry producer works: send {event} log events."
-          values={{ event: <EuiCode>gen_ai.evaluation.result</EuiCode> }}
-        />{' '}
-        <EuiLink href={EVALS_QUICKSTART_URL} target="_blank" data-test-subj="agtEvlQuickstart">
-          {i18n.translate('agentTraces.evalsEmpty.quickstart', { defaultMessage: 'Quickstart' })}
-        </EuiLink>
-        {' · '}
-        <EuiLink href={EVALS_CI_URL} target="_blank" data-test-subj="agtEvlSuiteInCi">
-          {i18n.translate('agentTraces.evalsEmpty.suiteInCi', {
-            defaultMessage: 'Run a test suite in CI',
+/**
+ * The Agents home with no results in the range: Getting started and the coding agent prompt.
+ */
+export const AgentsEmptyState: React.FC<{ range: string }> = ({ range }) => {
+  const { openGettingStarted } = useEvalContext();
+  return (
+    <div className="agtEvlAgentsEmpty" data-test-subj="agtEvlAgentsEmpty">
+      <EuiTitle size="xs">
+        <h3>
+          {i18n.translate('agentTraces.evalsEmpty.agentsTitle', {
+            defaultMessage: 'No evaluation results in the range: {range}',
+            values: { range },
           })}
-        </EuiLink>
-      </p>
-    </EuiText>
-  </div>
-);
+        </h3>
+      </EuiTitle>
+      <EuiSpacer size="s" />
+      <EuiText size="s" color="subdued">
+        <p>
+          <FormattedMessage
+            id="agentTraces.evalsEmpty.agentsSdk"
+            defaultMessage="Use the OpenSearch GenAI SDK to send {event} log events along with your agent traces."
+            values={{ event: <EuiCode>gen_ai.evaluation.result</EuiCode> }}
+          />
+        </p>
+      </EuiText>
+      <EuiSpacer size="m" />
+      <EuiFlexGroup gutterSize="s" justifyContent="center" responsive={false} wrap>
+        {openGettingStarted && (
+          <EuiFlexItem grow={false}>
+            <EuiButton
+              size="s"
+              fill
+              iconType="help"
+              onClick={openGettingStarted}
+              data-test-subj="agtEvlAgentsEmptyGettingStarted"
+            >
+              {i18n.translate('agentTraces.evalsEmpty.gettingStarted', {
+                defaultMessage: 'Getting started',
+              })}
+            </EuiButton>
+          </EuiFlexItem>
+        )}
+        <EuiFlexItem grow={false}>
+          <CopyCodingAgentPromptButton data-test-subj="agtEvlAgentsEmptyCopyPrompt" />
+        </EuiFlexItem>
+      </EuiFlexGroup>
+    </div>
+  );
+};
 
 const FEATURES: Array<{ shot: EvalScreenshot; title: string; text: string }> = [
   {

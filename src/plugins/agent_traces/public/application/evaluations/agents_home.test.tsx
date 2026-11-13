@@ -117,15 +117,21 @@ describe('AgentsHome', () => {
     expect(within(header).getByTestId('agtEvlLastResultTip')).toBeInTheDocument();
   });
 
-  it('shows the SDK snippet and links when the range has no results', () => {
+  it('shows Getting started and the coding agent prompt when the range has no results', () => {
     mockPpl.answer(() => []);
     renderWithContext(<AgentsHome />);
     const empty = screen.getByTestId('agtEvlAgentsEmpty');
     expect(empty).toHaveTextContent('No evaluation results in the range: Last 7 days');
-    expect(empty).toHaveTextContent('pip install "opensearch-genai-observability-sdk-py>=0.3.0"');
-    expect(screen.getByTestId('agtEvlQuickstart')).toHaveTextContent('Quickstart');
-    expect(screen.getByTestId('agtEvlSuiteInCi')).toHaveTextContent('Run a test suite in CI');
-    // The AgentCore import link is gone.
+    expect(empty).toHaveTextContent(
+      'Use the OpenSearch GenAI SDK to send gen_ai.evaluation.result log events along with your agent traces.'
+    );
+    expect(within(empty).getByTestId('agtEvlAgentsEmptyCopyPrompt')).toHaveTextContent(
+      'Copy prompt for your coding agent'
+    );
+    // Only the two buttons: no SDK snippet, no producer line, no quick start panel.
+    expect(empty).not.toHaveTextContent('pip install');
+    expect(empty).not.toHaveTextContent('Any OpenTelemetry producer works');
+    expect(empty).not.toHaveTextContent('Quickest start');
     expect(screen.queryByTestId('agtEvlImportAgentCore')).not.toBeInTheDocument();
   });
 

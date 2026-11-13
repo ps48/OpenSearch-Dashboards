@@ -160,40 +160,6 @@ export const CopyCodingAgentPromptButton: React.FC<{
 );
 
 /**
- * The quickest start, shown at the top of Getting started and of the empty states: copy the
- * prompt into a coding agent, which instruments the app and sends traces and results.
- */
-export const CodingAgentQuickStart: React.FC<{ 'data-test-subj'?: string }> = (props) => (
-  <EuiPanel
-    color="subdued"
-    hasShadow={false}
-    paddingSize="s"
-    data-test-subj={props['data-test-subj'] ?? 'agtEvlPromptQuickStart'}
-  >
-    <EuiFlexGroup gutterSize="m" alignItems="center" responsive={false} wrap>
-      <EuiFlexItem className="agtEvlQuickStart__text">
-        <EuiText size="s" textAlign="left">
-          <p>
-            <strong>
-              {i18n.translate('agentTraces.evalsOnboarding.quickStartTitle', {
-                defaultMessage: 'Quickest start: let your coding agent do it.',
-              })}
-            </strong>{' '}
-            {i18n.translate('agentTraces.evalsOnboarding.quickStartBody', {
-              defaultMessage:
-                'Copy the prompt, paste it into your coding agent, and fill in the values in angle brackets: it instruments your agent app for traces and evaluations and checks the results in OpenSearch.',
-            })}
-          </p>
-        </EuiText>
-      </EuiFlexItem>
-      <EuiFlexItem grow={false}>
-        <CopyCodingAgentPromptButton fill data-test-subj="agtEvlCopyPromptQuickStart" />
-      </EuiFlexItem>
-    </EuiFlexGroup>
-  </EuiPanel>
-);
-
-/**
  * "Copy prompt for your coding agent": a prompt that instruments an agent app for Agent Traces
  * and Agent Evaluations, in a copyable block.
  */
@@ -346,8 +312,6 @@ const TOUR_SCREENS: TourScreen[] = [
     }),
     body: (
       <>
-        <CodingAgentQuickStart data-test-subj="agtEvlTourQuickStart" />
-        <EuiSpacer size="m" />
         <EuiText size="s">
           <p>
             {i18n.translate('agentTraces.evalsTour.whatBody', {
@@ -358,6 +322,21 @@ const TOUR_SCREENS: TourScreen[] = [
         </EuiText>
         <EuiSpacer size="m" />
         <OnlineOfflineCards />
+        <EuiSpacer size="m" />
+        {/* Next to the footer's "Copy prompt for your coding agent" button. */}
+        <EuiText size="s" data-test-subj="agtEvlTourQuickStart">
+          <p>
+            <strong>
+              {i18n.translate('agentTraces.evalsOnboarding.quickStartTitle', {
+                defaultMessage: 'Quickest start: let your coding agent do it.',
+              })}
+            </strong>{' '}
+            {i18n.translate('agentTraces.evalsOnboarding.quickStartBody', {
+              defaultMessage:
+                'Copy the prompt, paste it into your coding agent, and fill in the values in angle brackets: it instruments your agent app for traces and evaluations and checks the results in OpenSearch.',
+            })}
+          </p>
+        </EuiText>
       </>
     ),
   },
